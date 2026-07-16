@@ -137,13 +137,18 @@
   committed for push)
   - Curiosity poke: should the demo fidelity work remain one coherent commit or
   split spec, mechanics, and presentation into separately green commits?
-- [ ] Build an explicit gap matrix from `VIBESTEROIDS_BEHAVIOR_SPEC.md`, then
+- [x] Build an explicit gap matrix from `VIBESTEROIDS_BEHAVIOR_SPEC.md`, then
   implement every applicable original behavior rather than relying on memory.
+  (2026-07-16 19:36 EDT: matrix records implemented, missing, deferred, and
+  deliberately changed behaviors with an explicit completion gate)
   - Curiosity poke: which browser/mobile accommodations need a native analogue,
     and which are genuinely inapplicable outside a touch browser?
-- [ ] Migrate every internal gameplay quantity and calculation to signed
+- [x] Migrate every internal gameplay quantity and calculation to signed
   decimal fixed-point integers, bumping the state schema exactly once; convert
   to GPUI's `f32`-backed `Pixels` only at the one-way rendering boundary.
+  (2026-07-16 19:36 EDT: schema 3 uses signed millionths, the float-boundary
+  classifier and exact 0.995 regression pass, the behavior suite is 19/19,
+  and the complete canonical `./test` gate is green)
   - Curiosity poke: what decimal scale and pre-square rescaling preserve useful
     subpixel precision at 8K dimensions without overflowing WebAssembly `i64`?
 - [ ] Make the game field fill the complete drawable window and make viewport
