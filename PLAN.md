@@ -73,3 +73,26 @@
   (2026-07-16 07:31 EDT)
   - Curiosity poke: can the deployment preserve the expensive Rust dependency
     closure while rebuilding only project sources?
+- [x] Load `./code.wat` by default, accept an explicit WAT file/application
+  directory, and retain an explicit embedded-demo mode.
+  (2026-07-16 09:35 EDT)
+  - Curiosity poke: should a missing or invalid startup file fail closed or
+    open the embedded demo with a visible recoverable error?
+- [x] Add transactional reload preparation that preserves same-schema state,
+  restarts incompatible schemas, and never replaces a working plugin with a
+  candidate that fails compilation, validation, restoration, or rendering.
+  (2026-07-16 09:35 EDT)
+  - Curiosity poke: can a same-schema semantic change still be unsafe despite
+    matching version and length, and how clearly must the plugin contract say
+    that incrementing the schema is the author's responsibility?
+- [x] Add `--watch`, manual Reload/Ctrl+R, directory-safe content polling, and
+  nonfatal reload errors that leave the old game advancing.
+  (2026-07-16 09:35 EDT)
+  - Curiosity poke: how do we avoid retry storms from editor atomic-save event
+    bursts without missing a later correction?
+- [x] Verify live calculation edits preserve an active game, schema changes
+  restart it, broken WAT leaves it playable, and the deployed GPUI window
+  reflects each outcome.
+  (2026-07-16 09:35 EDT)
+  - Curiosity poke: should compilation move off the UI thread if larger WAT
+    applications make synchronous reload latency perceptible?

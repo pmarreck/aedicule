@@ -639,6 +639,23 @@ WAT-friendly macro layer, add a browser host, and test a second application
 (preferably an editor or non-game utility). A second unrelated application is
 the strongest practical test that the ABI is genuinely generic.
 
+### 15.1 Live-edit development mode
+
+The native frontplane should load `./code.wat` when present, otherwise retain
+the embedded demonstration as a zero-configuration fallback. A positional
+file or application-directory argument selects another source; `--embedded`
+forces the bundled demo, while `--watch` polls the selected path's contents and
+transactionally reloads after saves. Watching follows the path rather than an
+open inode so editor replace/rename saves remain visible.
+
+Every candidate is compiled, configured, initialized, optionally restored, and
+rendered before replacing the active instance. Matching snapshot schema and
+length preserve state. A schema/length mismatch starts the candidate from its
+freshly initialized state. Any other failure leaves the old instance running
+and reports a nonfatal reload error. Plugin authors must increment the schema
+when the byte layout or meaning changes; equal untyped linear-memory bytes
+cannot prove semantic compatibility.
+
 ## 16. Spike implementation status
 
 **Feasibility verdict: successful.** Peter played the deployed native build on
@@ -666,6 +683,12 @@ Implemented and covered headlessly:
   painting, and rodio-generated tones; and
 - deterministic headless SVG export for arbitrary requested ticks, including
   external WAT input and stdout/file output suitable for CI visual inspection.
+- conventional `code.wat` discovery, explicit file/directory and embedded
+  source selection, content-based path polling that survives atomic saves,
+  manual Reload/Ctrl+R, and transactional live replacement. Real-window
+  verification covered compatible state preservation, schema-triggered fresh
+  state, malformed-source rollback while the old game continued advancing,
+  and automatic recovery after the file was repaired.
 
 Honest boundaries discovered by the spike:
 
@@ -689,3 +712,7 @@ Honest boundaries discovered by the spike:
   recompiles that graph when source changes. Cargo's local target cache makes
   development tolerable, but a production flake should split dependency
   artifacts with crane/cargo-chef or use smaller GPUI crates.
+- Candidate compilation currently runs synchronously on the GPUI thread.
+  Transactional replacement prevents corruption, but larger applications may
+  require background compilation plus UI-thread handoff to avoid a visible
+  pause.

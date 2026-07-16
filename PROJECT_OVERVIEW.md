@@ -15,7 +15,8 @@ The initial feasibility demonstration is an Asteroids-style game:
 - the host passes input and fixed ticks into the plugin;
 - the plugin calls a small versioned host ABI to emit draw/audio/effect
   commands; and
-- snapshots prove state can survive host-controlled reloads.
+- transactional live reloads preserve compatible snapshots while rejecting
+  broken candidates without interrupting the running application.
 
 The project is not intended to become a full game engine during the spike. It
 is intended to discover whether a clean GPUI-facing WASM application ABI is
@@ -23,7 +24,11 @@ pleasant, deterministic, containable, and sufficiently expressive.
 
 **POC status:** successful. On 2026-07-16 Peter confirmed that the deployed
 Vibesteroids conversion is a playable game. Further work is refinement and
-productization rather than proof of basic feasibility.
+productization rather than proof of basic feasibility. The same-day live-edit
+extension also proved that an external `code.wat` can be watched and replaced
+while a real GPUI window is running: compatible edits preserve game state,
+schema changes restart deliberately, and malformed edits leave the previous
+game playable.
 
 **Main branch:** yolo
 
@@ -52,3 +57,10 @@ the plugin during a lifecycle call.
 
 One deterministic simulation step. Wall-clock sampling and frame pacing belong
 to the host; the plugin receives integer tick counts.
+
+**State schema**
+
+A plugin-owned integer compatibility declaration for its opaque snapshot
+bytes. The host also checks snapshot length, but only the plugin author can
+know whether an equal-length layout or semantic change requires incrementing
+the schema and starting fresh state.

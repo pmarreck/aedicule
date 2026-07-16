@@ -13,12 +13,32 @@ and sandbox.
 ./test       # deterministic headless ABI, game, and containment tests
 ./build      # optimized, reproducible Nix build
 ./run        # optimized local launch from the Nix development shell
+./run --watch
+             # watch ./code.wat, including a file created after launch
+./run --watch path/to/application
+             # watch path/to/application/code.wat
+./run --embedded
+             # force the bundled Vibesteroids demo
 result/bin/gpui-wasm-render --ticks 300 -o frame.svg
              # deterministic visual artifact; accepts an external .wat path
 ~~~
 
 Controls: Left/Right rotate, Up thrusts, Space fires, P pauses, and R starts a
-new game. New Game and Quit are also available from the window and Game menu.
+new game. Ctrl+R reloads an external plugin. Reload, New Game, and Quit are
+also available from the window and native menu.
+
+Without arguments, the frontplane loads `./code.wat` when it exists and
+otherwise runs its embedded demo. A positional argument may name a WAT file or
+an application directory containing `code.wat`. `--watch` follows the selected
+path across ordinary writes and atomic editor replacements.
+
+Reload is transactional: the candidate must compile, initialize, restore when
+compatible, and render successfully before it replaces the running plugin.
+Matching `fp_state_schema` values and snapshot byte lengths preserve live
+state. A changed schema or length starts fresh state; invalid edits leave the
+previous plugin running and show a recoverable error. Because the state bytes
+are intentionally opaque, plugin authors must increment the schema whenever
+their layout or meaning becomes incompatible.
 
 `gpui-wasm-render` runs without a window. It accepts `-` or `@stdin` as its WAT
 input and `-`, `@stdout`, or `@stderr` as output, making exact plugin frames

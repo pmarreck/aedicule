@@ -2,6 +2,9 @@
 ;;
 ;; Canonical snapshot state occupies [1024, 1280). No gameplay state lives in
 ;; globals: host snapshot/restore therefore captures the whole simulation.
+;; Increment fp_state_schema whenever this layout or its meaning becomes
+;; incompatible; equal schema and byte length deliberately authorize live
+;; state transfer into a replacement module.
 ;;
 ;; 1024 tick:i32        1028 seed:i32       1032 width:f32
 ;; 1036 height:f32      1040 ship.x:f32     1044 ship.y:f32

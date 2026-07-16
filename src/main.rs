@@ -1,10 +1,16 @@
-use std::time::{Duration, Instant};
+use std::{
+    env,
+    path::{Path, PathBuf},
+    process::ExitCode,
+    time::{Duration, Instant},
+};
 
 use gpui::{
-    App, AppContext as _, Bounds, Context, FocusHandle, Focusable, Hsla, InteractiveElement as _,
-    IntoElement, KeyBinding, KeyDownEvent, KeyUpEvent, Menu, MenuItem, ParentElement as _,
-    PathBuilder, Render, SharedString, Styled as _, TextAlign, TextRun, Window, WindowBounds,
-    WindowOptions, actions, canvas, div, point, prelude::FluentBuilder as _, px, rgba, size,
+    AnyWindowHandle, App, AppContext as _, Bounds, Context, FocusHandle, Focusable, Hsla,
+    InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent, KeyUpEvent, Menu, MenuItem,
+    ParentElement as _, PathBuilder, Render, SharedString, Styled as _, TextAlign, TextRun, Window,
+    WindowBounds, WindowOptions, actions, canvas, div, point, prelude::FluentBuilder as _, px,
+    rgba, size,
 };
 use gpui_component::{
     ActiveTheme as _, Root, Theme, ThemeMode, TitleBar,
@@ -12,18 +18,21 @@ use gpui_component::{
     h_flex, v_flex,
 };
 use gpui_wasm::{
-    Affine, AudioEvent, DrawCommand, Event, FrameOutput, Frontplane, HostEffect, Key, Limits,
-    Metadata, PathSegment,
+    Affine, AudioEvent, DrawCommand, Event, FileRevision, FrameOutput, Frontplane, HostEffect, Key,
+    LaunchAction, Limits, Metadata, PathSegment, PluginInit, PluginSource, RevisionTracker,
+    StateTransfer, prepare_reload, resolve_launch,
 };
 use rodio::{DeviceSinkBuilder, MixerDeviceSink, Source as _, source::SineWave};
 use smol::Timer;
 
-actions!(gpui_wasm, [NewGame, Quit]);
+actions!(gpui_wasm, [NewGame, ReloadPlugin, Quit]);
 
 const DEMO_WAT: &str = include_str!("../plugins/vibesteroids.wat");
 const LOGICAL_WIDTH: f32 = 1024.0;
 const LOGICAL_HEIGHT: f32 = 768.0;
 const FRAME_INTERVAL: Duration = Duration::from_micros(16_667);
+const WATCH_INTERVAL: Duration = Duration::from_millis(250);
+const PLUGIN_INIT: PluginInit = PluginInit::new(0x5eed_cafe, LOGICAL_WIDTH, LOGICAL_HEIGHT);
 
 struct Strings {
     fallback_title: &'static str,
@@ -31,6 +40,19 @@ struct Strings {
     abi_status: &'static str,
     runtime_status: &'static str,
     plugin_stopped: &'static str,
+    reload: &'static str,
+    reload_failed: &'static str,
+    reload_preserved: &'static str,
+    reload_restarted: &'static str,
+    embedded_source: &'static str,
+    watching: &'static str,
+    external_source: &'static str,
+    missing_source: &'static str,
+    unreadable_source: &'static str,
+    invalid_utf8: &'static str,
+    help: &'static str,
+    about: &'static str,
+    cli_error: &'static str,
 }
 
 const EN: Strings = Strings {
@@ -39,6 +61,33 @@ const EN: Strings = Strings {
     abi_status: "WAT owns gameplay • GPUI owns the window",
     runtime_status: "ABI v0 • 60 Hz • capability-bounded",
     plugin_stopped: "WAT plugin stopped safely",
+    reload: "Reload",
+    reload_failed: "Reload failed; previous plugin remains active",
+    reload_preserved: "Reloaded with live state preserved",
+    reload_restarted: "Reloaded with fresh state (schema changed)",
+    embedded_source: "embedded demo",
+    watching: "watching",
+    external_source: "external WAT",
+    missing_source: "WAT source does not exist",
+    unreadable_source: "could not read WAT source",
+    invalid_utf8: "WAT source is not valid UTF-8",
+    help: "\
+Run a capability-bounded WAT application in the native GPUI frontplane.
+
+Usage:
+  gpui-wasm [OPTIONS] [PLUGIN.wat|APPLICATION_DIRECTORY]
+
+Options:
+  --watch       Reload after content changes; defaults to ./code.wat
+  --embedded    Force the bundled Vibesteroids demonstration
+  -h, --help    Show this help
+  --about       Show version and build platform
+
+Without arguments, ./code.wat is loaded when present; otherwise the embedded
+demo runs. An application directory resolves to its code.wat file.
+",
+    about: "generic native GPUI frontplane for capability-bounded WAT applications",
+    cli_error: "gpui-wasm",
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -67,8 +116,8 @@ fn standard_menu_entries(metadata: &Metadata) -> Vec<StandardMenuEntry> {
         .collect()
 }
 
-fn native_menus(metadata: &Metadata) -> Vec<Menu> {
-    let items: Vec<_> = standard_menu_entries(metadata)
+fn native_menus(metadata: &Metadata, can_reload: bool) -> Vec<Menu> {
+    let mut items: Vec<_> = standard_menu_entries(metadata)
         .into_iter()
         .map(|entry| match entry {
             StandardMenuEntry::New(label) => MenuItem::action(label, NewGame),
@@ -76,6 +125,12 @@ fn native_menus(metadata: &Metadata) -> Vec<Menu> {
             StandardMenuEntry::Quit(label) => MenuItem::action(label, Quit),
         })
         .collect();
+    if can_reload {
+        if !items.is_empty() {
+            items.push(MenuItem::Separator);
+        }
+        items.push(MenuItem::action(EN.reload, ReloadPlugin));
+    }
     if items.is_empty() {
         Vec::new()
     } else {
@@ -133,6 +188,19 @@ impl AudioOutput {
     }
 }
 
+struct ExternalSource {
+    path: PathBuf,
+    watch: bool,
+    revisions: RevisionTracker,
+}
+
+struct Startup {
+    frontplane: Frontplane,
+    frame: FrameOutput,
+    source: Option<ExternalSource>,
+    reload_error: Option<String>,
+}
+
 struct FrontplaneView {
     frontplane: Frontplane,
     frame: FrameOutput,
@@ -140,15 +208,24 @@ struct FrontplaneView {
     new_label: Option<String>,
     quit_label: Option<String>,
     focus_handle: FocusHandle,
+    window_handle: AnyWindowHandle,
     audio: AudioOutput,
-    error: Option<String>,
+    source: Option<ExternalSource>,
+    fatal_error: Option<String>,
+    reload_error: Option<String>,
+    reload_notice: Option<&'static str>,
 }
 
 impl FrontplaneView {
-    fn new(mut frontplane: Frontplane, cx: &mut Context<Self>) -> Self {
+    fn new(startup: Startup, window: &Window, cx: &mut Context<Self>) -> Self {
+        let Startup {
+            frontplane,
+            frame,
+            source,
+            reload_error,
+        } = startup;
         let metadata = frontplane.metadata().clone();
         let entries = standard_menu_entries(&metadata);
-        let frame = frontplane.render().expect("initial WAT frame");
         let view = Self {
             frontplane,
             frame,
@@ -162,8 +239,12 @@ impl FrontplaneView {
                 _ => None,
             }),
             focus_handle: cx.focus_handle(),
+            window_handle: window.window_handle(),
             audio: AudioOutput::new(),
-            error: None,
+            source,
+            fatal_error: None,
+            reload_error,
+            reload_notice: None,
         };
 
         cx.spawn(async move |this, cx| {
@@ -181,13 +262,122 @@ impl FrontplaneView {
             }
         })
         .detach();
+        if view.source.as_ref().is_some_and(|source| source.watch) {
+            cx.spawn(async move |this, cx| {
+                loop {
+                    Timer::after(WATCH_INTERVAL).await;
+                    if this
+                        .update(cx, |this, cx| {
+                            if this.poll_reload(cx) {
+                                cx.notify();
+                            }
+                        })
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+            })
+            .detach();
+        }
         view
+    }
+
+    fn poll_reload(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(source) = self.source.as_mut() else {
+            return false;
+        };
+        let path = source.path.clone();
+        let revision = FileRevision::read(&path);
+        if !source.revisions.observe(&revision) {
+            return false;
+        }
+        self.apply_revision(&path, revision, cx);
+        true
+    }
+
+    fn reload_plugin(&mut self, _: &ReloadPlugin, _: &mut Window, cx: &mut Context<Self>) {
+        let Some(source) = self.source.as_mut() else {
+            return;
+        };
+        let path = source.path.clone();
+        let revision = FileRevision::read(&path);
+        source.revisions.observe(&revision);
+        self.apply_revision(&path, revision, cx);
+        cx.notify();
+    }
+
+    /// Compiles and validates a changed file as a separate candidate, swapping
+    /// only after state transfer and the candidate's first frame both succeed.
+    fn apply_revision(&mut self, path: &Path, revision: FileRevision, cx: &mut Context<Self>) {
+        let bytes = match revision {
+            FileRevision::Missing => {
+                self.set_reload_error(path, EN.missing_source, None);
+                return;
+            }
+            FileRevision::Unreadable(error) => {
+                self.set_reload_error(path, EN.unreadable_source, Some(&error));
+                return;
+            }
+            FileRevision::Content(bytes) => bytes,
+        };
+        let source = match String::from_utf8(bytes) {
+            Ok(source) => source,
+            Err(error) => {
+                self.set_reload_error(path, EN.invalid_utf8, Some(&error.to_string()));
+                return;
+            }
+        };
+        match prepare_reload(
+            &mut self.frontplane,
+            &source,
+            Limits::default(),
+            PLUGIN_INIT,
+        ) {
+            Ok(prepared) => {
+                let metadata = prepared.frontplane.metadata().clone();
+                let entries = standard_menu_entries(&metadata);
+                self.frontplane = prepared.frontplane;
+                self.frame = prepared.frame;
+                self.title = metadata.title.clone();
+                self.new_label = entries.iter().find_map(|entry| match entry {
+                    StandardMenuEntry::New(label) => Some(label.clone()),
+                    _ => None,
+                });
+                self.quit_label = entries.iter().find_map(|entry| match entry {
+                    StandardMenuEntry::Quit(label) => Some(label.clone()),
+                    _ => None,
+                });
+                self.fatal_error = None;
+                self.reload_error = None;
+                self.reload_notice = Some(match prepared.state_transfer {
+                    StateTransfer::Preserved => EN.reload_preserved,
+                    StateTransfer::Restarted => EN.reload_restarted,
+                });
+                cx.set_menus(native_menus(&metadata, true));
+                let title = window_title(&metadata);
+                let _ = cx.update_window(self.window_handle, |_, window, _| {
+                    window.set_window_title(&title);
+                });
+            }
+            Err(error) => {
+                self.set_reload_error(path, EN.reload_failed, Some(&error.to_string()));
+            }
+        }
+    }
+
+    fn set_reload_error(&mut self, path: &Path, message: &str, detail: Option<&str>) {
+        self.reload_notice = None;
+        self.reload_error = Some(match detail {
+            Some(detail) => format!("{message}: {}: {detail}", path.display()),
+            None => format!("{message}: {}", path.display()),
+        });
     }
 
     /// Runs one fixed guest tick, atomically replaces the last good frame, and
     /// drains semantic effects only after Wasmtime releases its store borrow.
     fn advance(&mut self, cx: &mut Context<Self>) {
-        if self.error.is_some() {
+        if self.fatal_error.is_some() {
             return;
         }
         if let Err(error) = self
@@ -195,7 +385,7 @@ impl FrontplaneView {
             .tick(1)
             .and_then(|_| self.frontplane.render().map(|frame| self.frame = frame))
         {
-            self.error = Some(error.to_string());
+            self.fatal_error = Some(error.to_string());
             return;
         }
         for event in self.frontplane.drain_audio() {
@@ -209,13 +399,13 @@ impl FrontplaneView {
     }
 
     fn new_game(&mut self, _: &NewGame, _: &mut Window, cx: &mut Context<Self>) {
-        self.error = None;
+        self.fatal_error = None;
         if let Err(error) = self
             .frontplane
             .event(Event::MenuAction(1))
             .and_then(|_| self.frontplane.render().map(|frame| self.frame = frame))
         {
-            self.error = Some(error.to_string());
+            self.fatal_error = Some(error.to_string());
         }
         cx.notify();
     }
@@ -232,7 +422,7 @@ impl FrontplaneView {
             return;
         }
         if let Err(error) = self.frontplane.event(Event::KeyDown(key)) {
-            self.error = Some(error.to_string());
+            self.fatal_error = Some(error.to_string());
         }
         cx.notify();
     }
@@ -242,7 +432,7 @@ impl FrontplaneView {
             return;
         };
         if let Err(error) = self.frontplane.event(Event::KeyUp(key)) {
-            self.error = Some(error.to_string());
+            self.fatal_error = Some(error.to_string());
         }
         cx.notify();
     }
@@ -257,16 +447,30 @@ impl Focusable for FrontplaneView {
 impl Render for FrontplaneView {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let frame = self.frame.clone();
-        let error = self.error.clone();
+        let fatal_error = self.fatal_error.clone();
+        let reload_error = self.reload_error.clone();
         let title = self.title.clone();
         let new_label = self.new_label.clone();
         let quit_label = self.quit_label.clone();
+        let can_reload = self.source.is_some();
+        let source_status = match &self.source {
+            Some(source) if source.watch => {
+                format!("{} {}", EN.watching, source.path.display())
+            }
+            Some(source) => format!("{} {}", EN.external_source, source.path.display()),
+            None => EN.embedded_source.to_owned(),
+        };
+        let runtime_status = match self.reload_notice {
+            Some(notice) => format!("{notice} • {source_status}"),
+            None => format!("{} • {source_status}", EN.runtime_status),
+        };
         v_flex()
             .size_full()
             .track_focus(&self.focus_handle)
             .on_key_down(cx.listener(Self::key_down))
             .on_key_up(cx.listener(Self::key_up))
             .on_action(cx.listener(Self::new_game))
+            .on_action(cx.listener(Self::reload_plugin))
             .on_action(cx.listener(Self::quit))
             .child(
                 TitleBar::new().child(
@@ -279,6 +483,15 @@ impl Render for FrontplaneView {
                         .child(
                             h_flex()
                                 .gap_2()
+                                .when(can_reload, |this| {
+                                    this.child(
+                                        Button::new("reload-plugin").label(EN.reload).on_click(
+                                            cx.listener(|this, _, window, cx| {
+                                                this.reload_plugin(&ReloadPlugin, window, cx)
+                                            }),
+                                        ),
+                                    )
+                                })
                                 .when_some(new_label, |this, label| {
                                     this.child(
                                         Button::new("new-game").primary().label(label).on_click(
@@ -314,7 +527,7 @@ impl Render for FrontplaneView {
                         )
                         .size_full(),
                     )
-                    .when_some(error, |this, error| {
+                    .when_some(fatal_error, |this, error| {
                         this.child(
                             div()
                                 .absolute()
@@ -324,6 +537,20 @@ impl Render for FrontplaneView {
                                 .bg(rgba(0x6b1020ee))
                                 .text_color(rgba(0xffffffff))
                                 .child(format!("{}: {error}", EN.plugin_stopped)),
+                        )
+                    })
+                    .when_some(reload_error, |this, error| {
+                        this.child(
+                            div()
+                                .absolute()
+                                .top_4()
+                                .left_4()
+                                .right_4()
+                                .p_3()
+                                .rounded_lg()
+                                .bg(rgba(0x6b4510ee))
+                                .text_color(rgba(0xffffffff))
+                                .child(error),
                         )
                     }),
             )
@@ -335,7 +562,7 @@ impl Render for FrontplaneView {
                     .text_xs()
                     .text_color(cx.theme().muted_foreground)
                     .child(EN.abi_status)
-                    .child(EN.runtime_status),
+                    .child(runtime_status),
             )
     }
 }
@@ -609,32 +836,106 @@ fn paint_path(
 
 /// Instantiates the bundled demonstration through the same generic lifecycle
 /// used by any future externally selected WAT plugin.
-fn load_demo() -> Frontplane {
-    Frontplane::from_wat(DEMO_WAT, Limits::default())
-        .and_then(|mut frontplane| {
-            frontplane.configure()?;
-            frontplane.init(0x5eed_cafe, LOGICAL_WIDTH, LOGICAL_HEIGHT)?;
-            Ok(frontplane)
-        })
-        .expect("bundled WAT passed the headless ABI suite")
+fn load_demo() -> (Frontplane, FrameOutput) {
+    load_frontplane(DEMO_WAT).expect("bundled WAT passed the headless ABI suite")
 }
 
-fn main() {
+fn load_frontplane(source: &str) -> Result<(Frontplane, FrameOutput), gpui_wasm::FrontplaneError> {
+    Frontplane::from_wat(source, Limits::default()).and_then(|mut frontplane| {
+        frontplane.configure()?;
+        frontplane.init(
+            PLUGIN_INIT.seed,
+            PLUGIN_INIT.viewport_width,
+            PLUGIN_INIT.viewport_height,
+        )?;
+        let frame = frontplane.render()?;
+        frontplane.drain_audio();
+        frontplane.drain_effects();
+        Ok((frontplane, frame))
+    })
+}
+
+fn startup(source: PluginSource, watch: bool) -> Startup {
+    match source {
+        PluginSource::Embedded => {
+            let (frontplane, frame) = load_demo();
+            Startup {
+                frontplane,
+                frame,
+                source: None,
+                reload_error: None,
+            }
+        }
+        PluginSource::File(path) => {
+            let revision = FileRevision::read(&path);
+            let mut revisions = RevisionTracker::default();
+            revisions.observe(&revision);
+            let result = source_text(&path, &revision).and_then(|source| {
+                load_frontplane(&source)
+                    .map_err(|error| format!("{}: {}: {error}", EN.reload_failed, path.display()))
+            });
+            match result {
+                Ok((frontplane, frame)) => Startup {
+                    frontplane,
+                    frame,
+                    source: Some(ExternalSource {
+                        path,
+                        watch,
+                        revisions,
+                    }),
+                    reload_error: None,
+                },
+                Err(error) => {
+                    let (frontplane, frame) = load_demo();
+                    Startup {
+                        frontplane,
+                        frame,
+                        source: Some(ExternalSource {
+                            path,
+                            watch,
+                            revisions,
+                        }),
+                        reload_error: Some(error),
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn source_text(path: &Path, revision: &FileRevision) -> Result<String, String> {
+    match revision {
+        FileRevision::Missing => Err(format!("{}: {}", EN.missing_source, path.display())),
+        FileRevision::Unreadable(error) => Err(format!(
+            "{}: {}: {error}",
+            EN.unreadable_source,
+            path.display()
+        )),
+        FileRevision::Content(bytes) => String::from_utf8(bytes.clone())
+            .map_err(|error| format!("{}: {}: {error}", EN.invalid_utf8, path.display())),
+    }
+}
+
+fn window_title(metadata: &Metadata) -> String {
+    if metadata.title.is_empty() {
+        EN.fallback_title.to_owned()
+    } else {
+        metadata.title.clone()
+    }
+}
+
+fn run_application(startup: Startup) {
     let app = gpui_platform::application().with_assets(gpui_component_assets::Assets);
-    app.run(|cx| {
+    app.run(move |cx| {
         gpui_component::init(cx);
         cx.bind_keys([
             KeyBinding::new("ctrl-n", NewGame, None),
+            KeyBinding::new("ctrl-r", ReloadPlugin, None),
             KeyBinding::new("ctrl-q", Quit, None),
         ]);
-        let frontplane = load_demo();
-        let metadata = frontplane.metadata().clone();
-        let window_title = if metadata.title.is_empty() {
-            EN.fallback_title.to_owned()
-        } else {
-            metadata.title.clone()
-        };
-        cx.set_menus(native_menus(&metadata));
+        let metadata = startup.frontplane.metadata().clone();
+        let window_title = window_title(&metadata);
+        cx.set_menus(native_menus(&metadata, startup.source.is_some()));
         cx.on_action(|_: &Quit, cx| cx.quit());
         let options = WindowOptions {
             titlebar: Some(TitleBar::title_bar_options()),
@@ -646,7 +947,7 @@ fn main() {
                 window.activate_window();
                 window.set_window_title(&window_title);
                 Theme::change(ThemeMode::Dark, Some(window), cx);
-                let view = cx.new(|cx| FrontplaneView::new(frontplane, cx));
+                let view = cx.new(|cx| FrontplaneView::new(startup, window, cx));
                 view.focus_handle(cx).focus(window, cx);
                 cx.new(|cx| Root::new(view, window, cx))
             })
@@ -654,6 +955,41 @@ fn main() {
         })
         .detach();
     });
+}
+
+fn main() -> ExitCode {
+    if cfg!(debug_assertions) && env::var_os("MUTE_DEBUG_STATUS").is_none() {
+        eprintln!("\x1b[33mDEBUG BUILD!\x1b[0m");
+    }
+    let working_directory = match env::current_dir() {
+        Ok(directory) => directory,
+        Err(error) => {
+            eprintln!(
+                "{}: could not determine working directory: {error}",
+                EN.cli_error
+            );
+            return ExitCode::FAILURE;
+        }
+    };
+    let action = match resolve_launch(env::args_os().skip(1), &working_directory) {
+        Ok(action) => action,
+        Err(error) => {
+            eprintln!("{}: {error}", EN.cli_error);
+            return ExitCode::from(2);
+        }
+    };
+    match action {
+        LaunchAction::Help => print!("{}", EN.help),
+        LaunchAction::About => println!(
+            "gpui-wasm {} — {} for {} {}",
+            env!("CARGO_PKG_VERSION"),
+            EN.about,
+            env::consts::OS,
+            env::consts::ARCH,
+        ),
+        LaunchAction::Run { source, watch } => run_application(startup(source, watch)),
+    }
+    ExitCode::SUCCESS
 }
 
 #[cfg(test)]

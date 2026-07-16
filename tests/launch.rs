@@ -1,0 +1,147 @@
+use std::{ffi::OsString, fs, path::PathBuf};
+
+use gpui_wasm::{FileRevision, LaunchAction, PluginSource, RevisionTracker, resolve_launch};
+
+fn arguments<'a>(values: &'a [&'a str]) -> impl Iterator<Item = OsString> + 'a {
+    values.iter().map(OsString::from)
+}
+
+fn temporary_directory(label: &str) -> PathBuf {
+    let path =
+        std::env::temp_dir().join(format!("gpui-wasm-launch-{}-{label}", std::process::id()));
+    if path.exists() {
+        fs::remove_dir_all(&path).unwrap();
+    }
+    fs::create_dir_all(&path).unwrap();
+    path
+}
+
+#[test]
+fn default_source_prefers_colocated_code_wat_then_embedded_fallback() {
+    let directory = temporary_directory("default");
+
+    assert_eq!(
+        resolve_launch(arguments(&[]), &directory).unwrap(),
+        LaunchAction::Run {
+            source: PluginSource::Embedded,
+            watch: false,
+        }
+    );
+
+    fs::write(directory.join("code.wat"), "(module)").unwrap();
+    assert_eq!(
+        resolve_launch(arguments(&[]), &directory).unwrap(),
+        LaunchAction::Run {
+            source: PluginSource::File(directory.join("code.wat")),
+            watch: false,
+        }
+    );
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn explicit_file_directory_watch_and_embedded_modes_resolve_predictably() {
+    let directory = temporary_directory("explicit");
+    let app_directory = directory.join("application with spaces");
+    fs::create_dir_all(&app_directory).unwrap();
+    let file = directory.join("custom game.wat");
+
+    assert_eq!(
+        resolve_launch(arguments(&["--watch", file.to_str().unwrap()]), &directory).unwrap(),
+        LaunchAction::Run {
+            source: PluginSource::File(file),
+            watch: true,
+        }
+    );
+    assert_eq!(
+        resolve_launch(arguments(&[app_directory.to_str().unwrap()]), &directory).unwrap(),
+        LaunchAction::Run {
+            source: PluginSource::File(app_directory.join("code.wat")),
+            watch: false,
+        }
+    );
+    assert_eq!(
+        resolve_launch(arguments(&["--watch", "--embedded"]), &directory).unwrap(),
+        LaunchAction::Run {
+            source: PluginSource::Embedded,
+            watch: false,
+        }
+    );
+    assert_eq!(
+        resolve_launch(arguments(&["--embedded", "--watch"]), &directory).unwrap(),
+        LaunchAction::Run {
+            source: PluginSource::File(directory.join("code.wat")),
+            watch: true,
+        }
+    );
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn help_about_unknown_options_and_extra_paths_are_classified() {
+    let directory = temporary_directory("actions");
+
+    assert_eq!(
+        resolve_launch(arguments(&["--help"]), &directory).unwrap(),
+        LaunchAction::Help
+    );
+    assert_eq!(
+        resolve_launch(arguments(&["--about"]), &directory).unwrap(),
+        LaunchAction::About
+    );
+    assert!(resolve_launch(arguments(&["--wat"]), &directory).is_err());
+    assert!(resolve_launch(arguments(&["one.wat", "two.wat"]), &directory).is_err());
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn revision_tracker_reports_each_distinct_editor_save_once() {
+    let mut tracker = RevisionTracker::default();
+    let revisions = [
+        FileRevision::Missing,
+        FileRevision::Missing,
+        FileRevision::Content(b"first".to_vec()),
+        FileRevision::Content(b"first".to_vec()),
+        FileRevision::Content(b"second".to_vec()),
+        FileRevision::Unreadable("permission denied".into()),
+        FileRevision::Unreadable("permission denied".into()),
+        FileRevision::Content(b"fixed".to_vec()),
+    ];
+
+    let changed: Vec<_> = revisions
+        .into_iter()
+        .filter(|revision| tracker.observe(revision))
+        .collect();
+
+    assert_eq!(
+        changed,
+        vec![
+            FileRevision::Missing,
+            FileRevision::Content(b"first".to_vec()),
+            FileRevision::Content(b"second".to_vec()),
+            FileRevision::Unreadable("permission denied".into()),
+            FileRevision::Content(b"fixed".to_vec()),
+        ]
+    );
+}
+
+#[test]
+fn reading_by_path_observes_editor_style_atomic_replacement() {
+    let directory = temporary_directory("atomic-save");
+    let path = directory.join("code.wat");
+    let replacement = directory.join("code.wat.new");
+    fs::write(&path, "first").unwrap();
+    assert_eq!(
+        FileRevision::read(&path),
+        FileRevision::Content(b"first".to_vec())
+    );
+
+    fs::write(&replacement, "second").unwrap();
+    fs::rename(&replacement, &path).unwrap();
+
+    assert_eq!(
+        FileRevision::read(&path),
+        FileRevision::Content(b"second".to_vec())
+    );
+    fs::remove_dir_all(directory).unwrap();
+}

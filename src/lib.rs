@@ -5,8 +5,10 @@
 //! over the same lifecycle, validation, snapshot, and command-buffer logic.
 
 use std::collections::HashSet;
+use std::ffi::OsString;
 use std::fmt;
 use std::fmt::Write as _;
+use std::path::{Path, PathBuf};
 
 use thiserror::Error;
 use wasmtime::{
@@ -16,6 +18,120 @@ use wasmtime::{
 
 pub const ABI_MAJOR: i32 = 0;
 pub const ABI_MINOR: i32 = 0;
+pub const DEFAULT_PLUGIN_FILE: &str = "code.wat";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PluginSource {
+    Embedded,
+    File(PathBuf),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LaunchAction {
+    Run { source: PluginSource, watch: bool },
+    Help,
+    About,
+}
+
+/// Resolves the native runner's order-sensitive source switches while treating
+/// an application directory as a container for the conventional `code.wat`.
+pub fn resolve_launch(
+    arguments: impl IntoIterator<Item = OsString>,
+    working_directory: &Path,
+) -> Result<LaunchAction, String> {
+    let mut source = None;
+    let mut watch = false;
+    let mut positional_count = 0;
+    let mut positional_only = false;
+
+    for argument in arguments {
+        let recognized = argument.to_str();
+        if !positional_only {
+            match recognized {
+                Some("-h" | "--help") => return Ok(LaunchAction::Help),
+                Some("--about") => return Ok(LaunchAction::About),
+                Some("--watch") => {
+                    watch = true;
+                    if source == Some(PluginSource::Embedded) {
+                        source = None;
+                    }
+                    continue;
+                }
+                Some("--embedded") => {
+                    source = Some(PluginSource::Embedded);
+                    watch = false;
+                    continue;
+                }
+                Some("--") => {
+                    positional_only = true;
+                    continue;
+                }
+                Some(option) if option.starts_with('-') && option != "-" => {
+                    return Err(format!("unknown option: {option}"));
+                }
+                _ => {}
+            }
+        }
+
+        positional_count += 1;
+        if positional_count > 1 {
+            return Err("only one WAT file or application directory may be specified".into());
+        }
+        let mut path = PathBuf::from(argument);
+        if path.is_relative() {
+            path = working_directory.join(path);
+        }
+        if path.is_dir() {
+            path.push(DEFAULT_PLUGIN_FILE);
+        }
+        source = Some(PluginSource::File(path));
+    }
+
+    let source = source.unwrap_or_else(|| {
+        let default = working_directory.join(DEFAULT_PLUGIN_FILE);
+        if watch || default.is_file() {
+            PluginSource::File(default)
+        } else {
+            PluginSource::Embedded
+        }
+    });
+    Ok(LaunchAction::Run { source, watch })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FileRevision {
+    Missing,
+    Unreadable(String),
+    Content(Vec<u8>),
+}
+
+impl FileRevision {
+    pub fn read(path: &Path) -> Self {
+        match std::fs::read(path) {
+            Ok(bytes) => Self::Content(bytes),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Self::Missing,
+            Err(error) => Self::Unreadable(error.to_string()),
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct RevisionTracker {
+    previous: Option<FileRevision>,
+}
+
+impl RevisionTracker {
+    /// Classifies directory-safe file observations by content, suppressing
+    /// duplicate polls and duplicate editor events without relying on time.
+    pub fn observe(&mut self, revision: &FileRevision) -> bool {
+        if self.previous.as_ref() == Some(revision) {
+            false
+        } else {
+            self.previous = Some(revision.clone());
+            true
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Limits {
@@ -528,6 +644,36 @@ pub struct Snapshot {
     pub bytes: Vec<u8>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PluginInit {
+    pub seed: u64,
+    pub viewport_width: f32,
+    pub viewport_height: f32,
+}
+
+impl PluginInit {
+    pub const fn new(seed: u64, viewport_width: f32, viewport_height: f32) -> Self {
+        Self {
+            seed,
+            viewport_width,
+            viewport_height,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StateTransfer {
+    Preserved,
+    Restarted,
+}
+
+#[derive(Debug)]
+pub struct PreparedReload {
+    pub frontplane: Frontplane,
+    pub frame: FrameOutput,
+    pub state_transfer: StateTransfer,
+}
+
 #[derive(Debug, Error)]
 pub enum FrontplaneError {
     #[error("could not parse WAT: {0}")]
@@ -1023,6 +1169,34 @@ impl Frontplane {
         state.audio.truncate(state.audio_checkpoint);
         state.effects.truncate(state.effect_checkpoint);
     }
+}
+
+/// Builds and smoke-renders a replacement instance before exposing it to the
+/// caller, preserving exact compatible snapshots while leaving `current`
+/// untouched on every candidate failure.
+pub fn prepare_reload(
+    current: &mut Frontplane,
+    source: &str,
+    limits: Limits,
+    init: PluginInit,
+) -> Result<PreparedReload, FrontplaneError> {
+    let snapshot = current.snapshot()?;
+    let mut candidate = Frontplane::from_wat(source, limits)?;
+    candidate.configure()?;
+    candidate.init(init.seed, init.viewport_width, init.viewport_height)?;
+    let state_transfer = match candidate.restore(&snapshot) {
+        Ok(()) => StateTransfer::Preserved,
+        Err(FrontplaneError::SnapshotMismatch) => StateTransfer::Restarted,
+        Err(error) => return Err(error),
+    };
+    let frame = candidate.render()?;
+    candidate.drain_audio();
+    candidate.drain_effects();
+    Ok(PreparedReload {
+        frontplane: candidate,
+        frame,
+        state_transfer,
+    })
 }
 
 const SUPPORTED_IMPORTS: &[&str] = &[

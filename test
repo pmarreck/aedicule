@@ -14,6 +14,7 @@ run_check() {
 
 run_check nix develop -c cargo test --no-default-features
 run_check nix develop -c cargo test --bin gpui-wasm
+run_check nix develop -c cargo test --test gui_cli
 run_check nix develop -c cargo check
 
 if (( failures > 255 )); then
