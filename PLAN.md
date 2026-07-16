@@ -58,3 +58,17 @@
   any visual-output expectations.
   - Curiosity poke: are input focus, line weight, status-bar density, and
     letterboxing comfortable on Peter's actual display?
+- [x] Reproduce and fix the zero-sized GPUI canvas reported on framework-nixos.
+  (2026-07-16 07:31 EDT)
+  - Curiosity poke: does the same adapter layout survive native Wayland,
+    XWayland, fractional scaling, and manual window resizing?
+- [x] Add a deterministic, headless frame-export path so humans and agents can
+  inspect exact WAT output without relying on a live desktop session.
+  (2026-07-16 07:31 EDT)
+  - Curiosity poke: should the long-term visual oracle compare semantic scene
+    commands, raster pixels, or both at different test layers?
+- [x] Rebuild, transfer the corrected executable, and verify animation plus
+  keyboard/menu input through captured before/after frames.
+  (2026-07-16 07:31 EDT)
+  - Curiosity poke: can the deployment preserve the expensive Rust dependency
+    closure while rebuilding only project sources?

@@ -6,6 +6,7 @@
 
 use std::collections::HashSet;
 use std::fmt;
+use std::fmt::Write as _;
 
 use thiserror::Error;
 use wasmtime::{
@@ -204,6 +205,270 @@ pub enum DrawCommand {
         tint_rgba: u32,
         flags: u32,
     },
+}
+
+/// Serializes an immutable scene-command frame as deterministic SVG so visual
+/// output can be inspected in headless CI and by agents without a desktop.
+pub fn render_svg(frame: &FrameOutput, logical_width: f32, logical_height: f32) -> String {
+    let mut svg = String::new();
+    let width = svg_number(logical_width);
+    let height = svg_number(logical_height);
+    writeln!(
+        svg,
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\" viewBox=\"0 0 {width} {height}\">"
+    )
+    .unwrap();
+    let (background, background_opacity) = svg_color(frame.background);
+    write!(
+        svg,
+        "<rect width=\"{width}\" height=\"{height}\" fill=\"{background}\""
+    )
+    .unwrap();
+    write_opacity(&mut svg, "fill", background_opacity);
+    svg.push_str("/>\n");
+
+    for command in &frame.commands {
+        match command {
+            DrawCommand::PushTransform(matrix) => {
+                writeln!(
+                    svg,
+                    "<g transform=\"matrix({} {} {} {} {} {})\">",
+                    svg_number(matrix.m11),
+                    svg_number(matrix.m12),
+                    svg_number(matrix.m21),
+                    svg_number(matrix.m22),
+                    svg_number(matrix.tx),
+                    svg_number(matrix.ty),
+                )
+                .unwrap();
+            }
+            DrawCommand::PopTransform => svg.push_str("</g>\n"),
+            DrawCommand::Line {
+                id,
+                x1,
+                y1,
+                x2,
+                y2,
+                width,
+                rgba,
+            } => {
+                let (color, opacity) = svg_color(*rgba);
+                write!(
+                    svg,
+                    "<line data-command-id=\"{id}\" x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{color}\" stroke-width=\"{}\"",
+                    svg_number(*x1),
+                    svg_number(*y1),
+                    svg_number(*x2),
+                    svg_number(*y2),
+                    svg_number(*width),
+                )
+                .unwrap();
+                write_opacity(&mut svg, "stroke", opacity);
+                svg.push_str(" stroke-linecap=\"round\"/>\n");
+            }
+            DrawCommand::Circle {
+                id,
+                x,
+                y,
+                radius,
+                width,
+                rgba,
+                filled,
+            } => {
+                let (color, opacity) = svg_color(*rgba);
+                write!(
+                    svg,
+                    "<circle data-command-id=\"{id}\" cx=\"{}\" cy=\"{}\" r=\"{}\"",
+                    svg_number(*x),
+                    svg_number(*y),
+                    svg_number(*radius),
+                )
+                .unwrap();
+                if *filled {
+                    write!(svg, " fill=\"{color}\"").unwrap();
+                    write_opacity(&mut svg, "fill", opacity);
+                } else {
+                    write!(
+                        svg,
+                        " fill=\"none\" stroke=\"{color}\" stroke-width=\"{}\"",
+                        svg_number(*width),
+                    )
+                    .unwrap();
+                    write_opacity(&mut svg, "stroke", opacity);
+                }
+                svg.push_str("/>\n");
+            }
+            DrawCommand::Text {
+                id,
+                text,
+                x,
+                y,
+                size,
+                rgba,
+                centered,
+            } => {
+                let (color, opacity) = svg_color(*rgba);
+                write!(
+                    svg,
+                    "<text data-command-id=\"{id}\" x=\"{}\" y=\"{}\" font-family=\"sans-serif\" font-size=\"{}\" fill=\"{color}\"",
+                    svg_number(*x),
+                    svg_number(*y),
+                    svg_number(*size),
+                )
+                .unwrap();
+                write_opacity(&mut svg, "fill", opacity);
+                if *centered {
+                    svg.push_str(" text-anchor=\"middle\"");
+                }
+                svg.push('>');
+                write_xml_text(&mut svg, text);
+                svg.push_str("</text>\n");
+            }
+            DrawCommand::Path {
+                id,
+                segments,
+                width,
+                fill_rgba,
+                stroke_rgba,
+            } => {
+                write!(svg, "<path data-command-id=\"{id}\" d=\"").unwrap();
+                for segment in segments {
+                    match segment {
+                        PathSegment::Move(point) => {
+                            write!(svg, "M{} {}", svg_number(point.x), svg_number(point.y))
+                                .unwrap();
+                        }
+                        PathSegment::Line(point) => {
+                            write!(svg, "L{} {}", svg_number(point.x), svg_number(point.y))
+                                .unwrap();
+                        }
+                        PathSegment::Quadratic { control, end } => {
+                            write!(
+                                svg,
+                                "Q{} {} {} {}",
+                                svg_number(control.x),
+                                svg_number(control.y),
+                                svg_number(end.x),
+                                svg_number(end.y),
+                            )
+                            .unwrap();
+                        }
+                        PathSegment::Cubic {
+                            control_1,
+                            control_2,
+                            end,
+                        } => {
+                            write!(
+                                svg,
+                                "C{} {} {} {} {} {}",
+                                svg_number(control_1.x),
+                                svg_number(control_1.y),
+                                svg_number(control_2.x),
+                                svg_number(control_2.y),
+                                svg_number(end.x),
+                                svg_number(end.y),
+                            )
+                            .unwrap();
+                        }
+                        PathSegment::Close => svg.push('Z'),
+                    }
+                }
+                svg.push('"');
+                if let Some(rgba) = fill_rgba {
+                    let (color, opacity) = svg_color(*rgba);
+                    write!(svg, " fill=\"{color}\"").unwrap();
+                    write_opacity(&mut svg, "fill", opacity);
+                } else {
+                    svg.push_str(" fill=\"none\"");
+                }
+                if let Some(rgba) = stroke_rgba {
+                    let (color, opacity) = svg_color(*rgba);
+                    write!(
+                        svg,
+                        " stroke=\"{color}\" stroke-width=\"{}\"",
+                        svg_number(*width),
+                    )
+                    .unwrap();
+                    write_opacity(&mut svg, "stroke", opacity);
+                }
+                svg.push_str("/>\n");
+            }
+            DrawCommand::Sprite {
+                id,
+                image_id,
+                source,
+                destination,
+                pivot,
+                tint_rgba,
+                flags,
+            } => {
+                let (color, opacity) = svg_color(*tint_rgba);
+                write!(
+                    svg,
+                    "<rect data-command-id=\"{id}\" data-image-id=\"{image_id}\" data-source=\"{} {} {} {}\" data-pivot=\"{} {}\" data-flags=\"{flags}\" x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"none\" stroke=\"{color}\"",
+                    svg_number(source.x),
+                    svg_number(source.y),
+                    svg_number(source.width),
+                    svg_number(source.height),
+                    svg_number(pivot.x),
+                    svg_number(pivot.y),
+                    svg_number(destination.x),
+                    svg_number(destination.y),
+                    svg_number(destination.width),
+                    svg_number(destination.height),
+                )
+                .unwrap();
+                write_opacity(&mut svg, "stroke", opacity);
+                svg.push_str(" stroke-dasharray=\"4 3\"/>\n");
+            }
+        }
+    }
+    svg.push_str("</svg>\n");
+    svg
+}
+
+fn svg_number(number: f32) -> String {
+    if number == 0.0 {
+        "0".to_owned()
+    } else {
+        number.to_string()
+    }
+}
+
+fn svg_color(rgba: u32) -> (String, u8) {
+    (
+        format!(
+            "#{:02x}{:02x}{:02x}",
+            rgba >> 24,
+            (rgba >> 16) & 0xff,
+            (rgba >> 8) & 0xff,
+        ),
+        (rgba & 0xff) as u8,
+    )
+}
+
+fn write_opacity(svg: &mut String, attribute: &str, alpha: u8) {
+    if alpha != u8::MAX {
+        write!(
+            svg,
+            " {attribute}-opacity=\"{}\"",
+            svg_number(f32::from(alpha) / 255.0),
+        )
+        .unwrap();
+    }
+}
+
+fn write_xml_text(svg: &mut String, text: &str) {
+    for character in text.chars() {
+        match character {
+            '&' => svg.push_str("&amp;"),
+            '<' => svg.push_str("&lt;"),
+            '>' => svg.push_str("&gt;"),
+            '"' => svg.push_str("&quot;"),
+            '\'' => svg.push_str("&apos;"),
+            _ => svg.push(character),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

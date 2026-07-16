@@ -305,12 +305,15 @@ impl Render for FrontplaneView {
                     .flex_1()
                     .w_full()
                     .bg(rgba(frame.background))
-                    .child(canvas(
-                        move |bounds, _, _| (bounds, frame),
-                        move |_, (bounds, frame), window, cx| {
-                            paint_frame(&frame, bounds, window, cx)
-                        },
-                    ))
+                    .child(
+                        canvas(
+                            move |bounds, _, _| (bounds, frame),
+                            move |_, (bounds, frame), window, cx| {
+                                paint_frame(&frame, bounds, window, cx)
+                            },
+                        )
+                        .size_full(),
+                    )
                     .when_some(error, |this, error| {
                         this.child(
                             div()

@@ -10,6 +10,8 @@ The initial feasibility demonstration is an Asteroids-style game:
   deterministic placement;
 - a native Rust host embeds Wasmtime;
 - a GPUI/gpui-component view presents the window, menu, HUD, and canvas;
+- a headless adapter exports the same immutable command buffer as deterministic
+  SVG so visual frames remain inspectable without a live desktop;
 - the host passes input and fixed ticks into the plugin;
 - the plugin calls a small versioned host ABI to emit draw/audio/effect
   commands; and

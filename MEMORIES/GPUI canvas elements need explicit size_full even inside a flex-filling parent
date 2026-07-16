@@ -1,0 +1,8 @@
+On the pinned GPUI revision, a `canvas(...)` child does not inherit usable
+bounds merely because its containing `div` is `flex_1().w_full()`. The failure
+rendered the title/status chrome but omitted the scene; an XWayland capture
+made the malformed result particularly obvious.
+
+Apply `.size_full()` to the canvas element itself. Verify this at two layers:
+export the immutable `FrameOutput` headlessly to prove guest output, then
+capture a real GPUI window to prove adapter layout and compositor behavior.

@@ -554,6 +554,13 @@ Pure renderer tests transform FrameOutput plus viewport/theme into a paint
 model. Key/menu mapping is a pure function. Visual appearance is not frozen
 until Peter sees the running window or captured output.
 
+The repository also ships a headless `gpui-wasm-render` adapter. It loads the
+bundled demo or an external WAT file, deterministically advances a requested
+number of fixed ticks, and serializes the immutable command buffer as SVG.
+This is both a human-viewable report and an agent/CI visual artifact; it does
+not replace a native-window capture, because the latter independently covers
+GPUI layout, focus, compositor, and platform-adapter behavior.
+
 ## 11. Build and dependency strategy
 
 The flake supplies:
@@ -651,7 +658,9 @@ Implemented and covered headlessly:
   and vector output; and
 - a GPUI/gpui-component window adapter with plugin-declared title and standard
   native menu actions, keyboard input, fixed simulation ticks, vector
-  painting, and rodio-generated tones.
+  painting, and rodio-generated tones; and
+- deterministic headless SVG export for arbitrary requested ticks, including
+  external WAT input and stdout/file output suitable for CI visual inspection.
 
 Honest boundaries discovered by the spike:
 

@@ -5,6 +5,7 @@ edition = "2024"
 description = "A generic GPUI frontplane for capability-bounded WAT applications"
 license = "MIT"
 publish = false
+default-run = "gpui-wasm"
 
 [features]
 default = ["gui"]
@@ -35,6 +36,10 @@ smol = { version = "2.0.2", optional = true }
 name = "gpui-wasm"
 path = "src/main.rs"
 required-features = ["gui"]
+
+[[bin]]
+name = "gpui-wasm-render"
+path = "src/bin/gpui-wasm-render.rs"
 
 [profile.release]
 opt-level = 3
