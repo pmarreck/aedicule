@@ -21,6 +21,10 @@ The project is not intended to become a full game engine during the spike. It
 is intended to discover whether a clean GPUI-facing WASM application ABI is
 pleasant, deterministic, containable, and sufficiently expressive.
 
+**POC status:** successful. On 2026-07-16 Peter confirmed that the deployed
+Vibesteroids conversion is a playable game. Further work is refinement and
+productization rather than proof of basic feasibility.
+
 **Main branch:** yolo
 
 **i18n phase:** prepare. English is the only populated locale during the

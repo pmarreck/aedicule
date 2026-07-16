@@ -641,6 +641,11 @@ the strongest practical test that the ABI is genuinely generic.
 
 ## 16. Spike implementation status
 
+**Feasibility verdict: successful.** Peter played the deployed native build on
+2026-07-16 and confirmed that it is an operational game. The remaining items
+below are refinements and production-hardening boundaries, not blockers to the
+core WAT-plugin/GPUI-frontplane concept.
+
 Implemented and covered headlessly:
 
 - no WASI, an explicit import allowlist, per-call fuel, and Wasmtime memory,

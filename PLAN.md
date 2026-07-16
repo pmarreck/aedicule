@@ -54,8 +54,9 @@
   limitations, and commit the green spike. (2026-07-16 01:47 EDT)
   - Curiosity poke: what evidence would falsify the claim that the ABI is
     generic rather than merely Asteroids-shaped?
-- [ ] Have Peter visually inspect and play the running window before freezing
-  any visual-output expectations.
+- [x] Have Peter visually inspect and play the running window before freezing
+  any visual-output expectations. (2026-07-16 08:05 EDT; confirmed playable
+  and essentially complete as a proof of concept)
   - Curiosity poke: are input focus, line weight, status-bar density, and
     letterboxing comfortable on Peter's actual display?
 - [x] Reproduce and fix the zero-sized GPUI canvas reported on framework-nixos.
