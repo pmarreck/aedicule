@@ -198,6 +198,58 @@ the previous application running and displays a recoverable error.
 Because snapshot bytes are intentionally opaque, plugin authors must increment
 `fp_state_schema` whenever an equal-length state layout changes meaning.
 
+### We changed the physics of a running game
+
+On July 16, 2026, we launched the optimized native frontplane with its external
+Vibesteroids WAT file under observation:
+
+```console
+result/bin/gpui-wasm --watch plugins/vibesteroids.wat
+```
+
+While Peter was flying the ship, we removed these two operations from the
+guest's `$update_live_ship` function:
+
+```wat
+i32.const 1048 i32.const 1048 f32.load f32.const 0.99 f32.mul f32.store
+i32.const 1052 i32.const 1052 f32.load f32.const 0.99 f32.mul f32.store
+```
+
+They multiplied horizontal and vertical velocity by `0.99` on every simulation
+tick—the original game's deliberately arcade-like drag. Deleting them first
+changed the rule to inertial coasting: thrust changed velocity, but merely
+releasing thrust did not. Peter saw that change immediately and then asked to
+dial a little deceleration back in. We restored the same operations with a
+`0.995` coefficient, reducing the per-tick velocity loss from 1% to 0.5% in a
+second live edit. The final regression test injects velocities `2.5` and
+`-1.25`, advances exactly one tick without thrust, and requires `2.4875` and
+`-1.24375` respectively.
+
+Both visible results arrived in the already-running GPUI window: first the ship
+stopped slowing down entirely, then it acquired the gentler drag. The window did
+not close, the Rust host was not recompiled, the process was not restarted, and
+the current score, lives, wave, ship, bullets, asteroids, and other game state
+survived both edits.
+
+That worked because the watcher does not blindly replace the live module:
+
+1. It detected the saved WAT file and compiled a candidate WASM module.
+2. It configured and initialized the candidate in a separate Wasmtime instance.
+3. It compared the candidate's `fp_state_schema` and state length with the live
+   module (`schema 2`, 8192 bytes for this edit).
+4. It restored the live snapshot into the compatible candidate.
+5. It required the candidate to render a valid first frame within all host
+   limits.
+6. Only then did it atomically swap the proven candidate into the window.
+
+The old module remains active until every step succeeds. Broken WAT, rejected
+commands, exhausted budgets, failed state restoration, or an invalid first
+frame therefore leave the running game untouched. An intentional schema change
+takes the other safe path and starts a fresh game. This small physics edit is a
+concrete demonstration of the larger idea: application behavior can change in
+human-visible real time while a stable native frontplane preserves compatible
+application state.
+
 ## Headless rendering
 
 `gpui-wasm-render` runs the same frontplane core without opening a window. It

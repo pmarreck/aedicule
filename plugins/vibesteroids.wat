@@ -725,8 +725,8 @@
 				i32.const 1024 i32.load i32.const 3 i32.and i32.eqz
 				(if
 					(then i32.const 4 f32.const 0.18 f32.const 1 i32.const 0 call $audio drop))))
-		i32.const 1048 i32.const 1048 f32.load f32.const 0.99 f32.mul f32.store
-		i32.const 1052 i32.const 1052 f32.load f32.const 0.99 f32.mul f32.store
+		i32.const 1048 i32.const 1048 f32.load f32.const 0.995 f32.mul f32.store
+		i32.const 1052 i32.const 1052 f32.load f32.const 0.995 f32.mul f32.store
 		i32.const 1040
 		i32.const 1040 f32.load i32.const 1048 f32.load f32.add call $wrap_ship_x
 		f32.store

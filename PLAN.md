@@ -124,14 +124,43 @@
   bounded pools, and fuel-safe headless tick slicing)
   - Curiosity poke: what fixed-capacity state layout keeps handwritten WAT
     inspectable without making collisions or rendering look synthetic?
-- [ ] Prove the richer rules through failing tests before implementation,
+- [x] Prove the richer rules through failing tests before implementation,
   deterministic SVG inspection, and a captured real GPUI window.
-  (2026-07-16 17:47 EDT: failing-to-passing behavioral suite, complete test
-  runner, optimized Nix build, and SVG inspection are green; real-window
-  playtest remains)
+  (2026-07-16 18:16 EDT: failing-to-passing behavioral suite, complete test
+  runner, optimized Nix build, SVG inspection, and Peter's real-window
+  playtest are green)
   - Curiosity poke: can an impressive initial frame still conceal weak motion,
     collision, or wave-transition behavior?
-- [ ] Document, commit, push, and watch both GitHub Actions and Garnix after
-  Peter approves the upgraded running demo.
+- [x] Document and ship the source-derived upgrade, including the live
+  state-preserving ship-physics edit Peter observed on the real Thelio.
+  (2026-07-16 18:58 EDT: complete suite and optimized Nix build green;
+  committed for push)
   - Curiosity poke: should the demo fidelity work remain one coherent commit or
-    split spec, mechanics, and presentation into separately green commits?
+  split spec, mechanics, and presentation into separately green commits?
+- [ ] Build an explicit gap matrix from `VIBESTEROIDS_BEHAVIOR_SPEC.md`, then
+  implement every applicable original behavior rather than relying on memory.
+  - Curiosity poke: which browser/mobile accommodations need a native analogue,
+    and which are genuinely inapplicable outside a touch browser?
+- [ ] Migrate every internal gameplay quantity and calculation to signed
+  decimal fixed-point integers, bumping the state schema exactly once; convert
+  to GPUI's `f32`-backed `Pixels` only at the one-way rendering boundary.
+  - Curiosity poke: what decimal scale and pre-square rescaling preserve useful
+    subpixel precision at 8K dimensions without overflowing WebAssembly `i64`?
+- [ ] Make the game field fill the complete drawable window and make viewport
+  changes regenerate stars while translating every world object by
+  `new_center - old_center` without stretching velocity or trajectories.
+  - Curiosity poke: how should offscreen wrap buffers and respawn-safe regions
+    behave across a drastic resize?
+- [ ] Add a discoverable plugin-owned Help/Controls experience through a
+  genuinely generic native action or overlay mechanism.
+  - Curiosity poke: can dynamic plugin actions remain native and accessible
+    without creating one compile-time Rust action type per application action?
+- [ ] Replace application-specific semantic tones with a bounded generic synth
+  description capable of reproducing Vibesteroids' oscillator ramps, gain
+  envelopes, filtered noise explosions, siren, thrust, and extra-life chimes.
+  - Curiosity poke: what is the smallest non-game-specific audio graph that is
+    deterministic, resource-bounded, schedulable, and independently testable?
+- [ ] Implement and test the semi-secret Death Blossom, including availability,
+  activation, timed radial fire, rotations, siren, and per-life reset behavior.
+  - Curiosity poke: what discoverable native input preserves the feature's
+    semi-secret character when device-shake input is absent?

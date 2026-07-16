@@ -7,6 +7,8 @@ const LIVES: usize = 44;
 const LEVEL: usize = 48;
 const INVULNERABILITY: usize = 60;
 const LIFECYCLE: usize = 68;
+const SHIP_VX: usize = 24;
+const SHIP_VY: usize = 28;
 
 const BULLET_BASE: usize = 256;
 const BULLET_STRIDE: usize = 24;
@@ -178,6 +180,21 @@ fn wat_owns_input_simulation_and_deterministic_state() {
 
     assert_eq!(first.snapshot().unwrap(), second.snapshot().unwrap());
     assert_eq!(first.render().unwrap(), second.render().unwrap());
+}
+
+#[test]
+fn ship_uses_the_gentler_drag_coefficient() {
+    let mut frontplane = demo();
+    let mut state = frontplane.snapshot().unwrap();
+    write_f32(&mut state.bytes, SHIP_VX, 2.5);
+    write_f32(&mut state.bytes, SHIP_VY, -1.25);
+    frontplane.restore(&state).unwrap();
+
+    frontplane.tick(1).unwrap();
+    let after = frontplane.snapshot().unwrap();
+
+    assert_eq!(read_f32(&after.bytes, SHIP_VX), 2.4875);
+    assert_eq!(read_f32(&after.bytes, SHIP_VY), -1.24375);
 }
 
 #[test]
@@ -377,12 +394,10 @@ fn ship_collision_creates_debris_then_respawns_or_reaches_game_over() {
         4
     );
     let explosion_frame = frontplane.render().unwrap();
-    assert!(
-        !explosion_frame
-            .commands
-            .iter()
-            .any(|command| matches!(command, DrawCommand::Path { id: 1, .. }))
-    );
+    assert!(!explosion_frame
+        .commands
+        .iter()
+        .any(|command| matches!(command, DrawCommand::Path { id: 1, .. })));
     assert_eq!(
         explosion_frame
             .commands
