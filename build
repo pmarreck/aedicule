@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+set -u
+
+case "${1:-}" in
+	"")
+		exec nix build
+		;;
+	--test)
+		exec ./test
+		;;
+	--debug)
+		exec nix develop -c cargo build
+		;;
+	*)
+		printf 'usage: %s [--test|--debug]\n' "$0" >&2
+		exit 2
+		;;
+esac

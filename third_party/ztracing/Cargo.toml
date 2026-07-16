@@ -1,0 +1,10 @@
+[package]
+name = "ztracing"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+description = "No-op compatibility facade for GPUI's default instrumentation mode"
+
+[dependencies]
+ztracing_macro = { path = "../ztracing_macro" }

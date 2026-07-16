@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+set -u
+
+failures=0
+
+run_check() {
+	"$@"
+	status=$?
+	if (( status != 0 )); then
+		failures=$((failures + 1))
+	fi
+}
+
+run_check nix develop -c cargo test --no-default-features
+run_check nix develop -c cargo test --bin gpui-wasm
+run_check nix develop -c cargo check
+
+if (( failures > 255 )); then
+	exit 255
+fi
+exit "$failures"

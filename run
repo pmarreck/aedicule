@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+
+set -u
+
+exec nix develop -c cargo run --release -- "$@"
