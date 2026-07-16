@@ -10,6 +10,7 @@ const DEMO_WAT: &str = include_str!("../../plugins/vibesteroids.wat");
 const DEFAULT_WIDTH: f32 = 1024.0;
 const DEFAULT_HEIGHT: f32 = 768.0;
 const DEFAULT_SEED: u64 = 0x5eed_cafe;
+const MAX_TICKS_PER_FUEL_SLICE: u64 = 60;
 
 const HELP: &str = "\
 Render a deterministic WAT application frame without opening a window.
@@ -178,7 +179,9 @@ fn run(options: RenderOptions) -> Result<(), String> {
 
     let mut remaining = options.ticks;
     while remaining > 0 {
-        let ticks = remaining.min(max_ticks_per_call) as u32;
+        let ticks = remaining
+            .min(max_ticks_per_call)
+            .min(MAX_TICKS_PER_FUEL_SLICE) as u32;
         frontplane.tick(ticks).map_err(|error| error.to_string())?;
         remaining -= u64::from(ticks);
     }

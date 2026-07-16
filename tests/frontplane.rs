@@ -2,6 +2,41 @@ use gpui_wasm::{AudioEvent, DrawCommand, Event, Frontplane, HostEffect, Key, Lim
 
 const ASTEROIDS_WAT: &str = include_str!("../plugins/vibesteroids.wat");
 
+const SCORE: usize = 40;
+const LIVES: usize = 44;
+const LEVEL: usize = 48;
+const INVULNERABILITY: usize = 60;
+const LIFECYCLE: usize = 68;
+
+const BULLET_BASE: usize = 256;
+const BULLET_STRIDE: usize = 24;
+const BULLET_CAPACITY: usize = 64;
+const BULLET_ACTIVE: usize = 0;
+const BULLET_X: usize = 4;
+const BULLET_Y: usize = 8;
+const BULLET_VX: usize = 12;
+const BULLET_VY: usize = 16;
+const BULLET_LIFE: usize = 20;
+
+const ASTEROID_BASE: usize = 1792;
+const ASTEROID_STRIDE: usize = 48;
+const ASTEROID_CAPACITY: usize = 32;
+const ASTEROID_ACTIVE: usize = 0;
+const ASTEROID_SHAPE: usize = 8;
+const ASTEROID_X: usize = 12;
+const ASTEROID_Y: usize = 16;
+const ASTEROID_VX: usize = 20;
+const ASTEROID_VY: usize = 24;
+const ASTEROID_RADIUS: usize = 28;
+
+const PARTICLE_BASE: usize = 3328;
+const PARTICLE_STRIDE: usize = 24;
+const PARTICLE_CAPACITY: usize = 150;
+
+const DEBRIS_BASE: usize = 6928;
+const DEBRIS_STRIDE: usize = 48;
+const DEBRIS_CAPACITY: usize = 4;
+
 fn demo() -> Frontplane {
     demo_with_seed(0x5eed)
 }
@@ -16,6 +51,46 @@ fn demo_with_seed(seed: u64) -> Frontplane {
         .expect("the bundled WAT plugin should load")
 }
 
+fn read_i32(bytes: &[u8], offset: usize) -> i32 {
+    i32::from_le_bytes(bytes[offset..offset + 4].try_into().unwrap())
+}
+
+fn read_f32(bytes: &[u8], offset: usize) -> f32 {
+    f32::from_le_bytes(bytes[offset..offset + 4].try_into().unwrap())
+}
+
+fn write_i32(bytes: &mut [u8], offset: usize, value: i32) {
+    bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+}
+
+fn write_f32(bytes: &mut [u8], offset: usize, value: f32) {
+    bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+}
+
+fn active_count(bytes: &[u8], base: usize, stride: usize, capacity: usize) -> usize {
+    (0..capacity)
+        .filter(|index| read_i32(bytes, base + index * stride) != 0)
+        .count()
+}
+
+fn asteroid_body_count(commands: &[DrawCommand]) -> usize {
+    commands
+        .iter()
+        .filter(|command| {
+            matches!(
+                command,
+                DrawCommand::Path { id, .. } if (200..232).contains(id)
+            )
+        })
+        .count()
+}
+
+fn text_exists(commands: &[DrawCommand], expected: &str) -> bool {
+    commands
+        .iter()
+        .any(|command| matches!(command, DrawCommand::Text { text, .. } if text == expected))
+}
+
 #[test]
 fn seed_changes_the_deterministic_asteroid_field() {
     let mut first = demo_with_seed(1);
@@ -25,7 +100,7 @@ fn seed_changes_the_deterministic_asteroid_field() {
 }
 
 #[test]
-fn plugin_declares_localizable_metadata_and_standard_menus() {
+fn plugin_declares_metadata_and_standard_menus() {
     let frontplane = demo();
     let metadata = frontplane.metadata();
 
@@ -41,22 +116,50 @@ fn plugin_declares_localizable_metadata_and_standard_menus() {
 }
 
 #[test]
-fn render_returns_a_complete_bounded_vector_frame() {
+fn initial_state_has_a_real_hud_and_five_jagged_asteroids() {
     let mut frontplane = demo();
+    let snapshot = frontplane.snapshot().unwrap();
     let frame = frontplane.render().expect("render should complete");
 
+    assert_eq!(snapshot.schema, 2);
+    assert_eq!(snapshot.bytes.len(), 8192);
+    assert_eq!(read_i32(&snapshot.bytes, SCORE), 0);
+    assert_eq!(read_i32(&snapshot.bytes, LIVES), 3);
+    assert_eq!(read_i32(&snapshot.bytes, LEVEL), 1);
+    assert_eq!(
+        active_count(
+            &snapshot.bytes,
+            ASTEROID_BASE,
+            ASTEROID_STRIDE,
+            ASTEROID_CAPACITY,
+        ),
+        5
+    );
+
     assert_eq!(frame.background, 0x080b12ff);
-    assert!(frame.commands.iter().any(|command| matches!(
-        command,
-        DrawCommand::Text { text, .. } if text == "VIBESTEROIDS"
-    )));
+    for text in ["VIBESTEROIDS", "SCORE", "000000", "LEVEL", "01", "LIVES"] {
+        assert!(
+            text_exists(&frame.commands, text),
+            "missing HUD text {text}"
+        );
+    }
+    assert_eq!(asteroid_body_count(&frame.commands), 5);
+    assert!(
+        !frame.commands.iter().any(
+            |command| matches!(command, DrawCommand::Circle { id, .. } if (200..232).contains(id))
+        ),
+        "asteroids must be jagged vector paths, not round placeholders"
+    );
     assert_eq!(
         frame
             .commands
             .iter()
-            .filter(|command| matches!(command, DrawCommand::Circle { .. }))
+            .filter(
+                |command| matches!(command, DrawCommand::Path { id, .. } if (50..52).contains(id))
+            )
             .count(),
-        3
+        2,
+        "three lives should render as two reserve-ship icons"
     );
 }
 
@@ -101,41 +204,225 @@ fn firing_emits_semantic_audio_and_a_bullet_draw_command() {
 }
 
 #[test]
+fn holding_fire_creates_multiple_simultaneous_bullets() {
+    let mut frontplane = demo();
+    frontplane.event(Event::KeyDown(Key::Fire)).unwrap();
+    frontplane.tick(45).unwrap();
+    let snapshot = frontplane.snapshot().unwrap();
+
+    assert!(active_count(&snapshot.bytes, BULLET_BASE, BULLET_STRIDE, BULLET_CAPACITY,) >= 3);
+}
+
+#[test]
 fn a_new_bullet_consumes_exactly_one_lifetime_tick() {
     let mut frontplane = demo();
     frontplane.event(Event::KeyDown(Key::Fire)).unwrap();
     frontplane.tick(1).unwrap();
     let snapshot = frontplane.snapshot().unwrap();
-    let lifetime = i32::from_le_bytes(snapshot.bytes[80..84].try_into().unwrap());
 
-    assert_eq!(lifetime, 89);
+    assert_eq!(read_i32(&snapshot.bytes, BULLET_BASE + BULLET_LIFE), 89);
 }
 
 #[test]
-fn collision_resolution_changes_score_and_emits_explosion_audio() {
+fn a_large_asteroid_hit_splits_into_two_children_and_awards_80() {
     let mut frontplane = demo();
     let mut state = frontplane.snapshot().unwrap();
-    let asteroid_x = state.bytes[96..100].to_vec();
-    let asteroid_y = state.bytes[100..104].to_vec();
-    state.bytes[60..64].copy_from_slice(&1_i32.to_le_bytes());
-    state.bytes[64..68].copy_from_slice(&asteroid_x);
-    state.bytes[68..72].copy_from_slice(&asteroid_y);
-    state.bytes[72..76].copy_from_slice(&0_f32.to_le_bytes());
-    state.bytes[76..80].copy_from_slice(&0_f32.to_le_bytes());
-    state.bytes[80..84].copy_from_slice(&90_i32.to_le_bytes());
+    let asteroid_x = read_f32(&state.bytes, ASTEROID_BASE + ASTEROID_X);
+    let asteroid_y = read_f32(&state.bytes, ASTEROID_BASE + ASTEROID_Y);
+
+    write_f32(&mut state.bytes, ASTEROID_BASE + ASTEROID_VX, 0.0);
+    write_f32(&mut state.bytes, ASTEROID_BASE + ASTEROID_VY, 0.0);
+    write_f32(&mut state.bytes, ASTEROID_BASE + ASTEROID_RADIUS, 40.0);
+    write_i32(&mut state.bytes, BULLET_BASE + BULLET_ACTIVE, 1);
+    write_f32(&mut state.bytes, BULLET_BASE + BULLET_X, asteroid_x);
+    write_f32(&mut state.bytes, BULLET_BASE + BULLET_Y, asteroid_y);
+    write_f32(&mut state.bytes, BULLET_BASE + BULLET_VX, 0.0);
+    write_f32(&mut state.bytes, BULLET_BASE + BULLET_VY, 0.0);
+    write_i32(&mut state.bytes, BULLET_BASE + BULLET_LIFE, 90);
     frontplane.restore(&state).unwrap();
 
     frontplane.tick(1).unwrap();
     let after = frontplane.snapshot().unwrap();
-    let score = i32::from_le_bytes(after.bytes[40..44].try_into().unwrap());
-    let asteroid_active = i32::from_le_bytes(after.bytes[116..120].try_into().unwrap());
+    let child_radii = (0..ASTEROID_CAPACITY)
+        .filter_map(|index| {
+            let address = ASTEROID_BASE + index * ASTEROID_STRIDE;
+            (read_i32(&after.bytes, address + ASTEROID_ACTIVE) != 0)
+                .then(|| read_f32(&after.bytes, address + ASTEROID_RADIUS))
+        })
+        .filter(|radius| (*radius - 24.0).abs() < 0.001)
+        .count();
 
-    assert_eq!((score, asteroid_active), (80, 0));
+    assert_eq!(read_i32(&after.bytes, SCORE), 80);
+    assert_eq!(
+        active_count(
+            &after.bytes,
+            ASTEROID_BASE,
+            ASTEROID_STRIDE,
+            ASTEROID_CAPACITY,
+        ),
+        6
+    );
+    assert_eq!(child_radii, 2);
+    assert_eq!(
+        active_count(
+            &after.bytes,
+            PARTICLE_BASE,
+            PARTICLE_STRIDE,
+            PARTICLE_CAPACITY,
+        ),
+        20
+    );
     assert!(frontplane.drain_audio().iter().any(|event| event.id == 2));
+    let frame = frontplane.render().unwrap();
+    assert_eq!(asteroid_body_count(&frame.commands), 6);
+    assert_eq!(
+        frame
+            .commands
+            .iter()
+            .filter(
+                |command| matches!(command, DrawCommand::Circle { id, .. } if (500..650).contains(id))
+            )
+            .count(),
+        20
+    );
 }
 
 #[test]
-fn pause_freezes_gameplay_positions() {
+fn a_terminal_asteroid_hit_destroys_it_and_awards_120() {
+    let mut frontplane = demo();
+    let mut state = frontplane.snapshot().unwrap();
+    let asteroid_x = read_f32(&state.bytes, ASTEROID_BASE + ASTEROID_X);
+    let asteroid_y = read_f32(&state.bytes, ASTEROID_BASE + ASTEROID_Y);
+
+    write_f32(&mut state.bytes, ASTEROID_BASE + ASTEROID_VX, 0.0);
+    write_f32(&mut state.bytes, ASTEROID_BASE + ASTEROID_VY, 0.0);
+    write_f32(&mut state.bytes, ASTEROID_BASE + ASTEROID_RADIUS, 20.0);
+    write_i32(&mut state.bytes, BULLET_BASE + BULLET_ACTIVE, 1);
+    write_f32(&mut state.bytes, BULLET_BASE + BULLET_X, asteroid_x);
+    write_f32(&mut state.bytes, BULLET_BASE + BULLET_Y, asteroid_y);
+    write_f32(&mut state.bytes, BULLET_BASE + BULLET_VX, 0.0);
+    write_f32(&mut state.bytes, BULLET_BASE + BULLET_VY, 0.0);
+    write_i32(&mut state.bytes, BULLET_BASE + BULLET_LIFE, 90);
+    frontplane.restore(&state).unwrap();
+
+    frontplane.tick(1).unwrap();
+    let after = frontplane.snapshot().unwrap();
+
+    assert_eq!(read_i32(&after.bytes, SCORE), 120);
+    assert_eq!(
+        active_count(
+            &after.bytes,
+            ASTEROID_BASE,
+            ASTEROID_STRIDE,
+            ASTEROID_CAPACITY,
+        ),
+        4
+    );
+}
+
+#[test]
+fn clearing_a_wave_advances_level_and_spawns_one_more_parent() {
+    let mut frontplane = demo();
+    let mut state = frontplane.snapshot().unwrap();
+    for index in 0..ASTEROID_CAPACITY {
+        write_i32(
+            &mut state.bytes,
+            ASTEROID_BASE + index * ASTEROID_STRIDE + ASTEROID_ACTIVE,
+            0,
+        );
+    }
+    frontplane.restore(&state).unwrap();
+
+    frontplane.tick(1).unwrap();
+    let after = frontplane.snapshot().unwrap();
+
+    assert_eq!(read_i32(&after.bytes, LEVEL), 2);
+    assert_eq!(
+        active_count(
+            &after.bytes,
+            ASTEROID_BASE,
+            ASTEROID_STRIDE,
+            ASTEROID_CAPACITY,
+        ),
+        6
+    );
+}
+
+#[test]
+fn ship_collision_creates_debris_then_respawns_or_reaches_game_over() {
+    let mut frontplane = demo();
+    let mut state = frontplane.snapshot().unwrap();
+    let ship_x = read_f32(&state.bytes, 16);
+    let ship_y = read_f32(&state.bytes, 20);
+
+    write_i32(&mut state.bytes, INVULNERABILITY, 0);
+    write_f32(&mut state.bytes, ASTEROID_BASE + ASTEROID_X, ship_x);
+    write_f32(&mut state.bytes, ASTEROID_BASE + ASTEROID_Y, ship_y);
+    write_f32(&mut state.bytes, ASTEROID_BASE + ASTEROID_VX, 0.0);
+    write_f32(&mut state.bytes, ASTEROID_BASE + ASTEROID_VY, 0.0);
+    write_f32(&mut state.bytes, ASTEROID_BASE + ASTEROID_RADIUS, 20.0);
+    frontplane.restore(&state).unwrap();
+
+    frontplane.tick(1).unwrap();
+    let exploding = frontplane.snapshot().unwrap();
+    assert_eq!(read_i32(&exploding.bytes, LIVES), 2);
+    assert_eq!(read_i32(&exploding.bytes, LIFECYCLE), 1);
+    assert_eq!(
+        active_count(
+            &exploding.bytes,
+            DEBRIS_BASE,
+            DEBRIS_STRIDE,
+            DEBRIS_CAPACITY,
+        ),
+        4
+    );
+    let explosion_frame = frontplane.render().unwrap();
+    assert!(
+        !explosion_frame
+            .commands
+            .iter()
+            .any(|command| matches!(command, DrawCommand::Path { id: 1, .. }))
+    );
+    assert_eq!(
+        explosion_frame
+            .commands
+            .iter()
+            .filter(
+                |command| matches!(command, DrawCommand::Path { id, .. } if (700..704).contains(id))
+            )
+            .count(),
+        4
+    );
+
+    frontplane.tick(120).unwrap();
+    let respawned = frontplane.snapshot().unwrap();
+    assert_eq!(read_i32(&respawned.bytes, LIFECYCLE), 0);
+    assert_eq!(read_i32(&respawned.bytes, LIVES), 2);
+
+    let mut final_life = demo();
+    let mut state = final_life.snapshot().unwrap();
+    let ship_x = read_f32(&state.bytes, 16);
+    let ship_y = read_f32(&state.bytes, 20);
+    write_i32(&mut state.bytes, LIVES, 1);
+    write_i32(&mut state.bytes, INVULNERABILITY, 0);
+    write_f32(&mut state.bytes, ASTEROID_BASE + ASTEROID_X, ship_x);
+    write_f32(&mut state.bytes, ASTEROID_BASE + ASTEROID_Y, ship_y);
+    write_f32(&mut state.bytes, ASTEROID_BASE + ASTEROID_VX, 0.0);
+    write_f32(&mut state.bytes, ASTEROID_BASE + ASTEROID_VY, 0.0);
+    write_f32(&mut state.bytes, ASTEROID_BASE + ASTEROID_RADIUS, 20.0);
+    final_life.restore(&state).unwrap();
+
+    final_life.tick(121).unwrap();
+    let game_over = final_life.snapshot().unwrap();
+    assert_eq!(read_i32(&game_over.bytes, LIFECYCLE), 3);
+    assert!(text_exists(
+        &final_life.render().unwrap().commands,
+        "GAME OVER"
+    ));
+}
+
+#[test]
+fn pause_freezes_everything_except_the_clock() {
     let mut frontplane = demo();
     frontplane.event(Event::KeyDown(Key::Thrust)).unwrap();
     frontplane.tick(10).unwrap();
@@ -143,10 +430,23 @@ fn pause_freezes_gameplay_positions() {
     let before = frontplane.snapshot().unwrap();
 
     frontplane.tick(30).unwrap();
-    let after = frontplane.snapshot().unwrap();
+    let mut after = frontplane.snapshot().unwrap();
+    after.bytes[0..4].copy_from_slice(&before.bytes[0..4]);
 
-    assert_eq!(&after.bytes[16..40], &before.bytes[16..40]);
-    assert_eq!(&after.bytes[64..168], &before.bytes[64..168]);
+    assert_eq!(after, before);
+}
+
+#[test]
+fn rendering_is_pure_and_does_not_advance_gameplay_rng() {
+    let mut frontplane = demo();
+    frontplane.event(Event::KeyDown(Key::Thrust)).unwrap();
+    frontplane.tick(1).unwrap();
+    let before = frontplane.snapshot().unwrap();
+    let first = frontplane.render().unwrap();
+    let second = frontplane.render().unwrap();
+
+    assert_eq!(first, second);
+    assert_eq!(frontplane.snapshot().unwrap(), before);
 }
 
 #[test]
@@ -178,6 +478,53 @@ fn mismatched_snapshots_are_rejected_without_mutating_state() {
         assert!(frontplane.restore(invalid).is_err());
         assert_eq!(frontplane.snapshot().unwrap(), current);
     }
+}
+
+#[test]
+fn a_full_bullet_pool_fails_closed_without_corrupting_asteroids() {
+    let mut frontplane = demo();
+    let mut state = frontplane.snapshot().unwrap();
+    for index in 0..BULLET_CAPACITY {
+        write_i32(
+            &mut state.bytes,
+            BULLET_BASE + index * BULLET_STRIDE + BULLET_ACTIVE,
+            1,
+        );
+        write_i32(
+            &mut state.bytes,
+            BULLET_BASE + index * BULLET_STRIDE + BULLET_LIFE,
+            90,
+        );
+    }
+    let asteroid_invariants = (0..ASTEROID_CAPACITY)
+        .map(|index| {
+            let address = ASTEROID_BASE + index * ASTEROID_STRIDE;
+            (
+                read_i32(&state.bytes, address + ASTEROID_ACTIVE),
+                read_i32(&state.bytes, address + ASTEROID_SHAPE),
+                read_f32(&state.bytes, address + ASTEROID_RADIUS),
+            )
+        })
+        .collect::<Vec<_>>();
+    frontplane.restore(&state).unwrap();
+
+    frontplane.event(Event::KeyDown(Key::Fire)).unwrap();
+    frontplane.tick(1).unwrap();
+    let after = frontplane.snapshot().unwrap();
+
+    assert_eq!(
+        (0..ASTEROID_CAPACITY)
+            .map(|index| {
+                let address = ASTEROID_BASE + index * ASTEROID_STRIDE;
+                (
+                    read_i32(&after.bytes, address + ASTEROID_ACTIVE),
+                    read_i32(&after.bytes, address + ASTEROID_SHAPE),
+                    read_f32(&after.bytes, address + ASTEROID_RADIUS),
+                )
+            })
+            .collect::<Vec<_>>(),
+        asteroid_invariants
+    );
 }
 
 #[test]

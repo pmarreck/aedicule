@@ -104,7 +104,12 @@ WAT is production-safe.
 
 Working now:
 
-- playable Vibesteroids behavioral conversion;
+- playable Vibesteroids behavioral conversion with a score/level/lives HUD,
+  five-rock opening wave, jagged rotating asteroids, multi-shot firing,
+  two-child splitting, 80/120 scoring, escalating waves, particles, ship
+  debris, respawn, and game over;
+- deterministic fixed-capacity WAT pools for 32 asteroids, 64 bullets, 150
+  particles, and four debris pieces;
 - native GPUI/gpui-component window;
 - keyboard controls and native menus;
 - generated semantic audio;
@@ -128,7 +133,9 @@ Not yet production-ready:
   to the tested x86_64 Linux implementation.
 
 See [SPEC.md](SPEC.md) for the ABI, threat model, design decisions, and honest
-spike boundaries.
+spike boundaries. [VIBESTEROIDS_BEHAVIOR_SPEC.md](VIBESTEROIDS_BEHAVIOR_SPEC.md)
+documents the original browser game's source-derived algorithms, constants,
+quirks, and the staged WAT conversion policy.
 
 ## Try it
 
@@ -215,6 +222,7 @@ tools an exact inspectable artifact without requiring desktop access.
 | `src/bin/gpui-wasm-render.rs` | Deterministic headless SVG adapter |
 | `tests/` | ABI, containment, rendering, CLI, launch, and hot-reload coverage |
 | `SPEC.md` | Protocol specification and feasibility findings |
+| `VIBESTEROIDS_BEHAVIOR_SPEC.md` | Source-derived original-game behavior and staged WAT port plan |
 | `PROJECT_OVERVIEW.md` | Project goals and terminology |
 
 ## Why WAT?

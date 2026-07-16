@@ -117,13 +117,18 @@
   implementation map for the WAT demo. (2026-07-16 17:00 EDT)
   - Curiosity poke: which behaviors are intentional gameplay and which are
     browser/mobile accommodation or historical accident?
-- [ ] Replace the three-circle demonstration with a richer deterministic wave:
+- [x] Replace the three-circle demonstration with a richer deterministic wave:
   clear score/level/lives HUD, irregular rotating rocks, multiple bullets,
   asteroid splitting, particles, and visible progression.
+  (2026-07-16 17:47 EDT; also includes starfield, debris, respawn, game over,
+  bounded pools, and fuel-safe headless tick slicing)
   - Curiosity poke: what fixed-capacity state layout keeps handwritten WAT
     inspectable without making collisions or rendering look synthetic?
 - [ ] Prove the richer rules through failing tests before implementation,
   deterministic SVG inspection, and a captured real GPUI window.
+  (2026-07-16 17:47 EDT: failing-to-passing behavioral suite, complete test
+  runner, optimized Nix build, and SVG inspection are green; real-window
+  playtest remains)
   - Curiosity poke: can an impressive initial frame still conceal weak motion,
     collision, or wave-transition behavior?
 - [ ] Document, commit, push, and watch both GitHub Actions and Garnix after
