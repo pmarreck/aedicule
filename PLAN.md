@@ -96,3 +96,19 @@
   (2026-07-16 09:35 EDT)
   - Curiosity poke: should compilation move off the UI thread if larger WAT
     applications make synchronous reload latency perceptible?
+- [x] Polish the public README and package metadata while labeling the ABI and
+  platform support honestly as proof-of-concept quality.
+  (2026-07-16 13:19 EDT)
+  - Curiosity poke: which successful experiments could readers mistake for a
+    production security or cross-platform support claim?
+- [x] Add a minimal GitHub Actions gate using the canonical Nix package build,
+  which already executes the release-profile Rust suite.
+  (2026-07-16 13:19 EDT)
+  - Curiosity poke: will the clean GPUI dependency graph fit comfortably inside
+    GitHub-hosted runner storage and time limits?
+- [x] Scan the complete Git history for secrets, create the public
+  `pmarreck/gpui-wasm` repository, push `yolo`, and independently verify the
+  remote commit and default branch.
+  (2026-07-16 13:25 EDT)
+  - Curiosity poke: which local-only files or metadata could become public
+    despite not appearing in the ordinary source tree?

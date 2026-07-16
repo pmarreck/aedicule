@@ -3,14 +3,15 @@ ver=1.2
 depth=3
 
 annotate=[
-	Cargo.toml = Rust package, GUI feature, pinned GPUI dependencies, and local tracing compatibility patches
+	.github/workflows/ci.yml = Public GitHub Actions gate that runs the canonical reproducible Nix build and release-profile tests
+	Cargo.toml = Rust package metadata, GUI feature, pinned GPUI dependencies, and local tracing compatibility patches
 	MEMORIES = Project-specific durable lessons discovered during the spike
 	MEMORIES/GPUI canvas elements need explicit size_full even inside a flex-filling parent = Project lesson from the missing-scene GPUI adapter defect and two-layer visual verification.
 	MEMORIES/GPUI's simple image painter does not expose sprite-atlas source cropping = Adapter limitation and production-ready sprite rendering options
 	MEMORIES/Live WAT reloads need transactional candidate swap and explicit state schema = Project lesson from content-watched transactional hot reload and real-window verification
 	PLAN.md = Checked execution plan with curiosity pokes and completion timestamps
 	PROJECT_OVERVIEW.md = Project purpose, terminology, and success definition
-	README.md = Quick start, controls, architectural summary, and known sprite-adapter boundary
+	README.md = Public proof-of-concept overview, architecture, status, usage, live reload, limitations, and license
 	RULES.md = Non-negotiable architecture, containment, determinism, and workflow constraints
 	SPEC.md = Versioned generic WAT/frontplane ABI, trust boundary, demo scope, and spike findings
 	build = Top-level optimized Nix build and debug/test dispatcher

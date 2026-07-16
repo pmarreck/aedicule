@@ -2,8 +2,14 @@
 name = "gpui-wasm"
 version = "0.1.0"
 edition = "2024"
+authors = ["Peter Marreck"]
 description = "A generic GPUI frontplane for capability-bounded WAT applications"
 license = "MIT"
+repository = "https://github.com/pmarreck/gpui-wasm"
+homepage = "https://github.com/pmarreck/gpui-wasm"
+readme = "README.md"
+keywords = ["gpui", "wasm", "wat", "wasmtime", "hot-reload"]
+categories = ["gui", "game-development", "development-tools"]
 publish = false
 default-run = "gpui-wasm"
 

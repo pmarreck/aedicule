@@ -61,6 +61,7 @@
 							cmake
 							clang
 							cargo-nextest
+							actionlint
 						]
 							++ pkgs.lib.optionals pkgs.stdenv.isLinux (linuxLibraries pkgs);
 						LD_LIBRARY_PATH = pkgs.lib.optionalString pkgs.stdenv.isLinux
