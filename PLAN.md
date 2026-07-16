@@ -112,3 +112,21 @@
   (2026-07-16 13:25 EDT)
   - Curiosity poke: which local-only files or metadata could become public
     despite not appearing in the ordinary source tree?
+- [x] Derive a source-specific Vibesteroids behavior and algorithm
+  specification, including exact symbols, constants, quirks, and a staged
+  implementation map for the WAT demo. (2026-07-16 17:00 EDT)
+  - Curiosity poke: which behaviors are intentional gameplay and which are
+    browser/mobile accommodation or historical accident?
+- [ ] Replace the three-circle demonstration with a richer deterministic wave:
+  clear score/level/lives HUD, irregular rotating rocks, multiple bullets,
+  asteroid splitting, particles, and visible progression.
+  - Curiosity poke: what fixed-capacity state layout keeps handwritten WAT
+    inspectable without making collisions or rendering look synthetic?
+- [ ] Prove the richer rules through failing tests before implementation,
+  deterministic SVG inspection, and a captured real GPUI window.
+  - Curiosity poke: can an impressive initial frame still conceal weak motion,
+    collision, or wave-transition behavior?
+- [ ] Document, commit, push, and watch both GitHub Actions and Garnix after
+  Peter approves the upgraded running demo.
+  - Curiosity poke: should the demo fidelity work remain one coherent commit or
+    split spec, mechanics, and presentation into separately green commits?

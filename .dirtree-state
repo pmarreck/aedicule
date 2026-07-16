@@ -14,6 +14,7 @@ annotate=[
 	README.md = Public proof-of-concept overview, architecture, status, usage, live reload, limitations, and license
 	RULES.md = Non-negotiable architecture, containment, determinism, and workflow constraints
 	SPEC.md = Versioned generic WAT/frontplane ABI, trust boundary, demo scope, and spike findings
+	VIBESTEROIDS_BEHAVIOR_SPEC.md = Source-derived specification of original Vibesteroids algorithms, constants, behaviors, quirks, and staged WAT port increments
 	build = Top-level optimized Nix build and debug/test dispatcher
 	docs/I18N.md = Prepare-phase localization boundary and canonical future locale policy
 	flake.nix = Reproducible Rust build, checks, development tools, and Linux GPUI libraries
