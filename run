@@ -2,4 +2,5 @@
 
 set -u
 
+export GPUI_WASM_DEFAULT_PLUGIN="$PWD/plugins/vibesteroids.wat"
 exec nix develop -c cargo run --release -- "$@"

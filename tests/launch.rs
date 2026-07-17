@@ -1,6 +1,20 @@
-use std::{ffi::OsString, fs, path::PathBuf};
+use std::{
+    ffi::OsString,
+    fs,
+    path::{Path, PathBuf},
+};
 
-use gpui_wasm::{FileRevision, LaunchAction, PluginSource, RevisionTracker, resolve_launch};
+use gpui_wasm::{
+    FALLBACK_WAT, FileRevision, Frontplane, LaunchAction, Limits, PluginSource, RevisionTracker,
+    resolve_launch as resolve_launch_with_default,
+};
+
+fn resolve_launch(
+    arguments: impl IntoIterator<Item = OsString>,
+    working_directory: &Path,
+) -> Result<LaunchAction, String> {
+    resolve_launch_with_default(arguments, working_directory, None)
+}
 
 fn arguments<'a>(values: &'a [&'a str]) -> impl Iterator<Item = OsString> + 'a {
     values.iter().map(OsString::from)
@@ -17,8 +31,9 @@ fn temporary_directory(label: &str) -> PathBuf {
 }
 
 #[test]
-fn default_source_prefers_colocated_code_wat_then_embedded_fallback() {
+fn default_source_prefers_colocated_then_packaged_then_embedded_fallback() {
     let directory = temporary_directory("default");
+    let packaged = directory.join("installed/vibesteroids.wat");
 
     assert_eq!(
         resolve_launch(arguments(&[]), &directory).unwrap(),
@@ -29,9 +44,18 @@ fn default_source_prefers_colocated_code_wat_then_embedded_fallback() {
         }
     );
 
+    assert_eq!(
+        resolve_launch_with_default(arguments(&[]), &directory, Some(&packaged)).unwrap(),
+        LaunchAction::Run {
+            source: PluginSource::File(packaged.clone()),
+            watch: false,
+            seed: None,
+        }
+    );
+
     fs::write(directory.join("code.wat"), "(module)").unwrap();
     assert_eq!(
-        resolve_launch(arguments(&[]), &directory).unwrap(),
+        resolve_launch_with_default(arguments(&[]), &directory, Some(&packaged)).unwrap(),
         LaunchAction::Run {
             source: PluginSource::File(directory.join("code.wat")),
             watch: false,
@@ -39,6 +63,19 @@ fn default_source_prefers_colocated_code_wat_then_embedded_fallback() {
         }
     );
     fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn embedded_fallback_is_a_stable_generic_conformance_application() {
+    let mut frontplane = Frontplane::from_wat(FALLBACK_WAT, Limits::default()).unwrap();
+    frontplane.configure().unwrap();
+    frontplane.init(1, 320.0, 240.0).unwrap();
+
+    assert_eq!(
+        frontplane.metadata().title,
+        "GPUI–WASM Conformance Fallback"
+    );
+    assert!(frontplane.render().is_ok());
 }
 
 #[test]

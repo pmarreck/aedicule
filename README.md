@@ -133,7 +133,9 @@ Not yet production-ready:
 - retained widgets, accessibility semantics, clipping, richer image handling,
   and application-defined native actions remain future work;
 - candidate compilation currently happens synchronously on the UI thread;
-- the GPUI/Zed dependency graph makes clean builds unusually large and slow;
+- the GPUI/Zed dependency graph makes clean native-frontplane builds unusually
+  large and slow, so mutable WAT applications are packaged as separate data
+  artifacts and do not invalidate the Rust binary;
   and
 - macOS and other platform paths are architectural goals, not yet equivalent
   to the tested x86_64 Linux implementation.
@@ -150,14 +152,16 @@ The supported development path uses [Nix](https://nixos.org/) with flakes:
 ```console
 ./test       # full deterministic test suite
 ./build      # optimized reproducible Nix package
-./run        # optimized local launch with the embedded demo
+./run        # optimized local launch with the runtime Vibesteroids plugin
 ```
 
-The built package contains two executables:
+The built package contains two executables and a separately packaged default
+application:
 
 ```console
 result/bin/gpui-wasm
 result/bin/gpui-wasm-render --ticks 300 -o frame.svg
+result/share/gpui-wasm/plugins/vibesteroids.wat
 ```
 
 Vibesteroids controls:
@@ -192,7 +196,7 @@ You can instead select a file or an application directory:
 ```console
 ./run path/to/game.wat
 ./run --watch path/to/application
-./run --embedded
+./run --embedded # stable ABI-conformance fallback, not Vibesteroids
 ./run --seed 42 --watch path/to/application
 ```
 
@@ -201,8 +205,13 @@ follows the path rather than an open inode, so ordinary writes and atomic
 editor rename/replacement saves are both detected.
 
 `--seed N` supplies a validated unsigned 64-bit deterministic seed to either
-the bundled demo or any external application. If repeated, the later value
-wins, matching the CLI's general override convention.
+the packaged default, fallback, or any external application. If repeated, the
+later value wins, matching the CLI's general override convention.
+
+The Nix graph deliberately separates `packages.frontplane` from
+`packages.vibesteroids`; `packages.default` is only a tiny composition wrapper.
+Changing `plugins/vibesteroids.wat` therefore rebuilds the data artifact and
+headless behavioral checks without recompiling or relinking GPUI.
 
 Reload is transactional. A candidate must compile, configure, initialize,
 restore when compatible, and render its first frame successfully before it

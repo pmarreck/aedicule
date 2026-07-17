@@ -20,16 +20,16 @@ use gpui_component::{
     h_flex,
 };
 use gpui_wasm::{
-    Affine, AudioEvent, DrawCommand, Event, FileRevision, FrameOutput, Frontplane, HostEffect, Key,
-    LaunchAction, Limits, Metadata, PathSegment, PluginInit, PluginSource, RevisionTracker,
-    StateTransfer, SynthFilter, SynthVoice, SynthWaveform, prepare_reload, resolve_launch,
+    Affine, AudioEvent, DEFAULT_PLUGIN_ENV, DrawCommand, Event, FALLBACK_WAT, FileRevision,
+    FrameOutput, Frontplane, HostEffect, Key, LaunchAction, Limits, Metadata, PathSegment,
+    PluginInit, PluginSource, RevisionTracker, StateTransfer, SynthFilter, SynthVoice,
+    SynthWaveform, prepare_reload, resolve_launch,
 };
 use rodio::{DeviceSinkBuilder, MixerDeviceSink, buffer::SamplesBuffer};
 use smol::Timer;
 
 actions!(gpui_wasm, [NewGame, HelpControls, ReloadPlugin, Quit]);
 
-const DEMO_WAT: &str = include_str!("../plugins/vibesteroids.wat");
 const LOGICAL_WIDTH: f32 = 1024.0;
 const LOGICAL_HEIGHT: f32 = 768.0;
 const FRAME_INTERVAL: Duration = Duration::from_micros(16_667);
@@ -67,7 +67,7 @@ const EN: Strings = Strings {
     reload_failed: "Reload failed; previous plugin remains active",
     reload_preserved: "Reloaded with live state preserved",
     reload_restarted: "Reloaded with fresh state (schema changed)",
-    embedded_source: "embedded demo",
+    embedded_source: "embedded conformance fallback",
     watching: "watching",
     external_source: "external WAT",
     missing_source: "WAT source does not exist",
@@ -81,13 +81,14 @@ Usage:
 
 Options:
   --watch       Reload after content changes; defaults to ./code.wat
-  --embedded    Force the bundled Vibesteroids demonstration
+  --embedded    Force the stable ABI conformance fallback
   --seed N      Set the deterministic unsigned 64-bit application seed
   -h, --help    Show this help
   --about       Show version and build platform
 
-Without arguments, ./code.wat is loaded when present; otherwise the embedded
-demo runs. An application directory resolves to its code.wat file.
+Without arguments, ./code.wat is loaded when present, followed by any packaged
+default plugin, then the embedded fallback. An application directory resolves
+to its code.wat file.
 ",
     about: "generic native GPUI frontplane for capability-bounded WAT applications",
     cli_error: "gpui-wasm",
@@ -1142,10 +1143,11 @@ fn paint_path(
     }
 }
 
-/// Instantiates the bundled demonstration through the same generic lifecycle
-/// used by any future externally selected WAT plugin.
-fn load_demo(plugin_init: PluginInit) -> (Frontplane, FrameOutput) {
-    load_frontplane(DEMO_WAT, plugin_init).expect("bundled WAT passed the headless ABI suite")
+/// Instantiates the stable conformance fallback through the same lifecycle as
+/// external applications when no usable runtime plugin is available.
+fn load_fallback(plugin_init: PluginInit) -> (Frontplane, FrameOutput) {
+    load_frontplane(FALLBACK_WAT, plugin_init)
+        .expect("embedded conformance WAT passed the headless ABI suite")
 }
 
 fn load_frontplane(
@@ -1174,7 +1176,7 @@ fn startup(source: PluginSource, watch: bool, seed: Option<u64>) -> Startup {
     );
     match source {
         PluginSource::Embedded => {
-            let (frontplane, frame) = load_demo(plugin_init);
+            let (frontplane, frame) = load_fallback(plugin_init);
             Startup {
                 frontplane,
                 frame,
@@ -1204,7 +1206,7 @@ fn startup(source: PluginSource, watch: bool, seed: Option<u64>) -> Startup {
                     plugin_init,
                 },
                 Err(error) => {
-                    let (frontplane, frame) = load_demo(plugin_init);
+                    let (frontplane, frame) = load_fallback(plugin_init);
                     Startup {
                         frontplane,
                         frame,
@@ -1291,7 +1293,12 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let action = match resolve_launch(env::args_os().skip(1), &working_directory) {
+    let packaged_default = env::var_os(DEFAULT_PLUGIN_ENV).map(PathBuf::from);
+    let action = match resolve_launch(
+        env::args_os().skip(1),
+        &working_directory,
+        packaged_default.as_deref(),
+    ) {
         Ok(action) => action,
         Err(error) => {
             eprintln!("{}: {error}", EN.cli_error);

@@ -1,13 +1,58 @@
-use std::{fs, process::Command};
+use std::{fs, path::PathBuf, process::Command};
 
-const ASTEROIDS_WAT: &str = include_str!("../plugins/vibesteroids.wat");
+fn asteroids_wat() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("plugins/vibesteroids.wat")
+}
 
 fn render(arguments: &[&str]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_gpui-wasm-render"))
         .env("MUTE_DEBUG_STATUS", "1")
+        .env("GPUI_WASM_DEFAULT_PLUGIN", asteroids_wat())
         .args(arguments)
         .output()
         .expect("render CLI should execute")
+}
+
+#[test]
+fn default_plugin_environment_selects_runtime_data_instead_of_compiled_gameplay() {
+    let directory =
+        std::env::temp_dir().join(format!("gpui wasm runtime default {}", std::process::id()));
+    fs::create_dir_all(&directory).unwrap();
+    let plugin = directory.join("runtime default.wat");
+    fs::write(
+        &plugin,
+        r#"(module
+            (import "host.v0" "frame_begin" (func $begin (param f32 f32 f32 f32) (result i32)))
+            (import "host.v0" "frame_end" (func $end (result i32)))
+            (memory (export "memory") 1)
+            (func (export "fp_abi_major") (result i32) i32.const 0)
+            (func (export "fp_abi_minor") (result i32) i32.const 0)
+            (func (export "fp_configure") (result i32) i32.const 0)
+            (func (export "fp_init") (param i32 i32 f32 f32) (result i32) i32.const 0)
+            (func (export "fp_event") (param i32 i32 f32 f32) (result i32) i32.const 0)
+            (func (export "fp_tick") (param i32) (result i32) i32.const 0)
+            (func (export "fp_render") (result i32)
+                f32.const 1 f32.const 0 f32.const 0 f32.const 1 call $begin drop
+                call $end drop i32.const 0)
+            (func (export "fp_state_ptr") (result i32) i32.const 0)
+            (func (export "fp_state_len") (result i32) i32.const 0)
+            (func (export "fp_state_schema") (result i32) i32.const 1))"#,
+    )
+    .unwrap();
+
+    let result = Command::new(env!("CARGO_BIN_EXE_gpui-wasm-render"))
+        .env("MUTE_DEBUG_STATUS", "1")
+        .env("GPUI_WASM_DEFAULT_PLUGIN", &plugin)
+        .output()
+        .unwrap();
+
+    assert!(result.status.success(), "{:?}", result.stderr);
+    assert!(
+        String::from_utf8(result.stdout)
+            .unwrap()
+            .contains("fill=\"#ff0000\"")
+    );
+    fs::remove_dir_all(directory).unwrap();
 }
 
 #[test]
@@ -30,7 +75,7 @@ fn cli_accepts_a_plugin_path_with_spaces_and_writes_the_requested_file() {
     fs::create_dir_all(&directory).unwrap();
     let plugin = directory.join("plugin with spaces.wat");
     let output = directory.join("frame with spaces.svg");
-    fs::write(&plugin, ASTEROIDS_WAT).unwrap();
+    fs::copy(asteroids_wat(), &plugin).unwrap();
 
     let result = render(&[
         plugin.to_str().unwrap(),

@@ -27,20 +27,55 @@
 				let
 					pkgs = pkgsFor system;
 					linux = pkgs.stdenv.isLinux;
-				in {
-					default = pkgs.rustPlatform.buildRustPackage {
+					frontplaneSource = builtins.path {
+						path = ./.;
+						name = "gpui-wasm-frontplane-source";
+						filter = path: type:
+							let
+								root = toString ./.;
+								relative = pkgs.lib.removePrefix root (toString path);
+							in relative == ""
+								|| builtins.elem relative [
+									"/Cargo.toml"
+									"/Cargo.lock"
+									"/README.md"
+									"/LICENSE"
+									"/src"
+									"/third_party"
+								]
+								|| pkgs.lib.hasPrefix "/src/" relative
+								|| pkgs.lib.hasPrefix "/third_party/" relative;
+					};
+				in rec {
+					frontplane = pkgs.rustPlatform.buildRustPackage {
 						pname = "gpui-wasm";
 						version = "0.1.0";
-						src = pkgs.lib.cleanSource ./.;
+						src = frontplaneSource;
 						cargoHash = "sha256-oc/C4bf4JMZkeZQ+n1UgmlIRbW4Tmr446d4BazcSFJM=";
+						doCheck = false;
 						nativeBuildInputs = with pkgs; [ pkg-config cmake clang ]
 							++ pkgs.lib.optionals linux [ makeWrapper ];
 						buildInputs = pkgs.lib.optionals linux (linuxLibraries pkgs);
 						postFixup = pkgs.lib.optionalString linux ''
 							wrapProgram $out/bin/gpui-wasm \
 								--prefix LD_LIBRARY_PATH : ${pkgs.lib.makeLibraryPath (linuxLibraries pkgs)}
-						'';
+							'';
 					};
+					vibesteroids = pkgs.runCommand "vibesteroids-wat" {} ''
+						mkdir -p $out/share/gpui-wasm/plugins
+						cp ${./plugins/vibesteroids.wat} $out/share/gpui-wasm/plugins/vibesteroids.wat
+					'';
+					default = pkgs.runCommand "gpui-wasm-0.1.0" {
+						nativeBuildInputs = [ pkgs.makeWrapper ];
+					} ''
+						mkdir -p $out/bin $out/share/gpui-wasm/plugins
+						ln -s ${vibesteroids}/share/gpui-wasm/plugins/vibesteroids.wat \
+							$out/share/gpui-wasm/plugins/vibesteroids.wat
+						makeWrapper ${frontplane}/bin/gpui-wasm $out/bin/gpui-wasm \
+							--set GPUI_WASM_DEFAULT_PLUGIN $out/share/gpui-wasm/plugins/vibesteroids.wat
+						makeWrapper ${frontplane}/bin/gpui-wasm-render $out/bin/gpui-wasm-render \
+							--set GPUI_WASM_DEFAULT_PLUGIN $out/share/gpui-wasm/plugins/vibesteroids.wat
+					'';
 				});
 
 			checks = forAllSystems (system: {

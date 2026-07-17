@@ -348,7 +348,9 @@ fn animated_thruster_flame_stays_behind_the_ship() {
         .commands
         .iter()
         .find_map(|command| match command {
-            DrawCommand::Path { id: 4, segments, .. } => Some(segments),
+            DrawCommand::Path {
+                id: 4, segments, ..
+            } => Some(segments),
             _ => None,
         })
         .expect("thrusting ship should render an animated flame path");

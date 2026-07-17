@@ -13,8 +13,9 @@
    assertions are forbidden.
 7. The host must be able to snapshot and restore plugin state without knowing
    its game-specific layout.
-8. Source WAT is canonical. Wasmtime compiles it from the bytes embedded by the
-   reproducible build; a checked-in binary WASM is not canonical.
+8. Source WAT is canonical. Wasmtime compiles the separately installed or
+   selected text at runtime; a checked-in binary WASM is not canonical, and an
+   application WAT edit must not invalidate the native frontplane derivation.
 9. Visible frontplane strings come from the typed English catalog during the
    i18n prepare phase.
 10. The complete suite runs through ./test and the optimized build through

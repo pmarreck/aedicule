@@ -19,6 +19,8 @@ use wasmtime::{
 pub const ABI_MAJOR: i32 = 0;
 pub const ABI_MINOR: i32 = 0;
 pub const DEFAULT_PLUGIN_FILE: &str = "code.wat";
+pub const DEFAULT_PLUGIN_ENV: &str = "GPUI_WASM_DEFAULT_PLUGIN";
+pub const FALLBACK_WAT: &str = include_str!("fallback.wat");
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PluginSource {
@@ -42,6 +44,7 @@ pub enum LaunchAction {
 pub fn resolve_launch(
     arguments: impl IntoIterator<Item = OsString>,
     working_directory: &Path,
+    packaged_default: Option<&Path>,
 ) -> Result<LaunchAction, String> {
     let mut source = None;
     let mut watch = false;
@@ -110,6 +113,8 @@ pub fn resolve_launch(
         let default = working_directory.join(DEFAULT_PLUGIN_FILE);
         if watch || default.is_file() {
             PluginSource::File(default)
+        } else if let Some(packaged_default) = packaged_default {
+            PluginSource::File(packaged_default.to_owned())
         } else {
             PluginSource::Embedded
         }

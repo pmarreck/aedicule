@@ -52,8 +52,8 @@ ABI boundary is wrong.
 The spike is complete when:
 
 1. ./test runs a clean deterministic headless suite.
-2. ./build produces an optimized native frontplane with the canonical
-   Asteroids WAT embedded through Nix.
+2. ./build produces an optimized native frontplane composed with the canonical
+   Asteroids WAT as a separately replaceable Nix data artifact.
 3. The native window uses GPUI and gpui-component.
 4. The WAT module owns all Asteroids state and gameplay rules.
 5. Keyboard input reaches the plugin through the generic event ABI.
@@ -511,7 +511,8 @@ The initial window contains:
 
 The adapter:
 
-1. loads the embedded or configured module;
+1. loads a configured or packaged runtime module, with a stable embedded
+   conformance module only as the final emergency fallback;
 2. validates ABI and calls configure/init;
 3. maps GPUI key events to generic event IDs;
 4. schedules fixed ticks using the GPUI executor;
@@ -587,8 +588,9 @@ model. Key/menu mapping is a pure function. Visual appearance is not frozen
 until Peter sees the running window or captured output.
 
 The repository also ships a headless `gpui-wasm-render` adapter. It loads the
-bundled demo or an external WAT file, deterministically advances a requested
-number of fixed ticks, and serializes the immutable command buffer as SVG.
+packaged default, stable fallback, or an external WAT file, deterministically
+advances a requested number of fixed ticks, and serializes the immutable
+command buffer as SVG.
 This is both a human-viewable report and an agent/CI visual artifact; it does
 not replace a native-window capture, because the latter independently covers
 GPUI layout, focus, compositor, and platform-adapter behavior.
@@ -607,8 +609,8 @@ The flake supplies:
 Cargo pins exact GPUI and gpui-component revisions in Cargo.lock. Nix produces:
 
 - the optimized frontplane binary;
-- the canonical WAT embedded in that binary and compiled by Wasmtime when the
-  plugin is instantiated; and
+- the canonical WAT in a separate data derivation, compiled by Wasmtime when
+  the plugin is instantiated without invalidating the frontplane binary; and
 - a check derivation running the full headless suite.
 
 Top-level scripts hide Nix invocation:
@@ -673,10 +675,11 @@ the strongest practical test that the ABI is genuinely generic.
 
 ### 15.1 Live-edit development mode
 
-The native frontplane should load `./code.wat` when present, otherwise retain
-the embedded demonstration as a zero-configuration fallback. A positional
-file or application-directory argument selects another source; `--embedded`
-forces the bundled demo, `--seed N` supplies a validated deterministic `u64`
+The native frontplane should load `./code.wat` when present, otherwise use a
+packaged runtime default supplied by the adapter environment, and finally a
+stable embedded conformance application if neither exists. A positional file
+or application-directory argument selects another source; `--embedded` forces
+the conformance fallback, `--seed N` supplies a validated deterministic `u64`
 initialization seed, while `--watch` polls the selected path's contents and
 transactionally reloads after saves. Watching follows the path rather than an
 open inode so editor replace/rename saves remain visible.
@@ -719,8 +722,9 @@ Implemented and covered headlessly:
   guest-declared synth programs; and
 - deterministic headless SVG export for arbitrary requested ticks, including
   external WAT input and stdout/file output suitable for CI visual inspection.
-- conventional `code.wat` discovery, explicit file/directory and embedded
-  source selection, content-based path polling that survives atomic saves,
+- conventional `code.wat` discovery, explicit file/directory, packaged
+  default, and embedded-fallback source selection; content-based path polling
+  that survives atomic saves,
   manual Reload/Ctrl+R, and transactional live replacement. Real-window
   verification covered compatible state preservation, schema-triggered fresh
   state, malformed-source rollback while the old game continued advancing,
@@ -745,10 +749,10 @@ Honest boundaries discovered by the spike:
   pointer and motion capability can add parity without hard-coding mobile
   Vibesteroids behavior into the host.
 - GPUI currently brings a very large Zed dependency graph. The first sandboxed
-  Nix vendor pass took roughly 25 minutes, and Nixpkgs' buildRustPackage
-  recompiles that graph when source changes. Cargo's local target cache makes
-  development tolerable, but a production flake should split dependency
-  artifacts with crane/cargo-chef or use smaller GPUI crates.
+  Nix vendor pass took roughly 25 minutes. The native source and mutable WAT
+  application are now separate derivations, so plugin edits reuse the local
+  native result; a cold hosted runner still needs a binary cache or a future
+  crane/cargo-chef dependency split to avoid rebuilding GPUI from scratch.
 - Candidate compilation currently runs synchronously on the GPUI thread.
   Transactional replacement prevents corruption, but larger applications may
   require background compilation plus UI-thread handoff to avoid a visible

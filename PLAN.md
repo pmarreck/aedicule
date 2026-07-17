@@ -1,5 +1,29 @@
 # Plan
 
+- [x] Split the mutable Vibesteroids plugin artifact from the native GPUI
+  frontplane so WAT-only edits cannot invalidate or relink the Rust binary.
+  (2026-07-17 00:41 EDT: structural Nix-source regression, stable generic
+  fallback, separate runtime data derivation, four-second launcher composition,
+  packaged-default smoke test, and complete suite green)
+  - Curiosity poke: can packaged, source-tree, explicit-path, and emergency
+    fallback launch modes remain deterministic without embedding the game?
+- [ ] Specify the rate-independent simulation contract and cross-rate
+  equivalence tolerances before changing state units.
+  - Curiosity poke: which original frame-based quirks are really intended
+    durations, and which should remain deliberately tick-relative?
+- [ ] Migrate schema-3 per-tick quantities to a new schema of canonical
+  per-second integer units while retaining 60 Hz output behavior.
+  - Curiosity poke: how many quotient remainders are required to prevent
+    millionth-scale truncation drift across every moving entity?
+- [ ] Replace the one-timer/one-tick loop with an injected monotonic
+  accumulator and prove equal elapsed-time behavior at 60 and 120 Hz.
+  - Curiosity poke: what bounded catch-up policy avoids a spiral of death
+    without silently slowing the deterministic game clock?
+- [ ] Switch the preferred simulation rate to 120 Hz only after the complete
+  60/120 equivalence matrix and a Peter visual playtest pass.
+  - Curiosity poke: which newly detected collisions are desirable reduced
+    tunneling versus an unintended change to source difficulty?
+
 - [x] Keep the animated thruster flame behind the ship for every heading.
   (2026-07-16 23:49 EDT: red-to-green local-space path regression, complete
   canonical suite, live state-preserving reload, and Peter visual confirmation)

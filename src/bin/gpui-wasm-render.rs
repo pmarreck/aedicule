@@ -4,9 +4,8 @@ use std::{
     process::ExitCode,
 };
 
-use gpui_wasm::{Frontplane, Limits, render_svg};
+use gpui_wasm::{DEFAULT_PLUGIN_ENV, FALLBACK_WAT, Frontplane, Limits, render_svg};
 
-const DEMO_WAT: &str = include_str!("../../plugins/vibesteroids.wat");
 const DEFAULT_WIDTH: f32 = 1024.0;
 const DEFAULT_HEIGHT: f32 = 768.0;
 const DEFAULT_SEED: u64 = 0x5eed_cafe;
@@ -192,7 +191,11 @@ fn run(options: RenderOptions) -> Result<(), String> {
 
 fn read_plugin(path: Option<&str>) -> Result<String, String> {
     match path {
-        None => Ok(DEMO_WAT.into()),
+        None => match env::var_os(DEFAULT_PLUGIN_ENV) {
+            Some(path) => fs::read_to_string(&path)
+                .map_err(|error| format!("read {}: {error}", path.to_string_lossy())),
+            None => Ok(FALLBACK_WAT.into()),
+        },
         Some("-" | "@stdin") => {
             let mut wat = String::new();
             io::stdin()

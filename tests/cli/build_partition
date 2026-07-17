@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+set -u
+
+failures=0
+system=$(nix eval --impure --raw --expr builtins.currentSystem 2>"$TMPDIR/gpui-wasm-build-partition-system.err")
+status=$?
+if (( status != 0 )); then
+	failures=$((failures + 1))
+else
+	frontplane_drv=$(nix eval --raw ".#packages.$system.frontplane.drvPath" 2>"$TMPDIR/gpui-wasm-build-partition-eval.err")
+	status=$?
+	if (( status != 0 )); then
+		failures=$((failures + 1))
+	else
+		frontplane_source=$(nix-store --query --references "$frontplane_drv" | rg -- '-gpui-wasm-frontplane-source$')
+		status=$?
+		if (( status != 0 )); then
+			failures=$((failures + 1))
+		elif [[ ! -f "$frontplane_source/src/fallback.wat" ]]; then
+			failures=$((failures + 1))
+		elif [[ -e "$frontplane_source/plugins/vibesteroids.wat" ]]; then
+			failures=$((failures + 1))
+		fi
+	fi
+fi
+
+exit "$failures"
