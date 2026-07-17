@@ -152,6 +152,7 @@ fp_init(seed_lo, seed_hi,
         viewport_w, viewport_h) -> i32
 fp_event(kind, code, a, b) -> i32
 fp_tick(ticks) -> i32          advance fixed simulation ticks
+fp_tick_hz() -> i32            optional preferred fixed rate (1..=1000)
 fp_render() -> i32             emit one complete command frame
 fp_state_ptr() -> i32
 fp_state_len() -> i32
@@ -159,7 +160,9 @@ fp_state_schema() -> i32
 ~~~
 
 viewport_w/viewport_h and event a/b use f32 where declared by the actual Wasm
-signature. ticks is an i32 count and is bounded by host policy.
+signature. ticks is an i32 count and is bounded by host policy. A missing
+`fp_tick_hz` preserves ABI-v0 behavior at 60 Hz; an exported zero, negative,
+greater-than-1000 value, or wrong signature rejects the plugin before init.
 
 The Vibesteroids application converts viewport scalars to signed decimal
 millionths exactly once on ingress and converts completed draw scalars exactly
@@ -484,7 +487,8 @@ The plugin performs:
 ## 8. Determinism and state
 
 - Simulation advances only through fp_tick integer ticks.
-- A tick represents 1/60 second in the demo.
+- A plugin declares its fixed rate with optional `fp_tick_hz`; legacy plugins
+  default to 60 Hz.
 - The host caps catch-up ticks per rendered frame.
 - The seed is the only randomness input.
 - Every seed-derived value is inside the snapshot.
@@ -497,6 +501,53 @@ The plugin performs:
 Gameplay and synth values are signed decimal fixed-point integers. Structural
 tests reject floating-point guest arithmetic outside the marked host-scalar
 adapter, so snapshot/replay equality does not depend on an IEEE-754 engine.
+
+### 8.1 Rate-independent simulation contract
+
+Gameplay state stores dimensional quantities in canonical units rather than
+per-tick units:
+
+- position: decimal-fixed logical pixels;
+- linear velocity: decimal-fixed logical pixels per second;
+- acceleration: decimal-fixed logical pixels per second squared;
+- angular velocity: decimal-fixed radians per second; and
+- authored durations: seconds or milliseconds converted through named helpers.
+
+Only integration, damping, and duration helpers know the declared tick rate.
+Changing 60 to 120 must therefore be a one-value policy edit, not a search for
+velocity constants. Integer division may lose less than one millionth of a
+logical pixel per integration, so the guest either carries a quotient
+remainder or stays within the explicit accumulated tolerance below. No float
+may be introduced to hide rate conversion.
+
+The native adapter does not schedule `Duration::from_nanos(1e9 / hz)` in a
+loop, because that truncates fractional periods and adds work time to the game
+clock. It accumulates monotonic elapsed nanoseconds as the exact rational
+`elapsed_ns * hz`, carries the remainder modulo one billion, advances all due
+fixed ticks, renders once, and drops whole excess ticks beyond a bounded
+catch-up budget. The dropped count is diagnostic state, not deferred debt that
+could create a spiral of death.
+
+Before 120 Hz becomes the packaged default, the same seed and timestamped
+input script run for equal simulated seconds at 60 and 120 Hz must satisfy:
+
+- score, lives, level, flags, pool occupancy, and ordered semantic effects are
+  exact for fixtures that do not deliberately exercise collision tunneling;
+- constant-velocity positions differ by at most 2,000 decimal microunits after
+  ten seconds; accelerated/damped paths differ by at most 0.1 percent of path
+  length plus 100,000 microunits;
+- velocity magnitude and facing direction differ by at most 0.2 percent after
+  ten seconds of equivalent controls;
+- authored lifecycle boundaries differ by no more than one 60-Hz tick; and
+- each collision-focused difference is classified explicitly as desirable
+  reduced tunneling or a regression—never absorbed into a broad tolerance.
+
+The equivalence matrix covers inertial coast and drag, held thrust, both
+rotations, manual and automatic fire, bullet expiry, asteroid motion,
+particles/debris, explosion and respawn, Death Blossom, and level-scaled
+fragment impulses. Render interpolation is out of scope until fixed simulation
+equivalence is green; 120 fixed updates with one render per host wake is the
+first implementation.
 
 ## 9. GPUI frontplane
 

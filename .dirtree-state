@@ -8,6 +8,7 @@ annotate=[
 	FIDELITY_GAP_MATRIX.md = Source-to-WAT implementation ledger, deliberate deviations, remaining fidelity gaps, and completion gate
 	MEMORIES = Project-specific durable lessons discovered during the spike
 	MEMORIES/Decimal fixed point in WAT needs a sealed float adapter and rescaled collision squares = Project lesson on decimal millionths, one-way GPUI conversion, and overflow-safe collision tests
+	MEMORIES/Fixed-step hosts should accumulate elapsed nanoseconds times hertz = Exact integer-rational host timing with bounded catch-up and no fractional-period drift
 	MEMORIES/GPUI canvas elements need explicit size_full even inside a flex-filling parent = Project lesson from the missing-scene GPUI adapter defect and two-layer visual verification.
 	MEMORIES/GPUI's simple image painter does not expose sprite-atlas source cropping = Adapter limitation and production-ready sprite rendering options
 	MEMORIES/Guest-declared audio can remain application-agnostic and decimal-fixed through the PCM boundary = Durable design lesson for opaque guest synth programs, integer DSP, and one-way PCM conversion
@@ -43,5 +44,6 @@ annotate=[
 	tests/render_cli.rs = CLI coverage for frame differences, spaced paths, help/about, and invalid options.
 	tests/svg_export.rs = Pure SVG artifact coverage plus deterministic Vibesteroids frame progression.
 	tests/synth.rs = Guest-declared synth ABI, exact descriptor capture, and set-based invalid-field classifier tests
+	tests/timing.rs = Plugin-declared tick-rate bounds, exact rational clock accumulation, and catch-up policy regressions
 	third_party/ztracing = Apache-2.0 no-op compatibility surface replacing GPUI's unused GPL tracing path
 ]

@@ -7,8 +7,11 @@
   packaged-default smoke test, and complete suite green)
   - Curiosity poke: can packaged, source-tree, explicit-path, and emergency
     fallback launch modes remain deterministic without embedding the game?
-- [ ] Specify the rate-independent simulation contract and cross-rate
+- [x] Specify the rate-independent simulation contract and cross-rate
   equivalence tolerances before changing state units.
+  (2026-07-17 00:50 EDT: optional bounded `fp_tick_hz`, exact integer-rational
+  host clock, partition/catch-up tests, dimensional units, and an explicit
+  gameplay equivalence matrix)
   - Curiosity poke: which original frame-based quirks are really intended
     durations, and which should remain deliberately tick-relative?
 - [ ] Migrate schema-3 per-tick quantities to a new schema of canonical

@@ -9,6 +9,7 @@ use std::ffi::OsString;
 use std::fmt;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use thiserror::Error;
 use wasmtime::{
@@ -21,6 +22,49 @@ pub const ABI_MINOR: i32 = 0;
 pub const DEFAULT_PLUGIN_FILE: &str = "code.wat";
 pub const DEFAULT_PLUGIN_ENV: &str = "GPUI_WASM_DEFAULT_PLUGIN";
 pub const FALLBACK_WAT: &str = include_str!("fallback.wat");
+pub const DEFAULT_SIMULATION_HZ: u32 = 60;
+pub const MAX_SIMULATION_HZ: u32 = 1_000;
+
+const NANOS_PER_SECOND: u128 = 1_000_000_000;
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TickAdvance {
+    pub ticks: u32,
+    pub dropped_ticks: u64,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FixedStepClock {
+    fractional_tick_nanos: u128,
+}
+
+impl FixedStepClock {
+    /// Converts arbitrary monotonic elapsed-time partitions into exact fixed
+    /// ticks by retaining the rational nanoseconds-times-hertz remainder.
+    pub fn advance(&mut self, elapsed: Duration, hz: u32, max_ticks: u32) -> TickAdvance {
+        assert!((1..=MAX_SIMULATION_HZ).contains(&hz));
+        let total = self
+            .fractional_tick_nanos
+            .saturating_add(elapsed.as_nanos().saturating_mul(u128::from(hz)));
+        let due = total / NANOS_PER_SECOND;
+        self.fractional_tick_nanos = total % NANOS_PER_SECOND;
+        let ticks = due.min(u128::from(max_ticks)) as u32;
+        let dropped = due.saturating_sub(u128::from(ticks));
+        TickAdvance {
+            ticks,
+            dropped_ticks: dropped.min(u128::from(u64::MAX)) as u64,
+        }
+    }
+
+    /// Returns the ceil-rounded monotonic delay until the next exact tick so
+    /// timer adapters never wake late merely because 1e9/hz is fractional.
+    pub fn time_until_next_tick(&self, hz: u32) -> Duration {
+        assert!((1..=MAX_SIMULATION_HZ).contains(&hz));
+        let remaining = NANOS_PER_SECOND - self.fractional_tick_nanos;
+        let nanos = remaining.div_ceil(u128::from(hz));
+        Duration::from_nanos(nanos as u64)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PluginSource {
@@ -780,6 +824,8 @@ pub enum FrontplaneError {
     MissingExport { name: &'static str },
     #[error("ABI major mismatch: host {expected}, plugin {found}")]
     WrongAbi { expected: i32, found: i32 },
+    #[error("plugin tick rate {found} Hz is outside the supported 1..={maximum} range")]
+    InvalidSimulationHz { found: i32, maximum: u32 },
     #[error("plugin exhausted its fuel during {operation}")]
     FuelExhausted { operation: &'static str },
     #[error("plugin trapped during {operation}: {message}")]
@@ -887,6 +933,7 @@ struct Exports {
     state_ptr: TypedFunc<(), i32>,
     state_len: TypedFunc<(), i32>,
     state_schema: TypedFunc<(), i32>,
+    tick_hz: Option<TypedFunc<(), i32>>,
     after_restore: Option<TypedFunc<(), i32>>,
 }
 
@@ -896,6 +943,7 @@ pub struct Frontplane {
     _memory: Memory,
     _instance: Instance,
     exports: Exports,
+    simulation_hz: u32,
 }
 
 impl fmt::Debug for Frontplane {
@@ -975,6 +1023,7 @@ impl Frontplane {
             state_ptr: required_func(&instance, &mut store, "fp_state_ptr")?,
             state_len: required_func(&instance, &mut store, "fp_state_len")?,
             state_schema: required_func(&instance, &mut store, "fp_state_schema")?,
+            tick_hz: optional_func(&instance, &mut store, "fp_tick_hz")?,
             after_restore: instance
                 .get_typed_func::<(), i32>(&mut store, "fp_after_restore")
                 .ok(),
@@ -984,6 +1033,7 @@ impl Frontplane {
             _memory: memory,
             _instance: instance,
             exports,
+            simulation_hz: DEFAULT_SIMULATION_HZ,
         };
         let abi_major_function = frontplane.exports.abi_major.clone();
         let abi_major = frontplane.call_value("fp_abi_major", abi_major_function)?;
@@ -995,6 +1045,16 @@ impl Frontplane {
         }
         let abi_minor_function = frontplane.exports.abi_minor.clone();
         let _ = frontplane.call_value("fp_abi_minor", abi_minor_function)?;
+        if let Some(function) = frontplane.exports.tick_hz.clone() {
+            let found = frontplane.call_value("fp_tick_hz", function)?;
+            if !(1..=MAX_SIMULATION_HZ as i32).contains(&found) {
+                return Err(FrontplaneError::InvalidSimulationHz {
+                    found,
+                    maximum: MAX_SIMULATION_HZ,
+                });
+            }
+            frontplane.simulation_hz = found as u32;
+        }
         Ok(frontplane)
     }
 
@@ -1050,6 +1110,12 @@ impl Frontplane {
 
     pub fn metadata(&self) -> &Metadata {
         &self.store.data().metadata
+    }
+
+    /// Returns the plugin's validated fixed simulation rate, defaulting legacy
+    /// ABI-v0 modules to 60 Hz without exposing a wall clock to the guest.
+    pub fn simulation_hz(&self) -> u32 {
+        self.simulation_hz
     }
 
     pub fn images(&self) -> &[ImageResource] {
@@ -1330,6 +1396,24 @@ where
 {
     instance
         .get_typed_func::<P, R>(store, name)
+        .map_err(|_| FrontplaneError::MissingExport { name })
+}
+
+fn optional_func<P, R>(
+    instance: &Instance,
+    store: &mut Store<HostState>,
+    name: &'static str,
+) -> Result<Option<TypedFunc<P, R>>, FrontplaneError>
+where
+    P: wasmtime::WasmParams,
+    R: wasmtime::WasmResults,
+{
+    if instance.get_export(&mut *store, name).is_none() {
+        return Ok(None);
+    }
+    instance
+        .get_typed_func::<P, R>(store, name)
+        .map(Some)
         .map_err(|_| FrontplaneError::MissingExport { name })
 }
 
