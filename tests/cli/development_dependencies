@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+set -u
+
+required=(cargo nix nix-store rg wasmtime)
+failures=0
+
+for executable in "${required[@]}"; do
+	if ! command -v "$executable" >/dev/null 2>&1; then
+		printf 'development shell is missing required executable: %s\n' "$executable" >&2
+		failures=$((failures + 1))
+	fi
+done
+
+exit "$failures"

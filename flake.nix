@@ -95,6 +95,8 @@
 							clang
 							cargo-nextest
 							actionlint
+							nix
+							ripgrep
 							wasmtime
 						]
 							++ pkgs.lib.optionals pkgs.stdenv.isLinux (linuxLibraries pkgs);

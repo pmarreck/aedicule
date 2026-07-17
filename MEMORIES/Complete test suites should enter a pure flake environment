@@ -1,0 +1,8 @@
+A development shell that preserves the caller's PATH can make a suite pass by
+accidentally borrowing globally installed tools. Have the top-level test runner
+re-enter `nix develop --ignore-environment` under its own sentinel, and maintain
+a fast classifier over the complete set of external executables the suite
+invokes. Keep `HOME` and the RAM-backed `TMPDIR`, but do not preserve PATH.
+
+This caught `rg`, `nix`, and `nix-store` missing from the gpui-wasm flake only
+after GitHub CI failed; all were present globally on the development machine.

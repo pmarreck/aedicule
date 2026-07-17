@@ -2,8 +2,12 @@
 
 set -u
 
-if [[ -z ${IN_NIX_SHELL:-} ]]; then
-	exec nix develop -c "$0" "$@"
+if [[ ${GPUI_WASM_TEST_SHELL:-0} != 1 ]]; then
+	develop=(nix develop --ignore-environment --keep HOME)
+	if [[ -n ${TMPDIR:-} ]]; then
+		develop+=(--keep TMPDIR)
+	fi
+	exec "${develop[@]}" -c env GPUI_WASM_TEST_SHELL=1 "$0" "$@"
 fi
 
 failures=0
@@ -16,6 +20,7 @@ run_check() {
 	fi
 }
 
+run_check ./tests/cli/development_dependencies
 run_check cargo test --no-default-features
 run_check cargo test --bin gpui-wasm
 run_check cargo test --test gui_cli

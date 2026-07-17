@@ -1,5 +1,11 @@
 # Plan
 
+- [x] Make the canonical suite prove that every command it invokes is declared
+  by the flake rather than accidentally inherited from the workstation.
+  (2026-07-17 03:48 EDT: CI exposed undeclared `rg`; a red/green executable-set
+  classifier found `nix`/`nix-store` too, and `./test` now enters a pure shell)
+  - Curiosity poke: can CI reuse the optimized Nix build without weakening the
+    independently executed debug, GUI, WAST, lint, and partition controls?
 - [x] Split the mutable Vibesteroids plugin artifact from the native GPUI
   frontplane so WAT-only edits cannot invalidate or relink the Rust binary.
   (2026-07-17 00:41 EDT: structural Nix-source regression, stable generic
