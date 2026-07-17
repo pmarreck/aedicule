@@ -20,6 +20,7 @@ fn native_frontplane_reports_live_source_options_without_opening_a_window() {
     let help = String::from_utf8(help.stdout).unwrap();
     assert!(help.contains("--watch"));
     assert!(help.contains("--embedded"));
+    assert!(help.contains("--seed"));
     assert!(help.contains("./code.wat"));
 
     assert!(about.status.success(), "{:?}", about.stderr);

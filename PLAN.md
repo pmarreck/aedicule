@@ -151,21 +151,55 @@
   and the complete canonical `./test` gate is green)
   - Curiosity poke: what decimal scale and pre-square rescaling preserve useful
     subpixel precision at 8K dimensions without overflowing WebAssembly `i64`?
-- [ ] Make the game field fill the complete drawable window and make viewport
+- [x] Make the game field fill the complete drawable window and make viewport
   changes regenerate stars while translating every world object by
   `new_center - old_center` without stretching velocity or trajectories.
+  (2026-07-16 20:40 EDT: actual GPUI viewport changes are coalesced, the
+  direct projection is 1:1, and the exact center-delta/RNG regression passes)
   - Curiosity poke: how should offscreen wrap buffers and respawn-safe regions
     behave across a drastic resize?
-- [ ] Add a discoverable plugin-owned Help/Controls experience through a
+- [x] Add a discoverable plugin-owned Help/Controls experience through a
   genuinely generic native action or overlay mechanism.
+  (2026-07-16 20:40 EDT: menu action 7 and F1/H drive the WAT-owned overlay)
   - Curiosity poke: can dynamic plugin actions remain native and accessible
     without creating one compile-time Rust action type per application action?
-- [ ] Replace application-specific semantic tones with a bounded generic synth
+- [x] Replace application-specific semantic tones with a bounded generic synth
   description capable of reproducing Vibesteroids' oscillator ramps, gain
   envelopes, filtered noise explosions, siren, thrust, and extra-life chimes.
+  (2026-07-16 20:40 EDT: 15 validated guest voices render with integer-only
+  decimal oscillators, envelopes, filters, noise, and mixing)
   - Curiosity poke: what is the smallest non-game-specific audio graph that is
     deterministic, resource-bounded, schedulable, and independently testable?
-- [ ] Implement and test the semi-secret Death Blossom, including availability,
+- [x] Implement and test the semi-secret Death Blossom, including availability,
   activation, timed radial fire, rotations, siren, and per-life reset behavior.
+  (2026-07-16 20:40 EDT: exact 12-rotation/629-tick boundary, per-life latch,
+  radial firing, siren, HUD, cancellation, and reset are covered headlessly)
   - Curiosity poke: what discoverable native input preserves the feature's
     semi-secret character when device-shake input is absent?
+- [x] Port the exact level-1-through-20 acceleration, rotation, bullet-speed,
+  fire-delay, and asteroid-cap formulas into 60-Hz decimal-fixed quantities.
+  (2026-07-16 21:39 EDT: endpoint, cap-removal, and complete frontplane tests pass)
+  - Curiosity poke: which source values are per-second versus per-frame, and
+    where would applying the 60-Hz conversion twice silently change feel?
+- [x] Expire bullets by fixed-decimal distance traveled against half the live
+  viewport diagonal instead of a fixed tick count.
+  (2026-07-16 21:39 EDT: overflow-safe integer hypot proves the exact 640-pixel boundary)
+  - Curiosity poke: can integer square root remain exact and overflow-safe at
+    the maximum accepted viewport without spending excessive WAT fuel?
+- [x] Match the 300-tick shrinking respawn zone and 600-tick desperation bomb,
+  including 96/48-radius collision boundaries and no-score destruction.
+  (2026-07-16 21:39 EDT: lifecycle/world-motion regression passes)
+  - Curiosity poke: what happens when the last asteroid is bombed and wave
+    progression occurs in that same deterministic tick?
+- [x] Render each asteroid's seeded 8–12 vertex count, finish the 240-tick neon
+  title lifecycle, and document every remaining deliberate visual deviation.
+  (2026-07-16 21:39 EDT: seeded range/distribution and title boundary tests pass;
+  four-edge spawn layout is named as a bounded-port deviation)
+  - Curiosity poke: can varied polygons and layered title glow stay under the
+    existing command/fuel budgets at the 32-asteroid cap?
+- [x] Run the complete canonical suite and optimized Nix build, inspect a
+  deterministic 1400×900 frame, and replace the live service only after green.
+  (2026-07-16 21:59 EDT: `./test`, `./build`, headless PNG inspection, and
+  post-restart systemd status all pass)
+  - Curiosity poke: does Peter's real-window visual/audio check reveal any
+    platform behavior that semantic frame and PCM tests cannot observe?

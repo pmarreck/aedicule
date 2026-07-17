@@ -28,7 +28,11 @@ pub enum PluginSource {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LaunchAction {
-    Run { source: PluginSource, watch: bool },
+    Run {
+        source: PluginSource,
+        watch: bool,
+        seed: Option<u64>,
+    },
     Help,
     About,
 }
@@ -41,10 +45,12 @@ pub fn resolve_launch(
 ) -> Result<LaunchAction, String> {
     let mut source = None;
     let mut watch = false;
+    let mut seed = None;
     let mut positional_count = 0;
     let mut positional_only = false;
+    let mut arguments = arguments.into_iter();
 
-    for argument in arguments {
+    while let Some(argument) = arguments.next() {
         let recognized = argument.to_str();
         if !positional_only {
             match recognized {
@@ -60,6 +66,19 @@ pub fn resolve_launch(
                 Some("--embedded") => {
                     source = Some(PluginSource::Embedded);
                     watch = false;
+                    continue;
+                }
+                Some("--seed") => {
+                    let value = arguments
+                        .next()
+                        .ok_or_else(|| "--seed requires an unsigned integer".to_owned())?;
+                    let text = value
+                        .to_str()
+                        .ok_or_else(|| "--seed must be valid UTF-8 digits".to_owned())?;
+                    seed = Some(
+                        text.parse::<u64>()
+                            .map_err(|_| "--seed requires an unsigned integer".to_owned())?,
+                    );
                     continue;
                 }
                 Some("--") => {
@@ -95,7 +114,11 @@ pub fn resolve_launch(
             PluginSource::Embedded
         }
     });
-    Ok(LaunchAction::Run { source, watch })
+    Ok(LaunchAction::Run {
+        source,
+        watch,
+        seed,
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -142,6 +165,7 @@ pub struct Limits {
     pub max_commands: usize,
     pub max_string_bytes: usize,
     pub max_menu_items: usize,
+    pub max_synth_voices: usize,
     pub max_audio_events: usize,
     pub max_effects: usize,
     pub max_image_bytes: usize,
@@ -161,6 +185,7 @@ impl Default for Limits {
             max_commands: 4_096,
             max_string_bytes: 4_096,
             max_menu_items: 128,
+            max_synth_voices: 128,
             max_audio_events: 256,
             max_effects: 256,
             max_image_bytes: 4 * 1024 * 1024,
@@ -176,6 +201,7 @@ impl Default for Limits {
 pub struct Metadata {
     pub title: String,
     pub menu_items: Vec<MenuItem>,
+    pub synth_voices: Vec<SynthVoice>,
 }
 
 impl Default for Metadata {
@@ -183,8 +209,67 @@ impl Default for Metadata {
         Self {
             title: "WAT Application".into(),
             menu_items: Vec::new(),
+            synth_voices: Vec::new(),
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+pub enum SynthWaveform {
+    Sine = 1,
+    Saw = 2,
+    WhiteNoise = 3,
+    BrownNoise = 4,
+}
+
+impl SynthWaveform {
+    fn from_abi(value: i32) -> Option<Self> {
+        match value {
+            1 => Some(Self::Sine),
+            2 => Some(Self::Saw),
+            3 => Some(Self::WhiteNoise),
+            4 => Some(Self::BrownNoise),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+pub enum SynthFilter {
+    None = 0,
+    LowPass = 1,
+    BandPass = 2,
+}
+
+impl SynthFilter {
+    fn from_abi(value: i32) -> Option<Self> {
+        match value {
+            0 => Some(Self::None),
+            1 => Some(Self::LowPass),
+            2 => Some(Self::BandPass),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SynthVoice {
+    pub program_id: u32,
+    pub waveform: SynthWaveform,
+    pub delay_ms: u32,
+    pub duration_ms: u32,
+    pub frequency_start_millihz: u32,
+    pub frequency_mid_millihz: u32,
+    pub frequency_end_millihz: u32,
+    pub gain_start_ppm: u32,
+    pub gain_peak_ppm: u32,
+    pub gain_end_ppm: u32,
+    pub filter: SynthFilter,
+    pub filter_start_millihz: u32,
+    pub filter_end_millihz: u32,
+    pub cooldown_ms: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -636,6 +721,10 @@ pub enum Key {
     Fire = 4,
     Pause = 5,
     Restart = 6,
+    AutoFire = 7,
+    KidMode = 8,
+    DeathBlossom = 9,
+    Help = 10,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1202,6 +1291,7 @@ pub fn prepare_reload(
 const SUPPORTED_IMPORTS: &[&str] = &[
     "title",
     "menu_item",
+    "synth_voice",
     "image_define",
     "image_release",
     "frame_begin",
@@ -1318,6 +1408,7 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
                     0 => None,
                     1 => Some("Ctrl+N"),
                     6 => Some("Ctrl+Q"),
+                    7 => Some("F1"),
                     _ => None,
                 };
                 caller
@@ -1325,6 +1416,98 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
                     .metadata
                     .menu_items
                     .push(MenuItem::action(id, label, shortcut));
+                0
+            },
+        )
+        .map_err(runtime_error)?;
+    linker
+        .func_wrap(
+            "host.v0",
+            "synth_voice",
+            |mut caller: Caller<'_, HostState>,
+             program_id: i32,
+             waveform: i32,
+             delay_ms: i32,
+             duration_ms: i32,
+             frequency_start_millihz: i32,
+             frequency_mid_millihz: i32,
+             frequency_end_millihz: i32,
+             gain_start_ppm: i32,
+             gain_peak_ppm: i32,
+             gain_end_ppm: i32,
+             filter: i32,
+             filter_start_millihz: i32,
+             filter_end_millihz: i32,
+             cooldown_ms: i32| {
+                let Some(waveform) = SynthWaveform::from_abi(waveform) else {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::InvalidFrame("unsupported synth waveform"), -8);
+                };
+                let Some(filter) = SynthFilter::from_abi(filter) else {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::InvalidFrame("unsupported synth filter"), -8);
+                };
+                let scalars = [
+                    delay_ms,
+                    duration_ms,
+                    frequency_start_millihz,
+                    frequency_mid_millihz,
+                    frequency_end_millihz,
+                    gain_start_ppm,
+                    gain_peak_ppm,
+                    gain_end_ppm,
+                    filter_start_millihz,
+                    filter_end_millihz,
+                    cooldown_ms,
+                ];
+                if scalars.iter().any(|value| *value < 0)
+                    || duration_ms == 0
+                    || delay_ms > 5_000
+                    || duration_ms > 5_000
+                    || delay_ms.saturating_add(duration_ms) > 6_000
+                    || [
+                        frequency_start_millihz,
+                        frequency_mid_millihz,
+                        frequency_end_millihz,
+                        filter_start_millihz,
+                        filter_end_millihz,
+                    ]
+                    .iter()
+                    .any(|value| *value > 24_000_000)
+                    || [gain_start_ppm, gain_peak_ppm, gain_end_ppm]
+                        .iter()
+                        .any(|value| *value > 1_000_000)
+                    || cooldown_ms > 5_000
+                {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::InvalidFrame("invalid synth voice bounds"), -8);
+                }
+                if caller.data().metadata.synth_voices.len()
+                    >= caller.data().limits.max_synth_voices
+                {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::Budget("synth_voice", "synth voice"), -2);
+                }
+                caller.data_mut().metadata.synth_voices.push(SynthVoice {
+                    program_id: program_id as u32,
+                    waveform,
+                    delay_ms: delay_ms as u32,
+                    duration_ms: duration_ms as u32,
+                    frequency_start_millihz: frequency_start_millihz as u32,
+                    frequency_mid_millihz: frequency_mid_millihz as u32,
+                    frequency_end_millihz: frequency_end_millihz as u32,
+                    gain_start_ppm: gain_start_ppm as u32,
+                    gain_peak_ppm: gain_peak_ppm as u32,
+                    gain_end_ppm: gain_end_ppm as u32,
+                    filter,
+                    filter_start_millihz: filter_start_millihz as u32,
+                    filter_end_millihz: filter_end_millihz as u32,
+                    cooldown_ms: cooldown_ms as u32,
+                });
                 0
             },
         )

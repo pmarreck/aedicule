@@ -14,9 +14,10 @@ The experiment asks a slightly strange but useful question:
 
 The bundled answer is a playable Asteroids-style game based on
 [Vibesteroids](https://github.com/pmarreck/vibesteroids). Its simulation,
-game state, drawing decisions, menus, and audio events live in WAT. The generic
-Rust host supplies Wasmtime isolation, GPUI rendering, native input and menus,
-generated audio, lifecycle management, and transactional hot reload.
+game state, drawing decisions, menus, and guest-declared synth programs live in
+WAT. The generic Rust host supplies Wasmtime isolation, GPUI rendering, native
+input and menus, bounded audio synthesis, lifecycle management, and
+transactional hot reload.
 
 > [!IMPORTANT]
 > **This is a successful proof of concept, not a production-ready application
@@ -67,7 +68,7 @@ flowchart LR
 	WAT["code.wat<br/>state + behavior"] --> COMPILE["WAT → WASM"]
 	COMPILE --> VM["Wasmtime sandbox"]
 	HOST["Rust frontplane"] -->|"input + fixed ticks"| VM
-	VM -->|"bounded draw/audio/effect commands"| HOST
+	VM -->|"bounded draw/synth/effect commands"| HOST
 	VM -->|"opaque state snapshot"| RELOAD["transactional reload"]
 	RELOAD -->|"compatible state"| VM
 	HOST --> GPUI["GPUI native window"]
@@ -91,7 +92,7 @@ WAT is production-safe.
 
 - Directly authored WAT can hold a nontrivial deterministic game simulation.
 - One generic ABI can cover vector drawing, affine transforms, paths, sprites,
-  text, menus, input, audio events, host effects, and snapshots.
+  text, menus, input, composable synth voices, host effects, and snapshots.
 - The same guest output can drive both a native GPUI window and a deterministic
   headless SVG artifact.
 - Live edits can replace code without restarting compatible game state.
@@ -107,12 +108,17 @@ Working now:
 - playable Vibesteroids behavioral conversion with a score/level/lives HUD,
   five-rock opening wave, jagged rotating asteroids, multi-shot firing,
   two-child splitting, 80/120 scoring, escalating waves, particles, ship
-  debris, respawn, and game over;
+  debris, safe respawn, auto-fire, Kid Mode, the semi-secret Death Blossom,
+  Help/Controls, and game over;
+- schema-3 signed decimal-fixed gameplay state and physics, with IEEE-754
+  conversion isolated to the GPUI/ABI adapter and mechanically checked;
 - deterministic fixed-capacity WAT pools for 32 asteroids, 64 bullets, 150
   particles, and four debris pieces;
-- native GPUI/gpui-component window;
-- keyboard controls and native menus;
-- generated semantic audio;
+- full-window, resize-aware native GPUI/gpui-component presentation;
+- complete desktop keyboard controls and native New/Help/Quit menus;
+- guest-declared shot, thrust, explosion, Death Blossom, and extra-life synth
+  programs rendered by a game-agnostic decimal-fixed host, with `f32` PCM
+  conversion isolated to the rodio output boundary;
 - deterministic headless SVG output;
 - external WAT file/application-directory loading;
 - `--watch`, Reload, and Ctrl+R hot reload;
@@ -161,12 +167,16 @@ Vibesteroids controls:
 | Left / Right | Rotate |
 | Up | Thrust |
 | Space | Fire |
-| P | Pause |
+| F | Toggle auto-fire |
+| K | Toggle Kid Mode |
+| B | Activate the once-per-life Death Blossom |
+| P / Escape | Pause |
+| H / F1 | Help / Controls |
 | R | New game |
 | Ctrl+R | Reload external WAT |
 
-New Game, Reload, and Quit are also available through the window chrome and
-native menu.
+New Game, Help / Controls, Reload, and Quit are also available through the
+window chrome and native menu.
 
 ## Live-edit a WAT application
 
@@ -183,11 +193,16 @@ You can instead select a file or an application directory:
 ./run path/to/game.wat
 ./run --watch path/to/application
 ./run --embedded
+./run --seed 42 --watch path/to/application
 ```
 
 An application directory resolves to `path/to/application/code.wat`. Watching
 follows the path rather than an open inode, so ordinary writes and atomic
 editor rename/replacement saves are both detected.
+
+`--seed N` supplies a validated unsigned 64-bit deterministic seed to either
+the bundled demo or any external application. If repeated, the later value
+wins, matching the CLI's general override convention.
 
 Reload is transactional. A candidate must compile, configure, initialize,
 restore when compatible, and render its first frame successfully before it
@@ -250,6 +265,25 @@ concrete demonstration of the larger idea: application behavior can change in
 human-visible real time while a stable native frontplane preserves compatible
 application state.
 
+The live experiment above accurately records the schema-2 code that was
+running at that moment. The next implementation milestone deliberately bumped
+the guest to schema 3 and migrated every gameplay scalar to signed decimal
+millionths. The final `0.995` drag is now the exact integer operation
+`velocity * 995000 / 1000000`; floating-point loads, stores, and arithmetic are
+mechanically forbidden outside the two marked host conversion functions.
+Because state meaning changed, the transactional loader treats schemas 2 and 3
+as incompatible and starts a fresh game exactly once.
+
+The same rule now covers generated sound: oscillator phase, frequency and gain
+ramps, white/brown noise shaping, filters, and mixing use signed decimal
+millionths. Guest `volume`/`pitch` and rodio PCM samples cross tiny named float
+adapters; no IEEE-754 value participates in synthesis or game state.
+
+The same milestone made the canvas consume the complete drawable window.
+Resize events regenerate 100 deterministic stars and translate ship, bullets,
+asteroids, particles, and debris by `new_center - old_center`, preserving
+velocities and trajectories rather than stretching the world.
+
 ## Headless rendering
 
 `gpui-wasm-render` runs the same frontplane core without opening a window. It
@@ -268,9 +302,9 @@ tools an exact inspectable artifact without requiring desktop access.
 
 | Path | Purpose |
 | --- | --- |
-| `plugins/vibesteroids.wat` | WAT-owned game state, simulation, menus, rendering, and audio events |
-| `src/lib.rs` | GPUI-independent Wasmtime runtime, validation, command model, snapshots, and reload core |
-| `src/main.rs` | Native GPUI renderer, input, menus, audio, and live-file adapter |
+| `plugins/vibesteroids.wat` | Decimal-fixed game state, simulation, menus, rendering, and synth declarations |
+| `src/lib.rs` | GPUI-independent Wasmtime runtime, synth/command validation, snapshots, and reload core |
+| `src/main.rs` | Full-window GPUI renderer, input, generic synth engine, menus, and live-file adapter |
 | `src/bin/gpui-wasm-render.rs` | Deterministic headless SVG adapter |
 | `tests/` | ABI, containment, rendering, CLI, launch, and hot-reload coverage |
 | `SPEC.md` | Protocol specification and feasibility findings |

@@ -25,6 +25,7 @@ fn default_source_prefers_colocated_code_wat_then_embedded_fallback() {
         LaunchAction::Run {
             source: PluginSource::Embedded,
             watch: false,
+            seed: None,
         }
     );
 
@@ -34,6 +35,7 @@ fn default_source_prefers_colocated_code_wat_then_embedded_fallback() {
         LaunchAction::Run {
             source: PluginSource::File(directory.join("code.wat")),
             watch: false,
+            seed: None,
         }
     );
     fs::remove_dir_all(directory).unwrap();
@@ -51,6 +53,7 @@ fn explicit_file_directory_watch_and_embedded_modes_resolve_predictably() {
         LaunchAction::Run {
             source: PluginSource::File(file),
             watch: true,
+            seed: None,
         }
     );
     assert_eq!(
@@ -58,6 +61,7 @@ fn explicit_file_directory_watch_and_embedded_modes_resolve_predictably() {
         LaunchAction::Run {
             source: PluginSource::File(app_directory.join("code.wat")),
             watch: false,
+            seed: None,
         }
     );
     assert_eq!(
@@ -65,6 +69,7 @@ fn explicit_file_directory_watch_and_embedded_modes_resolve_predictably() {
         LaunchAction::Run {
             source: PluginSource::Embedded,
             watch: false,
+            seed: None,
         }
     );
     assert_eq!(
@@ -72,8 +77,31 @@ fn explicit_file_directory_watch_and_embedded_modes_resolve_predictably() {
         LaunchAction::Run {
             source: PluginSource::File(directory.join("code.wat")),
             watch: true,
+            seed: None,
         }
     );
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn deterministic_seed_is_validated_and_later_values_override_earlier_ones() {
+    let directory = temporary_directory("seed");
+
+    assert_eq!(
+        resolve_launch(
+            arguments(&["--seed", "42", "--seed", "99", "game.wat"]),
+            &directory,
+        )
+        .unwrap(),
+        LaunchAction::Run {
+            source: PluginSource::File(directory.join("game.wat")),
+            watch: false,
+            seed: Some(99),
+        }
+    );
+    assert!(resolve_launch(arguments(&["--seed"]), &directory).is_err());
+    assert!(resolve_launch(arguments(&["--seed", "not-a-number"]), &directory).is_err());
+    assert!(resolve_launch(arguments(&["--seed", "-1"]), &directory).is_err());
     fs::remove_dir_all(directory).unwrap();
 }
 

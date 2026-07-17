@@ -1,0 +1,17 @@
+When a browser game integrates per-second acceleration and velocity with
+`deltaTime`, a 60-Hz port whose stored velocity is distance-per-tick must
+convert each quantity according to its dimension: divide velocity and angular
+speed by 60, but divide acceleration by 60 squared. Applying one `/ 60` to
+everything produces plausible but wrong physics and can hide for a long time.
+
+For Vibesteroids, the exact fixed-tick endpoints are:
+
+- ship acceleration: `300..500 units/s² / 3600` per tick²;
+- rotation: `5..10 rad/s / 60` per tick;
+- bullet speed: `337.5..765 units/s / 60` per tick; and
+- strict `elapsed_ms > delay`: `floor(delay_ms * 60 / 1000) + 1` ticks.
+
+Compute the level-1-through-20 interpolation with integers before the unit
+conversion, clamp the level index once, and test both endpoints plus the
+level-20 asteroid-cap transition. Keep Death Blossom's intended 450-units/s
+bullet speed as its separate `7.5 units/tick` rule.

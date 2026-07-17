@@ -1,5 +1,7 @@
 use std::{
+    collections::HashMap,
     env,
+    num::{NonZeroU16, NonZeroU32},
     path::{Path, PathBuf},
     process::ExitCode,
     time::{Duration, Instant},
@@ -15,24 +17,24 @@ use gpui::{
 use gpui_component::{
     ActiveTheme as _, Root, Theme, ThemeMode, TitleBar,
     button::{Button, ButtonVariants as _},
-    h_flex, v_flex,
+    h_flex,
 };
 use gpui_wasm::{
     Affine, AudioEvent, DrawCommand, Event, FileRevision, FrameOutput, Frontplane, HostEffect, Key,
     LaunchAction, Limits, Metadata, PathSegment, PluginInit, PluginSource, RevisionTracker,
-    StateTransfer, prepare_reload, resolve_launch,
+    StateTransfer, SynthFilter, SynthVoice, SynthWaveform, prepare_reload, resolve_launch,
 };
-use rodio::{DeviceSinkBuilder, MixerDeviceSink, Source as _, source::SineWave};
+use rodio::{DeviceSinkBuilder, MixerDeviceSink, buffer::SamplesBuffer};
 use smol::Timer;
 
-actions!(gpui_wasm, [NewGame, ReloadPlugin, Quit]);
+actions!(gpui_wasm, [NewGame, HelpControls, ReloadPlugin, Quit]);
 
 const DEMO_WAT: &str = include_str!("../plugins/vibesteroids.wat");
 const LOGICAL_WIDTH: f32 = 1024.0;
 const LOGICAL_HEIGHT: f32 = 768.0;
 const FRAME_INTERVAL: Duration = Duration::from_micros(16_667);
 const WATCH_INTERVAL: Duration = Duration::from_millis(250);
-const PLUGIN_INIT: PluginInit = PluginInit::new(0x5eed_cafe, LOGICAL_WIDTH, LOGICAL_HEIGHT);
+const DEFAULT_PLUGIN_INIT: PluginInit = PluginInit::new(0x5eed_cafe, LOGICAL_WIDTH, LOGICAL_HEIGHT);
 
 struct Strings {
     fallback_title: &'static str,
@@ -80,6 +82,7 @@ Usage:
 Options:
   --watch       Reload after content changes; defaults to ./code.wat
   --embedded    Force the bundled Vibesteroids demonstration
+  --seed N      Set the deterministic unsigned 64-bit application seed
   -h, --help    Show this help
   --about       Show version and build platform
 
@@ -93,6 +96,7 @@ demo runs. An application directory resolves to its code.wat file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum StandardMenuEntry {
     New(String),
+    Help(String),
     Separator,
     Quit(String),
 }
@@ -110,6 +114,7 @@ fn standard_menu_entries(metadata: &Metadata) -> Vec<StandardMenuEntry> {
             match item.id {
                 Some(1) => Some(StandardMenuEntry::New(item.label.clone())),
                 Some(6) => Some(StandardMenuEntry::Quit(item.label.clone())),
+                Some(7) => Some(StandardMenuEntry::Help(item.label.clone())),
                 _ => None,
             }
         })
@@ -121,6 +126,7 @@ fn native_menus(metadata: &Metadata, can_reload: bool) -> Vec<Menu> {
         .into_iter()
         .map(|entry| match entry {
             StandardMenuEntry::New(label) => MenuItem::action(label, NewGame),
+            StandardMenuEntry::Help(label) => MenuItem::action(label, HelpControls),
             StandardMenuEntry::Separator => MenuItem::Separator,
             StandardMenuEntry::Quit(label) => MenuItem::action(label, Quit),
         })
@@ -144,49 +150,255 @@ fn native_menus(metadata: &Metadata, can_reload: bool) -> Vec<Menu> {
 
 struct AudioOutput {
     sink: Option<MixerDeviceSink>,
-    last_thrust: Option<Instant>,
+    programs: HashMap<u32, Vec<SynthVoice>>,
+    last_played: HashMap<u32, Instant>,
 }
 
 impl AudioOutput {
-    fn new() -> Self {
+    fn new(voices: &[SynthVoice]) -> Self {
         let sink = DeviceSinkBuilder::open_default_sink().ok().map(|mut sink| {
             sink.log_on_drop(false);
             sink
         });
-        Self {
+        let mut output = Self {
             sink,
-            last_thrust: None,
+            programs: HashMap::new(),
+            last_played: HashMap::new(),
+        };
+        output.replace_programs(voices);
+        output
+    }
+
+    fn replace_programs(&mut self, voices: &[SynthVoice]) {
+        self.programs.clear();
+        self.last_played.clear();
+        for voice in voices {
+            self.programs
+                .entry(voice.program_id)
+                .or_default()
+                .push(voice.clone());
         }
     }
 
     fn play(&mut self, event: AudioEvent) {
         let Some(sink) = &self.sink else { return };
-        if event.id == 4 {
-            let now = Instant::now();
-            if self
-                .last_thrust
-                .is_some_and(|last| now.duration_since(last) < Duration::from_millis(55))
-            {
-                return;
-            }
-            self.last_thrust = Some(now);
-        }
-        let (base_frequency, milliseconds) = match event.id {
-            1 => (760.0, 90),
-            2 => (180.0, 170),
-            3 => (85.0, 420),
-            4 => (58.0, 65),
-            5 => return,
-            6 => (1046.5, 260),
-            _ => (440.0, 70),
+        let Some(voices) = self.programs.get(&event.id) else {
+            return;
         };
-        let tone = SineWave::new(base_frequency * event.pitch)
-            .take_duration(Duration::from_millis(milliseconds))
-            .amplify(event.volume * 0.18)
-            .fade_out(Duration::from_millis(milliseconds / 2));
-        sink.mixer().add(tone);
+        let cooldown_ms = voices
+            .iter()
+            .map(|voice| voice.cooldown_ms)
+            .max()
+            .unwrap_or_default();
+        let now = Instant::now();
+        if cooldown_ms > 0
+            && self.last_played.get(&event.id).is_some_and(|last| {
+                now.duration_since(*last) < Duration::from_millis(cooldown_ms.into())
+            })
+        {
+            return;
+        }
+        self.last_played.insert(event.id, now);
+        let samples = render_synth_program_for_host(voices, event, 48_000);
+        if samples.is_empty() {
+            return;
+        }
+        sink.mixer().add(SamplesBuffer::new(
+            NonZeroU16::new(1).unwrap(),
+            NonZeroU32::new(48_000).unwrap(),
+            samples,
+        ));
     }
 }
+
+const DECIMAL_SCALE: i64 = 1_000_000;
+
+/// Converts the frontplane's float audio ABI into the decimal representation;
+/// this is an ingress boundary, never part of synthesis or game state.
+fn audio_scalar_from_host(value: f32) -> i64 {
+    if value.is_finite() {
+        (value * DECIMAL_SCALE as f32).round() as i64
+    } else {
+        0
+    }
+}
+
+/// Converts completed decimal PCM samples to rodio's required host sample
+/// representation only after every oscillator, envelope, and filter is done.
+fn audio_samples_to_host(samples: Vec<i32>) -> Vec<f32> {
+    samples
+        .into_iter()
+        .map(|sample| sample as f32 / DECIMAL_SCALE as f32)
+        .collect()
+}
+
+fn render_synth_program_for_host(
+    voices: &[SynthVoice],
+    event: AudioEvent,
+    sample_rate: u32,
+) -> Vec<f32> {
+    audio_samples_to_host(render_synth_program_fixed(
+        voices,
+        event.id,
+        audio_scalar_from_host(event.volume),
+        audio_scalar_from_host(event.pitch),
+        sample_rate,
+    ))
+}
+
+// FIXED_AUDIO_BEGIN
+fn fixed_mul(left: i64, right: i64) -> i64 {
+    ((left as i128 * right as i128) / DECIMAL_SCALE as i128) as i64
+}
+
+fn interpolate_integer(start: i64, end: i64, index: usize, count: usize) -> i64 {
+    if count == 0 {
+        return start;
+    }
+    (start as i128 + (end as i128 - start as i128) * index as i128 / count as i128) as i64
+}
+
+fn three_point_integer(start: i64, middle: i64, end: i64, index: usize, count: usize) -> i64 {
+    if index.saturating_mul(2) < count {
+        interpolate_integer(start, middle, index.saturating_mul(2), count)
+    } else {
+        interpolate_integer(middle, end, index.saturating_mul(2) - count, count)
+    }
+}
+
+/// Approximates a sinusoid from a decimal microturn phase using a corrected
+/// parabola, preserving exact zeroes and extrema without a float lookup table.
+fn fixed_sine(phase: i64) -> i64 {
+    let phase = phase.rem_euclid(DECIMAL_SCALE);
+    let (half_phase, sign) = if phase < DECIMAL_SCALE / 2 {
+        (phase * 2, 1)
+    } else {
+        ((phase - DECIMAL_SCALE / 2) * 2, -1)
+    };
+    let parabola = (4_i128 * half_phase as i128 * (DECIMAL_SCALE - half_phase) as i128
+        / DECIMAL_SCALE as i128) as i64;
+    let corrected = parabola + fixed_mul(225_000, fixed_mul(parabola, parabola) - parabola);
+    corrected * sign
+}
+
+fn noise_sample(random: u32) -> i64 {
+    ((random as i128 - 2_147_483_648_i128) * DECIMAL_SCALE as i128 / 2_147_483_648_i128) as i64
+}
+
+fn frequency_phase_step(frequency_millihz: i64, sample_rate: u32) -> i64 {
+    (frequency_millihz as i128 * 1_000 / sample_rate.max(1) as i128) as i64
+}
+
+fn cutoff_omega(cutoff_millihz: i64, sample_rate: u32) -> i64 {
+    let maximum = sample_rate as i64 * 450;
+    let cutoff = cutoff_millihz.clamp(1, maximum);
+    (6_283_185_i128 * cutoff as i128 / (sample_rate.max(1) as i128 * 1_000)) as i64
+}
+
+fn low_pass_coefficient(cutoff_millihz: i64, sample_rate: u32) -> i64 {
+    let omega = cutoff_omega(cutoff_millihz, sample_rate);
+    (omega as i128 * DECIMAL_SCALE as i128 / (DECIMAL_SCALE + omega) as i128) as i64
+}
+
+/// Renders all guest-declared synthesis with signed decimal millionths. PCM
+/// conversion happens later at the rodio boundary and cannot feed back here.
+fn render_synth_program_fixed(
+    voices: &[SynthVoice],
+    event_id: u32,
+    event_volume: i64,
+    event_pitch: i64,
+    sample_rate: u32,
+) -> Vec<i32> {
+    let total_ms = voices
+        .iter()
+        .map(|voice| voice.delay_ms + voice.duration_ms)
+        .max()
+        .unwrap_or_default();
+    let mut output = vec![0_i64; total_ms as usize * sample_rate as usize / 1_000];
+
+    for (voice_index, voice) in voices.iter().enumerate() {
+        let start_sample = voice.delay_ms as usize * sample_rate as usize / 1_000;
+        let sample_count = voice.duration_ms as usize * sample_rate as usize / 1_000;
+        let mut phase = 0_i64;
+        let mut random = event_id ^ (voice_index as u32 + 1).wrapping_mul(0x9e37_79b9);
+        let mut brown = 0_i64;
+        let mut low = 0_i64;
+        let mut band = 0_i64;
+
+        for local_index in 0..sample_count {
+            let frequency = fixed_mul(
+                three_point_integer(
+                    voice.frequency_start_millihz.into(),
+                    voice.frequency_mid_millihz.into(),
+                    voice.frequency_end_millihz.into(),
+                    local_index,
+                    sample_count,
+                ),
+                event_pitch,
+            );
+            random ^= random << 13;
+            random ^= random >> 17;
+            random ^= random << 5;
+            let white = noise_sample(random);
+            brown = fixed_mul(brown + fixed_mul(white, 20_000), 980_392)
+                .clamp(-DECIMAL_SCALE, DECIMAL_SCALE);
+            let raw = match voice.waveform {
+                SynthWaveform::Sine => fixed_sine(phase),
+                SynthWaveform::Saw => phase * 2 - DECIMAL_SCALE,
+                SynthWaveform::WhiteNoise => white,
+                SynthWaveform::BrownNoise => fixed_mul(brown, 3_500_000),
+            };
+            phase =
+                (phase + frequency_phase_step(frequency, sample_rate)).rem_euclid(DECIMAL_SCALE);
+
+            let cutoff = interpolate_integer(
+                voice.filter_start_millihz.max(1).into(),
+                voice.filter_end_millihz.max(1).into(),
+                local_index,
+                sample_count,
+            );
+            let filtered = match voice.filter {
+                SynthFilter::None => raw,
+                SynthFilter::LowPass => {
+                    let alpha = low_pass_coefficient(cutoff, sample_rate);
+                    low += fixed_mul(alpha, raw - low);
+                    low
+                }
+                SynthFilter::BandPass => {
+                    let coefficient = cutoff_omega(cutoff, sample_rate).clamp(0, 990_000);
+                    let high = raw - low - fixed_mul(800_000, band);
+                    band += fixed_mul(coefficient, high);
+                    low += fixed_mul(coefficient, band);
+                    band
+                }
+            };
+            let attack_count = (sample_count / 20).max(1);
+            let gain = if local_index < attack_count {
+                interpolate_integer(
+                    voice.gain_start_ppm.into(),
+                    voice.gain_peak_ppm.into(),
+                    local_index,
+                    attack_count,
+                )
+            } else {
+                interpolate_integer(
+                    voice.gain_peak_ppm.into(),
+                    voice.gain_end_ppm.into(),
+                    local_index - attack_count,
+                    sample_count.saturating_sub(attack_count),
+                )
+            };
+            output[start_sample + local_index] +=
+                fixed_mul(fixed_mul(filtered, gain), event_volume);
+        }
+    }
+
+    output
+        .into_iter()
+        .map(|sample| sample.clamp(-DECIMAL_SCALE, DECIMAL_SCALE) as i32)
+        .collect()
+}
+// FIXED_AUDIO_END
 
 struct ExternalSource {
     path: PathBuf,
@@ -199,6 +411,7 @@ struct Startup {
     frame: FrameOutput,
     source: Option<ExternalSource>,
     reload_error: Option<String>,
+    plugin_init: PluginInit,
 }
 
 struct FrontplaneView {
@@ -206,6 +419,7 @@ struct FrontplaneView {
     frame: FrameOutput,
     title: String,
     new_label: Option<String>,
+    help_label: Option<String>,
     quit_label: Option<String>,
     focus_handle: FocusHandle,
     window_handle: AnyWindowHandle,
@@ -214,6 +428,33 @@ struct FrontplaneView {
     fatal_error: Option<String>,
     reload_error: Option<String>,
     reload_notice: Option<&'static str>,
+    viewport: ViewportTracker,
+    plugin_init: PluginInit,
+}
+
+#[derive(Default)]
+struct ViewportTracker {
+    last_bits: Option<(u32, u32)>,
+}
+
+impl ViewportTracker {
+    /// Coalesces repeated layout passes while preserving fractional logical
+    /// pixel sizes exactly at the GPUI-to-guest boundary.
+    fn observe(&mut self, width: f32, height: f32) -> Option<(f32, f32)> {
+        if !width.is_finite() || !height.is_finite() || width <= 0.0 || height <= 0.0 {
+            return None;
+        }
+        let bits = (width.to_bits(), height.to_bits());
+        if self.last_bits == Some(bits) {
+            return None;
+        }
+        self.last_bits = Some(bits);
+        Some((width, height))
+    }
+
+    fn invalidate(&mut self) {
+        self.last_bits = None;
+    }
 }
 
 impl FrontplaneView {
@@ -223,15 +464,20 @@ impl FrontplaneView {
             frame,
             source,
             reload_error,
+            plugin_init,
         } = startup;
         let metadata = frontplane.metadata().clone();
         let entries = standard_menu_entries(&metadata);
         let view = Self {
             frontplane,
             frame,
-            title: metadata.title,
+            title: metadata.title.clone(),
             new_label: entries.iter().find_map(|entry| match entry {
                 StandardMenuEntry::New(label) => Some(label.clone()),
+                _ => None,
+            }),
+            help_label: entries.iter().find_map(|entry| match entry {
+                StandardMenuEntry::Help(label) => Some(label.clone()),
                 _ => None,
             }),
             quit_label: entries.iter().find_map(|entry| match entry {
@@ -240,11 +486,13 @@ impl FrontplaneView {
             }),
             focus_handle: cx.focus_handle(),
             window_handle: window.window_handle(),
-            audio: AudioOutput::new(),
+            audio: AudioOutput::new(&metadata.synth_voices),
             source,
             fatal_error: None,
             reload_error,
             reload_notice: None,
+            viewport: ViewportTracker::default(),
+            plugin_init,
         };
 
         cx.spawn(async move |this, cx| {
@@ -332,7 +580,7 @@ impl FrontplaneView {
             &mut self.frontplane,
             &source,
             Limits::default(),
-            PLUGIN_INIT,
+            self.plugin_init,
         ) {
             Ok(prepared) => {
                 let metadata = prepared.frontplane.metadata().clone();
@@ -344,16 +592,22 @@ impl FrontplaneView {
                     StandardMenuEntry::New(label) => Some(label.clone()),
                     _ => None,
                 });
+                self.help_label = entries.iter().find_map(|entry| match entry {
+                    StandardMenuEntry::Help(label) => Some(label.clone()),
+                    _ => None,
+                });
                 self.quit_label = entries.iter().find_map(|entry| match entry {
                     StandardMenuEntry::Quit(label) => Some(label.clone()),
                     _ => None,
                 });
+                self.audio.replace_programs(&metadata.synth_voices);
                 self.fatal_error = None;
                 self.reload_error = None;
                 self.reload_notice = Some(match prepared.state_transfer {
                     StateTransfer::Preserved => EN.reload_preserved,
                     StateTransfer::Restarted => EN.reload_restarted,
                 });
+                self.viewport.invalidate();
                 cx.set_menus(native_menus(&metadata, true));
                 let title = window_title(&metadata);
                 let _ = cx.update_window(self.window_handle, |_, window, _| {
@@ -410,6 +664,17 @@ impl FrontplaneView {
         cx.notify();
     }
 
+    fn help_controls(&mut self, _: &HelpControls, _: &mut Window, cx: &mut Context<Self>) {
+        if let Err(error) = self
+            .frontplane
+            .event(Event::MenuAction(7))
+            .and_then(|_| self.frontplane.render().map(|frame| self.frame = frame))
+        {
+            self.fatal_error = Some(error.to_string());
+        }
+        cx.notify();
+    }
+
     fn quit(&mut self, _: &Quit, _: &mut Window, cx: &mut Context<Self>) {
         cx.quit();
     }
@@ -418,7 +683,17 @@ impl FrontplaneView {
         let Some(key) = map_key(&event.keystroke.key) else {
             return;
         };
-        if event.is_held && matches!(key, Key::Pause | Key::Restart) {
+        if event.is_held
+            && matches!(
+                key,
+                Key::Pause
+                    | Key::Restart
+                    | Key::AutoFire
+                    | Key::KidMode
+                    | Key::DeathBlossom
+                    | Key::Help
+            )
+        {
             return;
         }
         if let Err(error) = self.frontplane.event(Event::KeyDown(key)) {
@@ -445,12 +720,26 @@ impl Focusable for FrontplaneView {
 }
 
 impl Render for FrontplaneView {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let viewport = window.viewport_size();
+        if let Some((width, height)) = self
+            .viewport
+            .observe(f32::from(viewport.width), f32::from(viewport.height))
+        {
+            if let Err(error) = self
+                .frontplane
+                .event(Event::Viewport { width, height })
+                .and_then(|_| self.frontplane.render().map(|frame| self.frame = frame))
+            {
+                self.fatal_error = Some(error.to_string());
+            }
+        }
         let frame = self.frame.clone();
         let fatal_error = self.fatal_error.clone();
         let reload_error = self.reload_error.clone();
         let title = self.title.clone();
         let new_label = self.new_label.clone();
+        let help_label = self.help_label.clone();
         let quit_label = self.quit_label.clone();
         let can_reload = self.source.is_some();
         let source_status = match &self.source {
@@ -464,59 +753,21 @@ impl Render for FrontplaneView {
             Some(notice) => format!("{notice} • {source_status}"),
             None => format!("{} • {source_status}", EN.runtime_status),
         };
-        v_flex()
+        div()
+            .relative()
             .size_full()
             .track_focus(&self.focus_handle)
             .on_key_down(cx.listener(Self::key_down))
             .on_key_up(cx.listener(Self::key_up))
             .on_action(cx.listener(Self::new_game))
+            .on_action(cx.listener(Self::help_controls))
             .on_action(cx.listener(Self::reload_plugin))
             .on_action(cx.listener(Self::quit))
             .child(
-                TitleBar::new().child(
-                    h_flex()
-                        .w_full()
-                        .pr_3()
-                        .gap_2()
-                        .justify_between()
-                        .child(title)
-                        .child(
-                            h_flex()
-                                .gap_2()
-                                .when(can_reload, |this| {
-                                    this.child(
-                                        Button::new("reload-plugin").label(EN.reload).on_click(
-                                            cx.listener(|this, _, window, cx| {
-                                                this.reload_plugin(&ReloadPlugin, window, cx)
-                                            }),
-                                        ),
-                                    )
-                                })
-                                .when_some(new_label, |this, label| {
-                                    this.child(
-                                        Button::new("new-game").primary().label(label).on_click(
-                                            cx.listener(|this, _, window, cx| {
-                                                this.new_game(&NewGame, window, cx)
-                                            }),
-                                        ),
-                                    )
-                                })
-                                .when_some(quit_label, |this, label| {
-                                    this.child(Button::new("quit").label(label).on_click(
-                                        cx.listener(|this, _, window, cx| {
-                                            this.quit(&Quit, window, cx)
-                                        }),
-                                    ))
-                                }),
-                        ),
-                ),
-            )
-            .child(
                 div()
                     .id("frontplane-canvas")
-                    .relative()
-                    .flex_1()
-                    .w_full()
+                    .absolute()
+                    .inset_0()
                     .bg(rgba(frame.background))
                     .child(
                         canvas(
@@ -555,11 +806,62 @@ impl Render for FrontplaneView {
                     }),
             )
             .child(
+                TitleBar::new().absolute().top_0().left_0().right_0().child(
+                    h_flex()
+                        .w_full()
+                        .pr_3()
+                        .gap_2()
+                        .justify_between()
+                        .child(title)
+                        .child(
+                            h_flex()
+                                .gap_2()
+                                .when(can_reload, |this| {
+                                    this.child(
+                                        Button::new("reload-plugin").label(EN.reload).on_click(
+                                            cx.listener(|this, _, window, cx| {
+                                                this.reload_plugin(&ReloadPlugin, window, cx)
+                                            }),
+                                        ),
+                                    )
+                                })
+                                .when_some(new_label, |this, label| {
+                                    this.child(
+                                        Button::new("new-game").primary().label(label).on_click(
+                                            cx.listener(|this, _, window, cx| {
+                                                this.new_game(&NewGame, window, cx)
+                                            }),
+                                        ),
+                                    )
+                                })
+                                .when_some(help_label, |this, label| {
+                                    this.child(Button::new("help-controls").label(label).on_click(
+                                        cx.listener(|this, _, window, cx| {
+                                            this.help_controls(&HelpControls, window, cx)
+                                        }),
+                                    ))
+                                })
+                                .when_some(quit_label, |this, label| {
+                                    this.child(Button::new("quit").label(label).on_click(
+                                        cx.listener(|this, _, window, cx| {
+                                            this.quit(&Quit, window, cx)
+                                        }),
+                                    ))
+                                }),
+                        ),
+                ),
+            )
+            .child(
                 h_flex()
+                    .absolute()
+                    .bottom_0()
+                    .left_0()
+                    .right_0()
                     .px_3()
                     .py_1()
                     .justify_between()
                     .text_xs()
+                    .bg(rgba(0x080b12cc))
                     .text_color(cx.theme().muted_foreground)
                     .child(EN.abi_status)
                     .child(runtime_status),
@@ -574,8 +876,12 @@ fn map_key(key: &str) -> Option<Key> {
         "right" => Some(Key::Right),
         "up" => Some(Key::Thrust),
         "space" | " " => Some(Key::Fire),
-        "p" => Some(Key::Pause),
+        "p" | "escape" => Some(Key::Pause),
         "r" => Some(Key::Restart),
+        "f" => Some(Key::AutoFire),
+        "k" => Some(Key::KidMode),
+        "b" => Some(Key::DeathBlossom),
+        "h" => Some(Key::Help),
         _ => None,
     }
 }
@@ -624,19 +930,8 @@ fn paint_frame(
     window: &mut Window,
     cx: &mut App,
 ) {
-    let width = f32::from(bounds.size.width);
-    let height = f32::from(bounds.size.height);
-    let scale = (width / LOGICAL_WIDTH).min(height / LOGICAL_HEIGHT);
-    let offset_x = f32::from(bounds.origin.x) + (width - LOGICAL_WIDTH * scale) / 2.0;
-    let offset_y = f32::from(bounds.origin.y) + (height - LOGICAL_HEIGHT * scale) / 2.0;
-    let viewport = Affine {
-        m11: scale,
-        m12: 0.0,
-        m21: 0.0,
-        m22: scale,
-        tx: offset_x,
-        ty: offset_y,
-    };
+    let scale = 1.0;
+    let viewport = viewport_transform(bounds);
     let mut matrices = vec![Matrix(viewport)];
 
     for command in &frame.commands {
@@ -788,6 +1083,19 @@ fn paint_frame(
     }
 }
 
+/// Maps guest coordinates directly into the complete canvas instead of
+/// imposing a fixed-aspect logical viewport and letterboxing unused pixels.
+fn viewport_transform(bounds: Bounds<gpui::Pixels>) -> Affine {
+    Affine {
+        m11: 1.0,
+        m12: 0.0,
+        m21: 0.0,
+        m22: 1.0,
+        tx: f32::from(bounds.origin.x),
+        ty: f32::from(bounds.origin.y),
+    }
+}
+
 /// Replays the generic quadratic/cubic path model through GPUI after applying
 /// the current affine composition matrix.
 fn paint_path(
@@ -836,17 +1144,20 @@ fn paint_path(
 
 /// Instantiates the bundled demonstration through the same generic lifecycle
 /// used by any future externally selected WAT plugin.
-fn load_demo() -> (Frontplane, FrameOutput) {
-    load_frontplane(DEMO_WAT).expect("bundled WAT passed the headless ABI suite")
+fn load_demo(plugin_init: PluginInit) -> (Frontplane, FrameOutput) {
+    load_frontplane(DEMO_WAT, plugin_init).expect("bundled WAT passed the headless ABI suite")
 }
 
-fn load_frontplane(source: &str) -> Result<(Frontplane, FrameOutput), gpui_wasm::FrontplaneError> {
+fn load_frontplane(
+    source: &str,
+    plugin_init: PluginInit,
+) -> Result<(Frontplane, FrameOutput), gpui_wasm::FrontplaneError> {
     Frontplane::from_wat(source, Limits::default()).and_then(|mut frontplane| {
         frontplane.configure()?;
         frontplane.init(
-            PLUGIN_INIT.seed,
-            PLUGIN_INIT.viewport_width,
-            PLUGIN_INIT.viewport_height,
+            plugin_init.seed,
+            plugin_init.viewport_width,
+            plugin_init.viewport_height,
         )?;
         let frame = frontplane.render()?;
         frontplane.drain_audio();
@@ -855,15 +1166,21 @@ fn load_frontplane(source: &str) -> Result<(Frontplane, FrameOutput), gpui_wasm:
     })
 }
 
-fn startup(source: PluginSource, watch: bool) -> Startup {
+fn startup(source: PluginSource, watch: bool, seed: Option<u64>) -> Startup {
+    let plugin_init = PluginInit::new(
+        seed.unwrap_or(DEFAULT_PLUGIN_INIT.seed),
+        DEFAULT_PLUGIN_INIT.viewport_width,
+        DEFAULT_PLUGIN_INIT.viewport_height,
+    );
     match source {
         PluginSource::Embedded => {
-            let (frontplane, frame) = load_demo();
+            let (frontplane, frame) = load_demo(plugin_init);
             Startup {
                 frontplane,
                 frame,
                 source: None,
                 reload_error: None,
+                plugin_init,
             }
         }
         PluginSource::File(path) => {
@@ -871,7 +1188,7 @@ fn startup(source: PluginSource, watch: bool) -> Startup {
             let mut revisions = RevisionTracker::default();
             revisions.observe(&revision);
             let result = source_text(&path, &revision).and_then(|source| {
-                load_frontplane(&source)
+                load_frontplane(&source, plugin_init)
                     .map_err(|error| format!("{}: {}: {error}", EN.reload_failed, path.display()))
             });
             match result {
@@ -884,9 +1201,10 @@ fn startup(source: PluginSource, watch: bool) -> Startup {
                         revisions,
                     }),
                     reload_error: None,
+                    plugin_init,
                 },
                 Err(error) => {
-                    let (frontplane, frame) = load_demo();
+                    let (frontplane, frame) = load_demo(plugin_init);
                     Startup {
                         frontplane,
                         frame,
@@ -896,6 +1214,7 @@ fn startup(source: PluginSource, watch: bool) -> Startup {
                             revisions,
                         }),
                         reload_error: Some(error),
+                        plugin_init,
                     }
                 }
             }
@@ -930,6 +1249,7 @@ fn run_application(startup: Startup) {
         gpui_component::init(cx);
         cx.bind_keys([
             KeyBinding::new("ctrl-n", NewGame, None),
+            KeyBinding::new("f1", HelpControls, None),
             KeyBinding::new("ctrl-r", ReloadPlugin, None),
             KeyBinding::new("ctrl-q", Quit, None),
         ]);
@@ -987,15 +1307,25 @@ fn main() -> ExitCode {
             env::consts::OS,
             env::consts::ARCH,
         ),
-        LaunchAction::Run { source, watch } => run_application(startup(source, watch)),
+        LaunchAction::Run {
+            source,
+            watch,
+            seed,
+        } => run_application(startup(source, watch, seed)),
     }
     ExitCode::SUCCESS
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{StandardMenuEntry, standard_menu_entries};
-    use gpui_wasm::{MenuItem as PluginMenuItem, Metadata};
+    use super::{
+        DECIMAL_SCALE, StandardMenuEntry, ViewportTracker, fixed_sine, map_key,
+        render_synth_program_fixed, standard_menu_entries, viewport_transform,
+    };
+    use gpui::{Bounds, point, px, size};
+    use gpui_wasm::{
+        Key, MenuItem as PluginMenuItem, Metadata, SynthFilter, SynthVoice, SynthWaveform,
+    };
 
     #[test]
     fn plugin_metadata_drives_only_recognized_standard_native_actions() {
@@ -1004,9 +1334,11 @@ mod tests {
             menu_items: vec![
                 PluginMenuItem::action(1, "Begin", Some("Ctrl+N")),
                 PluginMenuItem::separator(),
+                PluginMenuItem::action(7, "Instructions", Some("F1")),
                 PluginMenuItem::action(6, "Leave", Some("Ctrl+Q")),
                 PluginMenuItem::action(1024, "Plugin-specific", None),
             ],
+            synth_voices: Vec::new(),
         };
 
         assert_eq!(
@@ -1014,8 +1346,86 @@ mod tests {
             vec![
                 StandardMenuEntry::New("Begin".into()),
                 StandardMenuEntry::Separator,
+                StandardMenuEntry::Help("Instructions".into()),
                 StandardMenuEntry::Quit("Leave".into()),
             ]
         );
+    }
+
+    #[test]
+    fn viewport_projection_uses_every_drawable_pixel_without_letterboxing() {
+        let bounds = Bounds::new(point(px(11.0), px(17.0)), size(px(1600.0), px(900.0)));
+
+        assert_eq!(
+            viewport_transform(bounds),
+            gpui_wasm::Affine {
+                m11: 1.0,
+                m12: 0.0,
+                m21: 0.0,
+                m22: 1.0,
+                tx: 11.0,
+                ty: 17.0,
+            }
+        );
+    }
+
+    #[test]
+    fn viewport_updates_emit_once_per_distinct_valid_size() {
+        let mut tracker = ViewportTracker::default();
+
+        assert_eq!(tracker.observe(1600.5, 900.25), Some((1600.5, 900.25)));
+        assert_eq!(tracker.observe(1600.5, 900.25), None);
+        assert_eq!(tracker.observe(1700.0, 900.25), Some((1700.0, 900.25)));
+        assert_eq!(tracker.observe(0.0, 900.0), None);
+        assert_eq!(tracker.observe(f32::NAN, 900.0), None);
+    }
+
+    #[test]
+    fn native_keys_cover_every_desktop_vibesteroids_control() {
+        assert_eq!(map_key("escape"), Some(Key::Pause));
+        assert_eq!(map_key("f"), Some(Key::AutoFire));
+        assert_eq!(map_key("k"), Some(Key::KidMode));
+        assert_eq!(map_key("b"), Some(Key::DeathBlossom));
+        assert_eq!(map_key("h"), Some(Key::Help));
+    }
+
+    #[test]
+    fn declared_synth_rendering_is_deterministic_scheduled_and_bounded() {
+        let voices = vec![SynthVoice {
+            program_id: 9,
+            waveform: SynthWaveform::WhiteNoise,
+            delay_ms: 10,
+            duration_ms: 90,
+            frequency_start_millihz: 0,
+            frequency_mid_millihz: 0,
+            frequency_end_millihz: 0,
+            gain_start_ppm: 300_000,
+            gain_peak_ppm: 300_000,
+            gain_end_ppm: 10_000,
+            filter: SynthFilter::LowPass,
+            filter_start_millihz: 1_500_000,
+            filter_end_millihz: 80_000,
+            cooldown_ms: 0,
+        }];
+        let first = render_synth_program_fixed(&voices, 9, DECIMAL_SCALE, DECIMAL_SCALE, 48_000);
+        let second = render_synth_program_fixed(&voices, 9, DECIMAL_SCALE, DECIMAL_SCALE, 48_000);
+        assert_eq!(first, second);
+        assert_eq!(first.len(), 4_800);
+        assert!(first[..480].iter().all(|sample| *sample == 0));
+        assert!(first[480..].iter().any(|sample| *sample != 0));
+        assert!(
+            first
+                .iter()
+                .all(|sample| (-1_000_000..=1_000_000).contains(sample))
+        );
+    }
+
+    #[test]
+    fn decimal_sine_has_exact_cardinal_points() {
+        assert_eq!(fixed_sine(0), 0);
+        assert_eq!(fixed_sine(250_000), DECIMAL_SCALE);
+        assert_eq!(fixed_sine(500_000), 0);
+        assert_eq!(fixed_sine(750_000), -DECIMAL_SCALE);
+        assert_eq!(fixed_sine(1_000_000), 0);
     }
 }

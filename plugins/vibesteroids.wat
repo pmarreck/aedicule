@@ -17,7 +17,7 @@
 ;;
 ;; Pools, relative to fp_state_ptr:
 ;;   256: 64 bullets x 48 bytes
-;;        active:i32, pad:i32, x/y/vx/vy:i64, life:i32
+;;        active:i32, pad:i32, x/y/vx/vy/distance-traveled:i64
 ;;  3328: 32 asteroids x 80 bytes
 ;;        active/generation/shape/pad:i32, x/y/vx/vy/radius/dx/dy:i64,
 ;;        spin:i32, points:i32
@@ -42,6 +42,10 @@
 	(import "host.v0" "text" (func $text (param i32 i32 i32 f32 f32 f32 i32 i32) (result i32)))
 	(import "host.v0" "frame_end" (func $frame_end (result i32)))
 	(import "host.v0" "audio" (func $audio (param i32 f32 f32 i32) (result i32)))
+	(import "host.v0" "synth_voice"
+		(func $synth_voice
+			(param i32 i32 i32 i32 i32 i32 i32 i32 i32 i32 i32 i32 i32 i32)
+			(result i32)))
 	(import "host.v0" "effect" (func $effect (param i32 i32 i32) (result i32)))
 
 	(memory (export "memory") 1 64)
@@ -59,6 +63,19 @@
 	(data (i32.const 168) "00")
 	(data (i32.const 176) "WAVE")
 	(data (i32.const 184) "SHIP DESTROYED")
+	(data (i32.const 200) "Help / Controls")
+	(data (i32.const 224) "CONTROLS")
+	(data (i32.const 240) "LEFT / RIGHT   ROTATE")
+	(data (i32.const 264) "UP             THRUST")
+	(data (i32.const 288) "SPACE          FIRE")
+	(data (i32.const 312) "F              AUTO-FIRE")
+	(data (i32.const 340) "K              KID MODE")
+	(data (i32.const 368) "B              DEATH BLOSSOM")
+	(data (i32.const 400) "P / ESC        PAUSE")
+	(data (i32.const 424) "R              RESTART")
+	(data (i32.const 448) "F1 / H         HELP")
+	(data (i32.const 472) "DEATH BLOSSOM!")
+	(data (i32.const 488) "\f0\9f\94\86")
 
 	(global $scale i64 (i64.const 1000000))
 
@@ -72,7 +89,50 @@
 		i32.const 0 i32.const 20 call $title drop
 		i32.const 1 i32.const 32 i32.const 8 i32.const 1 i32.const 0 call $menu_item drop
 		i32.const 0 i32.const 0 i32.const 0 i32.const 0 i32.const 1 call $menu_item drop
+		i32.const 7 i32.const 200 i32.const 15 i32.const 7 i32.const 0 call $menu_item drop
 		i32.const 6 i32.const 48 i32.const 4 i32.const 6 i32.const 0 call $menu_item drop
+		;; Shot: 800 -> 400 -> 200 Hz sine, 0.3 -> 0.01 gain.
+		i32.const 1 i32.const 1 i32.const 0 i32.const 100
+		i32.const 800000 i32.const 400000 i32.const 200000
+		i32.const 300000 i32.const 300000 i32.const 10000
+		i32.const 0 i32.const 0 i32.const 0 i32.const 0 call $synth_voice drop
+		;; Asteroid explosion: swept low-pass noise plus a restrained bass layer.
+		i32.const 2 i32.const 3 i32.const 0 i32.const 500
+		i32.const 0 i32.const 0 i32.const 0
+		i32.const 500000 i32.const 500000 i32.const 10000
+		i32.const 1 i32.const 1500000 i32.const 80000 i32.const 0 call $synth_voice drop
+		i32.const 2 i32.const 1 i32.const 0 i32.const 500
+		i32.const 120000 i32.const 120000 i32.const 80000
+		i32.const 80000 i32.const 80000 i32.const 1000
+		i32.const 0 i32.const 0 i32.const 0 i32.const 0 call $synth_voice drop
+		;; Ship explosion: white/brown noise layers and a short low impulse.
+		i32.const 3 i32.const 3 i32.const 0 i32.const 1200
+		i32.const 0 i32.const 0 i32.const 0
+		i32.const 700000 i32.const 700000 i32.const 1000
+		i32.const 1 i32.const 3000000 i32.const 100000 i32.const 0 call $synth_voice drop
+		i32.const 3 i32.const 4 i32.const 0 i32.const 1200
+		i32.const 0 i32.const 0 i32.const 0
+		i32.const 300000 i32.const 300000 i32.const 1000
+		i32.const 2 i32.const 300000 i32.const 300000 i32.const 0 call $synth_voice drop
+		i32.const 3 i32.const 1 i32.const 0 i32.const 200
+		i32.const 120000 i32.const 60000 i32.const 40000
+		i32.const 500000 i32.const 500000 i32.const 0
+		i32.const 0 i32.const 0 i32.const 0 i32.const 0 call $synth_voice drop
+		;; Thrust: rate-limited 60 Hz saw through a 200 Hz low-pass.
+		i32.const 4 i32.const 2 i32.const 0 i32.const 50
+		i32.const 60000 i32.const 60000 i32.const 60000
+		i32.const 100000 i32.const 100000 i32.const 10000
+		i32.const 1 i32.const 200000 i32.const 200000 i32.const 55 call $synth_voice drop
+		;; Death Blossom: three scheduled 400 -> 800 -> 400 Hz whoops.
+		i32.const 5 i32.const 1 i32.const 0 i32.const 300 i32.const 400000 i32.const 800000 i32.const 400000 i32.const 300000 i32.const 300000 i32.const 1000 i32.const 0 i32.const 0 i32.const 0 i32.const 0 call $synth_voice drop
+		i32.const 5 i32.const 1 i32.const 400 i32.const 300 i32.const 400000 i32.const 800000 i32.const 400000 i32.const 300000 i32.const 300000 i32.const 1000 i32.const 0 i32.const 0 i32.const 0 i32.const 0 call $synth_voice drop
+		i32.const 5 i32.const 1 i32.const 800 i32.const 300 i32.const 400000 i32.const 800000 i32.const 400000 i32.const 300000 i32.const 300000 i32.const 1000 i32.const 0 i32.const 0 i32.const 0 i32.const 0 call $synth_voice drop
+		;; Extra life: five delayed sawtooth chimes with note-relative filters.
+		i32.const 6 i32.const 2 i32.const 0 i32.const 400 i32.const 523250 i32.const 523250 i32.const 523250 i32.const 0 i32.const 300000 i32.const 1000 i32.const 1 i32.const 1569750 i32.const 1569750 i32.const 0 call $synth_voice drop
+		i32.const 6 i32.const 2 i32.const 150 i32.const 400 i32.const 588656 i32.const 588656 i32.const 588656 i32.const 0 i32.const 300000 i32.const 1000 i32.const 1 i32.const 1765968 i32.const 1765968 i32.const 0 call $synth_voice drop
+		i32.const 6 i32.const 2 i32.const 300 i32.const 400 i32.const 654063 i32.const 654063 i32.const 654063 i32.const 0 i32.const 300000 i32.const 1000 i32.const 1 i32.const 1962189 i32.const 1962189 i32.const 0 call $synth_voice drop
+		i32.const 6 i32.const 2 i32.const 450 i32.const 400 i32.const 784875 i32.const 784875 i32.const 784875 i32.const 0 i32.const 300000 i32.const 1000 i32.const 1 i32.const 2354625 i32.const 2354625 i32.const 0 call $synth_voice drop
+		i32.const 6 i32.const 2 i32.const 600 i32.const 400 i32.const 1046500 i32.const 1046500 i32.const 1046500 i32.const 0 i32.const 300000 i32.const 1000 i32.const 1 i32.const 3139500 i32.const 3139500 i32.const 0 call $synth_voice drop
 		i32.const 0)
 
 	;; FLOAT ADAPTER BEGIN
@@ -88,6 +148,63 @@
 	(func $fixed_abs (param $value i64) (result i64)
 		local.get $value i64.const 0 i64.lt_s
 		(if (result i64) (then i64.const 0 local.get $value i64.sub) (else local.get $value)))
+
+	(func $difficulty_index (result i64)
+		i32.const 1104 i32.load i32.const 1 i32.sub
+		i32.const 0 i32.lt_s (if (then i64.const 0 return))
+		i32.const 1104 i32.load i32.const 20 i32.ge_s (if (then i64.const 19 return))
+		i32.const 1104 i32.load i32.const 1 i32.sub i64.extend_i32_s)
+
+	(func $difficulty_value (param $base i64) (param $delta i64) (result i64)
+		local.get $base local.get $delta call $difficulty_index i64.mul i64.const 19 i64.div_s i64.add)
+
+	(func $ship_acceleration_per_tick (result i64)
+		i64.const 300000000 i64.const 200000000 call $difficulty_value i64.const 3600 i64.div_s)
+
+	(func $rotation_per_tick (result i64)
+		i64.const 5000000 i64.const 5000000 call $difficulty_value i64.const 60 i64.div_s)
+
+	(func $bullet_speed_per_tick (result i64)
+		i64.const 337500000 i64.const 427500000 call $difficulty_value i64.const 60 i64.div_s)
+
+	(func $fire_interval_ticks (result i32)
+		;; Source uses elapsed_ms > delay, so the first integral 60-Hz tick after
+		;; the delay is floor(delay * 60 / 1000) + 1.
+		i64.const 250000000 i64.const -125000000 call $difficulty_value
+		i64.const 60 i64.mul i64.const 1000000000 i64.div_s i32.wrap_i64 i32.const 1 i32.add)
+
+	(func $small_sine (param $angle i64) (result i64)
+		(local $square i64)
+		local.get $angle local.get $angle call $fixed_mul local.set $square
+		local.get $angle local.get $square local.get $angle call $fixed_mul i64.const 6 i64.div_s i64.sub)
+
+	(func $small_cosine (param $angle i64) (result i64)
+		(local $square i64)
+		local.get $angle local.get $angle call $fixed_mul local.set $square
+		global.get $scale local.get $square i64.const 2 i64.div_s i64.sub
+		local.get $square local.get $square call $fixed_mul i64.const 24 i64.div_s i64.add)
+
+	(func $integer_sqrt (param $value i64) (result i64)
+		(local $estimate i64) (local $next i64)
+		local.get $value i64.const 0 i64.le_s (if (then i64.const 0 return))
+		local.get $value local.set $estimate
+		local.get $value i64.const 1 i64.add i64.const 2 i64.div_u local.set $next
+		(block $done
+			(loop $refine
+				local.get $next local.get $estimate i64.ge_u br_if $done
+				local.get $next local.set $estimate
+				local.get $estimate local.get $value local.get $estimate i64.div_u i64.add
+				i64.const 2 i64.div_u local.set $next
+				br $refine))
+		local.get $estimate)
+
+	(func $fixed_hypot (param $x i64) (param $y i64) (result i64)
+		(local $milli_x i64) (local $milli_y i64)
+		local.get $x i64.const 1000 i64.div_s local.set $milli_x
+		local.get $y i64.const 1000 i64.div_s local.set $milli_y
+		local.get $milli_x local.get $milli_x i64.mul
+		local.get $milli_y local.get $milli_y i64.mul i64.add
+		call $integer_sqrt i64.const 1000 i64.mul)
 
 	(func $bullet_address (param $index i32) (result i32)
 		i32.const 1280 local.get $index i32.const 48 i32.mul i32.add)
@@ -120,11 +237,23 @@
 		call $rand_unit i64.const 2 i64.mul global.get $scale i64.sub)
 
 	(func $ensure_component (param $value i64) (result i64)
-		local.get $value call $fixed_abs i64.const 450000 i64.lt_u
-		(if (result i64)
-			(then local.get $value i64.const 0 i64.lt_s
-				(if (result i64) (then i64.const -450000) (else i64.const 450000)))
-			(else local.get $value)))
+		(local $adjusted i64) (local $cap i64)
+		local.get $value local.set $adjusted
+		local.get $value call $fixed_abs i64.const 250000 i64.lt_u
+		(if (then
+			local.get $value i64.const 0 i64.lt_s
+			(if (then i64.const -250000 local.set $adjusted)
+				(else local.get $value i64.eqz
+					(if (then call $rand_u32 i32.const 1 i32.and
+						(if (then i64.const -250000 local.set $adjusted)
+							(else i64.const 250000 local.set $adjusted)))
+						(else i64.const 250000 local.set $adjusted))))))
+		i32.const 1104 i32.load i32.const 20 i32.ge_s (if (then local.get $adjusted return))
+		i64.const 1000000 call $difficulty_index i64.const 125000 i64.mul i64.add local.set $cap
+		local.get $adjusted local.get $cap i64.gt_s (if (then local.get $cap return))
+		local.get $adjusted i64.const 0 local.get $cap i64.sub i64.lt_s
+		(if (then i64.const 0 local.get $cap i64.sub return))
+		local.get $adjusted)
 
 	(func $store_digit (param $address i32) (param $value i32) (param $divisor i32)
 		local.get $address local.get $value local.get $divisor i32.div_u
@@ -139,6 +268,18 @@
 	(func $write_two_digits (param $address i32) (param $value i32)
 		local.get $address local.get $value i32.const 10 call $store_digit
 		local.get $address i32.const 1 i32.add local.get $value i32.const 1 call $store_digit)
+
+	(func $splash_alpha (result i32)
+		(local $remaining i32) (local $elapsed i32)
+		i32.const 1132 i32.load local.set $remaining
+		i32.const 240 local.get $remaining i32.sub local.set $elapsed
+		local.get $elapsed i32.const 60 i32.lt_u
+		(if (result i32)
+			(then local.get $elapsed i32.const 1 i32.add i32.const 255 i32.mul i32.const 60 i32.div_u)
+			(else local.get $elapsed i32.const 180 i32.lt_u
+				(if (result i32)
+					(then i32.const 255)
+					(else local.get $remaining i32.const 255 i32.mul i32.const 60 i32.div_u)))))
 
 	(func $wrap (param $value i64) (param $minimum i64) (param $maximum i64) (result i64)
 		local.get $value local.get $minimum i64.lt_s
@@ -163,26 +304,22 @@
 
 	(func $spawn_asteroid_at (param $address i32) (param $x i64) (param $y i64)
 		(param $radius i64) (param $generation i32)
-		(local $level_scale i64)
-		i64.const 1000000
-		i32.const 1104 i32.load i32.const 1 i32.sub i64.extend_i32_s i64.const 30000 i64.mul
-		i64.add local.set $level_scale
 		local.get $address i32.const 1 i32.store
 		local.get $address i32.const 4 i32.add local.get $generation i32.store
 		local.get $address i32.const 8 i32.add call $rand_u32 i32.store
 		local.get $address i32.const 16 i32.add local.get $x i64.store
 		local.get $address i32.const 24 i32.add local.get $y i64.store
 		local.get $address i32.const 32 i32.add
-		call $rand_signed i64.const 1100000 call $fixed_mul local.get $level_scale call $fixed_mul
+		call $rand_signed i64.const 833333 call $fixed_mul
 		call $ensure_component i64.store
 		local.get $address i32.const 40 i32.add
-		call $rand_signed i64.const 1100000 call $fixed_mul local.get $level_scale call $fixed_mul
+		call $rand_signed i64.const 833333 call $fixed_mul
 		call $ensure_component i64.store
 		local.get $address i32.const 48 i32.add local.get $radius i64.store
 		local.get $address i32.const 56 i32.add i64.const 1000000 i64.store
 		local.get $address i32.const 64 i32.add i64.const 0 i64.store
-		local.get $address i32.const 72 i32.add call $rand_u32 i32.const 1 i32.and
-		(if (result i32) (then i32.const 1) (else i32.const -1)) i32.store
+		local.get $address i32.const 72 i32.add
+		call $rand_signed i64.const 60 i64.div_s i32.wrap_i64 i32.store
 		local.get $address i32.const 76 i32.add
 		call $rand_u32 i32.const 5 i32.rem_u i32.const 8 i32.add i32.store)
 
@@ -204,11 +341,11 @@
 				local.get $edge i32.const 2 i32.eq
 				(if (then i32.const 1040 i64.load i64.const 100000000 i64.sub local.set $y))
 				local.get $edge i32.const 3 i32.eq (if (then i64.const 100000000 local.set $x))
-				call $rand_unit i64.const 24000000 call $fixed_mul i64.const 24000000 i64.add local.set $radius
+				call $rand_unit i64.const 30000000 call $fixed_mul i64.const 20000000 i64.add local.set $radius
 				local.get $address local.get $x local.get $y local.get $radius i32.const 0
 				call $spawn_asteroid_at
 				local.get $index i32.const 1 i32.add local.set $index br $again))
-		i32.const 1132 i32.const 120 i32.store)
+	)
 
 	(func $reset (param $seed i32) (param $width i64) (param $height i64)
 		(local $normalized_seed i32)
@@ -235,6 +372,7 @@
 		i32.const 1128 i32.const 0 i32.store
 		i32.const 1136 local.get $normalized_seed i32.store
 		i32.const 1144 i64.const 0 i64.store
+		i32.const 1132 i32.const 240 i32.store
 		call $regenerate_stars
 		call $spawn_wave)
 
@@ -265,18 +403,23 @@
 		i32.const 0)
 
 	(func $fire
-		(local $address i32) (local $speed i64)
+		(local $address i32) (local $speed i64) (local $interval i32)
+		call $fire_interval_ticks local.set $interval
+		i32.const 1108 i32.load i32.const 128 i32.and
+		(if (then i32.const 2 local.set $interval))
 		i32.const 1124 i32.load i32.eqz
 		i32.const 1108 i32.load i32.const 16 i32.and i32.eqz i32.and
-		i32.const 1024 i32.load i32.const 1112 i32.load i32.sub i32.const 12 i32.ge_s i32.and
+		i32.const 1024 i32.load i32.const 1112 i32.load i32.sub local.get $interval i32.ge_s i32.and
 		(if
 			(then
 				call $find_free_bullet local.tee $address
 				(if
 					(then
-						i64.const 7000000
-						i32.const 1104 i32.load i32.const 1 i32.sub i64.extend_i32_s i64.const 80000 i64.mul
-						i64.add local.set $speed
+						i32.const 1108 i32.load i32.const 128 i32.and
+						(if (result i64)
+							(then i64.const 7500000)
+							(else call $bullet_speed_per_tick))
+						local.set $speed
 						local.get $address i32.const 1 i32.store
 						local.get $address i32.const 8 i32.add
 						i32.const 1048 i64.load i32.const 1080 i64.load i64.const 20000000 call $fixed_mul i64.add i64.store
@@ -286,7 +429,7 @@
 						i32.const 1064 i64.load i32.const 1080 i64.load local.get $speed call $fixed_mul i64.add i64.store
 						local.get $address i32.const 32 i32.add
 						i32.const 1072 i64.load i32.const 1088 i64.load local.get $speed call $fixed_mul i64.add i64.store
-						local.get $address i32.const 40 i32.add i32.const 90 i32.store
+						local.get $address i32.const 40 i32.add i64.const 0 i64.store
 						i32.const 1112 i32.const 1024 i32.load i32.store
 						i32.const 1 f32.const 1 f32.const 1 i32.const 0 call $audio drop)))))
 
@@ -373,7 +516,9 @@
 	(func $hit_asteroid (param $address i32) (param $impulse_x i64) (param $impulse_y i64)
 		(param $score_hit i32)
 		(local $x i64) (local $y i64) (local $vx i64) (local $vy i64)
-		(local $radius i64) (local $child_radius i64) (local $free i32) (local $points i32)
+		(local $radius i64) (local $child_radius i64) (local $half_boost i64)
+		(local $child_x i64) (local $child_y i64)
+		(local $generation i32) (local $free i32) (local $points i32)
 		local.get $address i32.const 16 i32.add i64.load local.set $x
 		local.get $address i32.const 24 i32.add i64.load local.set $y
 		local.get $address i32.const 32 i32.add i64.load local.set $vx
@@ -385,25 +530,33 @@
 		(if
 			(then
 				local.get $radius i64.const 600000 call $fixed_mul local.set $child_radius
-				local.get $address i32.const 4 i32.add
-				local.get $address i32.const 4 i32.add i32.load i32.const 1 i32.add i32.store
-				local.get $address i32.const 16 i32.add local.get $x i64.const 6000000 i64.sub i64.store
-				local.get $address i32.const 32 i32.add local.get $vx local.get $impulse_x i64.add i64.const 600000 i64.sub call $ensure_component i64.store
-				local.get $address i32.const 40 i32.add local.get $vy local.get $impulse_y i64.add i64.const 400000 i64.add call $ensure_component i64.store
-				local.get $address i32.const 48 i32.add local.get $child_radius i64.store
+				local.get $address i32.const 4 i32.add i32.load i32.const 1 i32.add local.set $generation
+				i64.const 80000000 global.get $scale i64.mul local.get $child_radius i64.div_s
+				i64.const 2 i64.div_s local.set $half_boost
+				local.get $x call $rand_signed i64.const 20000000 call $fixed_mul i64.add local.set $child_x
+				local.get $y call $rand_signed i64.const 20000000 call $fixed_mul i64.add local.set $child_y
+				local.get $address local.get $child_x local.get $child_y local.get $child_radius local.get $generation
+				call $spawn_asteroid_at
+				local.get $address i32.const 32 i32.add
+				local.get $vx local.get $impulse_x i64.add call $rand_signed local.get $half_boost call $fixed_mul i64.add call $ensure_component i64.store
+				local.get $address i32.const 40 i32.add
+				local.get $vy local.get $impulse_y i64.add call $rand_signed local.get $half_boost call $fixed_mul i64.add call $ensure_component i64.store
+				local.get $address i32.const 72 i32.add call $rand_signed i64.const 30 i64.div_s i32.wrap_i64 i32.store
 				call $find_free_asteroid local.tee $free
 				(if
 					(then
-						local.get $free local.get $x i64.const 6000000 i64.add local.get $y i64.const 6000000 i64.add
-						local.get $child_radius local.get $address i32.const 4 i32.add i32.load
+						local.get $x call $rand_signed i64.const 20000000 call $fixed_mul i64.add local.set $child_x
+						local.get $y call $rand_signed i64.const 20000000 call $fixed_mul i64.add local.set $child_y
+						local.get $free local.get $child_x local.get $child_y local.get $child_radius local.get $generation
 						call $spawn_asteroid_at
 						local.get $free i32.const 32 i32.add
-						local.get $vx local.get $impulse_x i64.add i64.const 600000 i64.add call $ensure_component i64.store
+						local.get $vx local.get $impulse_x i64.add call $rand_signed local.get $half_boost call $fixed_mul i64.add call $ensure_component i64.store
 						local.get $free i32.const 40 i32.add
-						local.get $vy local.get $impulse_y i64.add i64.const 400000 i64.sub call $ensure_component i64.store))
+						local.get $vy local.get $impulse_y i64.add call $rand_signed local.get $half_boost call $fixed_mul i64.add call $ensure_component i64.store
+						local.get $free i32.const 72 i32.add call $rand_signed i64.const 30 i64.div_s i32.wrap_i64 i32.store))
 				i32.const 80 local.set $points)
 			(else local.get $address i32.const 0 i32.store i32.const 120 local.set $points))
-		local.get $score_hit
+		local.get $score_hit i32.const 1108 i32.load i32.const 64 i32.and i32.eqz i32.and
 		(if
 			(then
 				i32.const 1096 i32.const 1096 i32.load local.get $points i32.add i32.store
@@ -439,7 +592,8 @@
 								(if
 									(then
 										local.get $bullet i32.const 0 i32.store
-										i64.const 3600000 local.get $asteroid i32.const 48 i32.add i64.load i64.div_s local.set $factor
+						i64.const 3600000 global.get $scale i64.mul
+						local.get $asteroid i32.const 48 i32.add i64.load i64.div_s local.set $factor
 										local.get $bullet i32.const 24 i32.add i64.load local.get $factor call $fixed_mul local.set $impulse_x
 										local.get $bullet i32.const 32 i32.add i64.load local.get $factor call $fixed_mul local.set $impulse_y
 										local.get $asteroid local.get $impulse_x local.get $impulse_y i32.const 1 call $hit_asteroid
@@ -467,61 +621,101 @@
 		i32.const 1048 i64.load i32.const 1056 i64.load i32.const 1064 i64.load i32.const 1072 i64.load call $spawn_debris
 		local.get $asteroid i64.const 0 i64.const 0 i32.const 0 call $hit_asteroid
 		i32.const 3 f32.const 1 f32.const 1 i32.const 0 call $audio drop
-		i32.const 1100 i32.const 1100 i32.load i32.const 1 i32.sub i32.store
+		i32.const 1108 i32.load i32.const 64 i32.and i32.eqz
+		(if (then i32.const 1100 i32.const 1100 i32.load i32.const 1 i32.sub i32.store))
 		i32.const 1124 i32.const 1 i32.store
 		i32.const 1128 i32.const 120 i32.store
-		i32.const 1108 i32.const 1108 i32.load i32.const 14463 i32.and i32.store)
+		i32.const 1108 i32.const 1108 i32.load i32.const -129 i32.and i32.store)
 
 	(func $rotate_ship
 		(local $dx i64) (local $dy i64) (local $next_dx i64) (local $next_dy i64)
+		(local $angle i64) (local $sine i64) (local $cosine i64)
 		i32.const 1080 i64.load local.set $dx i32.const 1088 i64.load local.set $dy
+		call $rotation_per_tick local.tee $angle call $small_sine local.set $sine
+		local.get $angle call $small_cosine local.set $cosine
 		i32.const 1108 i32.load i32.const 2 i32.and
 		(if (then
-			local.get $dx i64.const 996802 call $fixed_mul local.get $dy i64.const 79915 call $fixed_mul i64.add local.set $next_dx
-			local.get $dy i64.const 996802 call $fixed_mul local.get $dx i64.const 79915 call $fixed_mul i64.sub local.set $next_dy
+			local.get $dx local.get $cosine call $fixed_mul local.get $dy local.get $sine call $fixed_mul i64.sub local.set $next_dx
+			local.get $dy local.get $cosine call $fixed_mul local.get $dx local.get $sine call $fixed_mul i64.add local.set $next_dy
 			local.get $next_dx local.set $dx local.get $next_dy local.set $dy))
 		i32.const 1108 i32.load i32.const 1 i32.and
 		(if (then
-			local.get $dx i64.const 996802 call $fixed_mul local.get $dy i64.const 79915 call $fixed_mul i64.sub local.set $next_dx
-			local.get $dy i64.const 996802 call $fixed_mul local.get $dx i64.const 79915 call $fixed_mul i64.add local.set $next_dy
+			local.get $dx local.get $cosine call $fixed_mul local.get $dy local.get $sine call $fixed_mul i64.add local.set $next_dx
+			local.get $dy local.get $cosine call $fixed_mul local.get $dx local.get $sine call $fixed_mul i64.sub local.set $next_dy
 			local.get $next_dx local.set $dx local.get $next_dy local.set $dy))
 		i32.const 1080 local.get $dx i64.store i32.const 1088 local.get $dy i64.store)
+
+	(func $activate_death_blossom
+		(local $flags i32)
+		i32.const 1108 i32.load local.set $flags
+		i32.const 1124 i32.load i32.eqz
+		local.get $flags i32.const 656 i32.and i32.eqz i32.and
+		local.get $flags i32.const 256 i32.and i32.eqz i32.eqz i32.and
+		(if (then
+			i32.const 1108 local.get $flags i32.const 128 i32.or i32.const -257 i32.and i32.store
+			i32.const 1144 i64.const 0 i64.store
+			i32.const 5 f32.const 1 f32.const 1 i32.const 0 call $audio drop)))
+
+	(func $update_death_blossom
+		(local $dx i64) (local $dy i64) (local $next_dx i64) (local $next_dy i64)
+		(local $rotation i64)
+		i32.const 1080 i64.load local.set $dx i32.const 1088 i64.load local.set $dy
+		local.get $dx i64.const 992809 call $fixed_mul local.get $dy i64.const 119712 call $fixed_mul i64.add local.set $next_dx
+		local.get $dy i64.const 992809 call $fixed_mul local.get $dx i64.const 119712 call $fixed_mul i64.sub local.set $next_dy
+		i32.const 1080 local.get $next_dx i64.store i32.const 1088 local.get $next_dy i64.store
+		i32.const 1144 i64.load i64.const 120000 i64.add local.set $rotation
+		local.get $rotation i64.const 75398224 i64.ge_s
+		(if
+			(then
+				i32.const 1144 i64.const 75398224 i64.store
+				call $fire
+				i32.const 1108 i32.const 1108 i32.load i32.const -129 i32.and i32.store)
+			(else
+				i32.const 1144 local.get $rotation i64.store
+				call $fire)))
 
 	(func $update_ship
 		(local $flags i32)
 		i32.const 1108 i32.load local.set $flags
-		call $rotate_ship
-		local.get $flags i32.const 4 i32.and
-		(if (then
-			i32.const 1064 i32.const 1064 i64.load i32.const 1080 i64.load i64.const 120000 call $fixed_mul i64.add i64.store
-			i32.const 1072 i32.const 1072 i64.load i32.const 1088 i64.load i64.const 120000 call $fixed_mul i64.add i64.store
-			i32.const 1024 i32.load i32.const 3 i32.and i32.eqz
-			(if (then i32.const 4 f32.const 0.18 f32.const 1 i32.const 0 call $audio drop))))
+		local.get $flags i32.const 128 i32.and
+		(if
+			(then call $update_death_blossom)
+			(else
+				call $rotate_ship
+				local.get $flags i32.const 4 i32.and
+				(if (then
+					i32.const 1064 i32.const 1064 i64.load i32.const 1080 i64.load call $ship_acceleration_per_tick call $fixed_mul i64.add i64.store
+					i32.const 1072 i32.const 1072 i64.load i32.const 1088 i64.load call $ship_acceleration_per_tick call $fixed_mul i64.add i64.store
+					i32.const 1024 i32.load i32.const 3 i32.and i32.eqz
+					(if (then i32.const 4 f32.const 0.18 f32.const 1 i32.const 0 call $audio drop))))
+				local.get $flags i32.const 8 i32.and local.get $flags i32.const 32 i32.and i32.or
+				(if (then call $fire))))
 		i32.const 1064 i32.const 1064 i64.load i64.const 995000 call $fixed_mul i64.store
 		i32.const 1072 i32.const 1072 i64.load i64.const 995000 call $fixed_mul i64.store
 		i32.const 1048
 		i32.const 1048 i64.load i32.const 1064 i64.load i64.add i64.const 0 i32.const 1032 i64.load call $wrap i64.store
 		i32.const 1056
-		i32.const 1056 i64.load i32.const 1072 i64.load i64.add i64.const 0 i32.const 1040 i64.load call $wrap i64.store
-		local.get $flags i32.const 8 i32.and local.get $flags i32.const 32 i32.and i32.or
-		(if (then call $fire)))
+		i32.const 1056 i64.load i32.const 1072 i64.load i64.add i64.const 0 i32.const 1040 i64.load call $wrap i64.store)
 
 	(func $update_bullets
-		(local $index i32) (local $address i32)
+		(local $index i32) (local $address i32) (local $vx i64) (local $vy i64)
 		(block $done (loop $again
 			local.get $index i32.const 64 i32.ge_u br_if $done
 			local.get $index call $bullet_address local.set $address
 			local.get $address i32.load
 			(if (then
+				local.get $address i32.const 24 i32.add i64.load local.set $vx
+				local.get $address i32.const 32 i32.add i64.load local.set $vy
 				local.get $address i32.const 8 i32.add
-				local.get $address i32.const 8 i32.add i64.load local.get $address i32.const 24 i32.add i64.load i64.add
+				local.get $address i32.const 8 i32.add i64.load local.get $vx i64.add
 				i64.const -25000000 i32.const 1032 i64.load i64.const 25000000 i64.add call $wrap i64.store
 				local.get $address i32.const 16 i32.add
-				local.get $address i32.const 16 i32.add i64.load local.get $address i32.const 32 i32.add i64.load i64.add
+				local.get $address i32.const 16 i32.add i64.load local.get $vy i64.add
 				i64.const -25000000 i32.const 1040 i64.load i64.const 25000000 i64.add call $wrap i64.store
 				local.get $address i32.const 40 i32.add
-				local.get $address i32.const 40 i32.add i32.load i32.const 1 i32.sub i32.store
-				local.get $address i32.const 40 i32.add i32.load i32.const 0 i32.le_s
+				local.get $address i32.const 40 i32.add i64.load local.get $vx local.get $vy call $fixed_hypot i64.add i64.store
+				local.get $address i32.const 40 i32.add i64.load
+				i32.const 1032 i64.load i32.const 1040 i64.load call $fixed_hypot i64.const 2 i64.div_u i64.ge_u
 				(if (then local.get $address i32.const 0 i32.store))))
 			local.get $index i32.const 1 i32.add local.set $index br $again)))
 
@@ -542,7 +736,8 @@
 
 	(func $update_asteroids
 		(local $index i32) (local $address i32) (local $dx i64) (local $dy i64)
-		(local $next_dx i64) (local $next_dy i64)
+		(local $next_dx i64) (local $next_dy i64) (local $angle i64)
+		(local $sine i64) (local $cosine i64)
 		(block $done (loop $again
 			local.get $index i32.const 32 i32.ge_u br_if $done
 			local.get $index call $asteroid_address local.set $address
@@ -556,14 +751,10 @@
 				i64.const -50000000 i32.const 1040 i64.load i64.const 50000000 i64.add call $wrap i64.store
 				local.get $address i32.const 56 i32.add i64.load local.set $dx
 				local.get $address i32.const 64 i32.add i64.load local.set $dy
-				local.get $address i32.const 72 i32.add i32.load i32.const 0 i32.gt_s
-				(if
-					(then
-						local.get $dx i64.const 999200 call $fixed_mul local.get $dy i64.const 39989 call $fixed_mul i64.sub local.set $next_dx
-						local.get $dx i64.const 39989 call $fixed_mul local.get $dy i64.const 999200 call $fixed_mul i64.add local.set $next_dy)
-					(else
-						local.get $dx i64.const 999200 call $fixed_mul local.get $dy i64.const 39989 call $fixed_mul i64.add local.set $next_dx
-						local.get $dy i64.const 999200 call $fixed_mul local.get $dx i64.const 39989 call $fixed_mul i64.sub local.set $next_dy))
+				local.get $address i32.const 72 i32.add i32.load i64.extend_i32_s local.tee $angle call $small_sine local.set $sine
+				local.get $angle call $small_cosine local.set $cosine
+				local.get $dx local.get $cosine call $fixed_mul local.get $dy local.get $sine call $fixed_mul i64.sub local.set $next_dx
+				local.get $dy local.get $cosine call $fixed_mul local.get $dx local.get $sine call $fixed_mul i64.add local.set $next_dy
 				local.get $address i32.const 56 i32.add local.get $next_dx i64.store
 				local.get $address i32.const 64 i32.add local.get $next_dy i64.store))
 			local.get $index i32.const 1 i32.add local.set $index br $again)))
@@ -578,6 +769,8 @@
 			(if (then
 				local.get $address i32.const 8 i32.add local.get $address i32.const 8 i32.add i64.load local.get $address i32.const 24 i32.add i64.load i64.add i64.store
 				local.get $address i32.const 16 i32.add local.get $address i32.const 16 i32.add i64.load local.get $address i32.const 32 i32.add i64.load i64.add i64.store
+				local.get $address i32.const 24 i32.add local.get $address i32.const 24 i32.add i64.load i64.const 990000 call $fixed_mul i64.store
+				local.get $address i32.const 32 i32.add local.get $address i32.const 32 i32.add i64.load i64.const 990000 call $fixed_mul i64.store
 				local.get $address i32.const 40 i32.add i64.load local.set $dx
 				local.get $address i32.const 48 i32.add i64.load local.set $dy
 				local.get $address i32.const 56 i32.add i32.load i32.const 0 i32.gt_s
@@ -594,6 +787,10 @@
 				local.get $address i32.const 4 i32.add i32.load i32.const 0 i32.le_s (if (then local.get $address i32.const 0 i32.store))))
 			local.get $index i32.const 1 i32.add local.set $index br $again)))
 
+	(func $respawn_radius (result i64)
+		i32.const 1128 i32.load i32.const 300 i32.ge_s
+		(if (result i64) (then i64.const 48000000) (else i64.const 96000000)))
+
 	(func $respawn_safe (result i32)
 		(local $index i32) (local $address i32)
 		(block $done (loop $again
@@ -604,7 +801,7 @@
 			(if (then
 				i32.const 1032 i64.load i64.const 2 i64.div_s i32.const 1040 i64.load i64.const 2 i64.div_s
 				local.get $address i32.const 16 i32.add i64.load local.get $address i32.const 24 i32.add i64.load
-				i64.const 80000000 local.get $address i32.const 48 i32.add i64.load i64.add call $distance_lt
+				call $respawn_radius local.get $address i32.const 48 i32.add i64.load i64.add call $distance_lt
 				(if (then i32.const 0 return))))
 			local.get $index i32.const 1 i32.add local.set $index br $again))
 		i32.const 0)
@@ -640,21 +837,23 @@
 						(if (then
 							i32.const 1124 i32.const 0 i32.store
 							i32.const 1116 i32.const 120 i32.store
+							i32.const 1132 i32.const 240 i32.store
 							i32.const 1108 i32.const 1108 i32.load i32.const 256 i32.or i32.store))))))))
 		i32.const 1124 i32.load i32.const 2 i32.eq
 		(if (then
 			i32.const 1128 i32.const 1128 i32.load i32.const 1 i32.add i32.store
-			i32.const 1128 i32.load i32.const 48 i32.eq (if (then call $clear_respawn_zone))
-			call $respawn_safe i32.const 1128 i32.load i32.const 96 i32.ge_s i32.and
+			i32.const 1128 i32.load i32.const 600 i32.eq (if (then call $clear_respawn_zone))
+			call $respawn_safe
 			(if (then
 				i32.const 1124 i32.const 0 i32.store i32.const 1128 i32.const 0 i32.store
-				i32.const 1116 i32.const 120 i32.store i32.const 1108 i32.const 1108 i32.load i32.const 256 i32.or i32.store))))
+				i32.const 1116 i32.const 120 i32.store i32.const 1132 i32.const 240 i32.store
+				i32.const 1108 i32.const 1108 i32.load i32.const 256 i32.or i32.store))))
 	)
 
 	(func $step
 		(local $collision i32)
 		i32.const 1024 i32.const 1024 i32.load i32.const 1 i32.add i32.store
-		i32.const 1108 i32.load i32.const 16 i32.and (if (then return))
+		i32.const 1108 i32.load i32.const 528 i32.and (if (then return))
 		i32.const 1124 i32.load i32.const 3 i32.eq
 		(if (then i32.const 1108 i32.load i32.const 8 i32.and (if (then i32.const 1136 i32.load i32.const 1032 i64.load i32.const 1040 i64.load call $reset)) return))
 		i32.const 1124 i32.load i32.eqz
@@ -663,7 +862,13 @@
 			call $check_bullet_collisions
 			i32.const 1116 i32.load i32.const 0 i32.gt_s
 			(if (then i32.const 1116 i32.const 1116 i32.load i32.const 1 i32.sub i32.store)
-				(else call $find_ship_collision local.tee $collision (if (then local.get $collision call $begin_ship_explosion))))))
+				(else call $find_ship_collision local.tee $collision (if (then local.get $collision call $begin_ship_explosion)))))
+			(else
+				i32.const 1124 i32.load i32.const 3 i32.ne
+				(if (then
+					i32.const 1124 i32.load i32.const 2 i32.eq (if (then call $rotate_ship))
+					call $update_bullets call $update_asteroids call $update_particles call $update_debris
+					call $check_bullet_collisions))))
 		call $advance_lifecycle
 		call $asteroid_count i32.eqz i32.const 1124 i32.load i32.const 3 i32.ne i32.and
 		(if (then i32.const 1104 i32.const 1104 i32.load i32.const 1 i32.add i32.store call $spawn_wave))
@@ -734,7 +939,11 @@
 			local.get $mask i32.eqz
 			(if (then
 				local.get $code i32.const 5 i32.eq (if (then i32.const 1108 i32.const 1108 i32.load i32.const 16 i32.xor i32.store))
-				local.get $code i32.const 6 i32.eq (if (then i32.const 1136 i32.load i32.const 1032 i64.load i32.const 1040 i64.load call $reset)))
+				local.get $code i32.const 6 i32.eq (if (then i32.const 1136 i32.load i32.const 1032 i64.load i32.const 1040 i64.load call $reset))
+				local.get $code i32.const 7 i32.eq (if (then i32.const 1108 i32.const 1108 i32.load i32.const 32 i32.xor i32.store))
+				local.get $code i32.const 8 i32.eq (if (then i32.const 1108 i32.const 1108 i32.load i32.const 64 i32.xor i32.store))
+				local.get $code i32.const 9 i32.eq (if (then call $activate_death_blossom))
+				local.get $code i32.const 10 i32.eq (if (then i32.const 1108 i32.const 1108 i32.load i32.const 512 i32.xor i32.store)))
 				(else i32.const 1108 i32.const 1108 i32.load local.get $mask i32.or i32.store))))
 		local.get $kind i32.const 2 i32.eq
 		(if (then
@@ -748,6 +957,7 @@
 		local.get $kind i32.const 7 i32.eq
 		(if (then
 			local.get $code i32.const 1 i32.eq (if (then i32.const 1136 i32.load i32.const 1032 i64.load i32.const 1040 i64.load call $reset))
+			local.get $code i32.const 7 i32.eq (if (then i32.const 1108 i32.const 1108 i32.load i32.const 512 i32.xor i32.store))
 			local.get $code i32.const 6 i32.eq (if (then i32.const 2 i32.const 0 i32.const 0 call $effect drop))))
 		local.get $kind i32.const 8 i32.eq local.get $code i32.eqz i32.and
 		(if (then i32.const 1108 i32.const 1108 i32.load i32.const 16 i32.and i32.store))
@@ -759,32 +969,37 @@
 
 	(func $unit_x (param $vertex i32) (result i64)
 		local.get $vertex i32.const 0 i32.eq (if (then i64.const 1000000 return))
-		local.get $vertex i32.const 1 i32.eq (if (then i64.const 809017 return))
-		local.get $vertex i32.const 2 i32.eq (if (then i64.const 309017 return))
-		local.get $vertex i32.const 3 i32.eq (if (then i64.const -309017 return))
-		local.get $vertex i32.const 4 i32.eq (if (then i64.const -809017 return))
-		local.get $vertex i32.const 5 i32.eq (if (then i64.const -1000000 return))
-		local.get $vertex i32.const 6 i32.eq (if (then i64.const -809017 return))
-		local.get $vertex i32.const 7 i32.eq (if (then i64.const -309017 return))
-		local.get $vertex i32.const 8 i32.eq (if (then i64.const 309017 return))
-		i64.const 809017)
+		local.get $vertex i32.const 1 i32.eq (if (then i64.const 866025 return))
+		local.get $vertex i32.const 2 i32.eq (if (then i64.const 500000 return))
+		local.get $vertex i32.const 3 i32.eq (if (then i64.const 0 return))
+		local.get $vertex i32.const 4 i32.eq (if (then i64.const -500000 return))
+		local.get $vertex i32.const 5 i32.eq (if (then i64.const -866025 return))
+		local.get $vertex i32.const 6 i32.eq (if (then i64.const -1000000 return))
+		local.get $vertex i32.const 7 i32.eq (if (then i64.const -866025 return))
+		local.get $vertex i32.const 8 i32.eq (if (then i64.const -500000 return))
+		local.get $vertex i32.const 9 i32.eq (if (then i64.const 0 return))
+		local.get $vertex i32.const 10 i32.eq (if (then i64.const 500000 return))
+		i64.const 866025)
 	(func $unit_y (param $vertex i32) (result i64)
 		local.get $vertex i32.const 0 i32.eq (if (then i64.const 0 return))
-		local.get $vertex i32.const 1 i32.eq (if (then i64.const 587785 return))
-		local.get $vertex i32.const 2 i32.eq (if (then i64.const 951057 return))
-		local.get $vertex i32.const 3 i32.eq (if (then i64.const 951057 return))
-		local.get $vertex i32.const 4 i32.eq (if (then i64.const 587785 return))
-		local.get $vertex i32.const 5 i32.eq (if (then i64.const 0 return))
-		local.get $vertex i32.const 6 i32.eq (if (then i64.const -587785 return))
-		local.get $vertex i32.const 7 i32.eq (if (then i64.const -951057 return))
-		local.get $vertex i32.const 8 i32.eq (if (then i64.const -951057 return))
-		i64.const -587785)
+		local.get $vertex i32.const 1 i32.eq (if (then i64.const 500000 return))
+		local.get $vertex i32.const 2 i32.eq (if (then i64.const 866025 return))
+		local.get $vertex i32.const 3 i32.eq (if (then i64.const 1000000 return))
+		local.get $vertex i32.const 4 i32.eq (if (then i64.const 866025 return))
+		local.get $vertex i32.const 5 i32.eq (if (then i64.const 500000 return))
+		local.get $vertex i32.const 6 i32.eq (if (then i64.const 0 return))
+		local.get $vertex i32.const 7 i32.eq (if (then i64.const -500000 return))
+		local.get $vertex i32.const 8 i32.eq (if (then i64.const -866025 return))
+		local.get $vertex i32.const 9 i32.eq (if (then i64.const -1000000 return))
+		local.get $vertex i32.const 10 i32.eq (if (then i64.const -866025 return))
+		i64.const -500000)
 
 	(func $emit_rock_point (param $address i32) (param $vertex i32) (param $first i32)
-		(local $x i64) (local $y i64) (local $scaled_radius i64)
+		(local $x i64) (local $y i64) (local $scaled_radius i64) (local $direction i32)
 		local.get $address i32.const 48 i32.add i64.load local.get $address local.get $vertex call $rock_scale call $fixed_mul local.set $scaled_radius
-		local.get $vertex call $unit_x local.get $scaled_radius call $fixed_mul local.set $x
-		local.get $vertex call $unit_y local.get $scaled_radius call $fixed_mul local.set $y
+		local.get $vertex i32.const 12 i32.mul local.get $address i32.const 76 i32.add i32.load i32.div_u local.set $direction
+		local.get $direction call $unit_x local.get $scaled_radius call $fixed_mul local.set $x
+		local.get $direction call $unit_y local.get $scaled_radius call $fixed_mul local.set $y
 		local.get $first
 		(if (then local.get $x call $to_host local.get $y call $to_host call $path_move drop)
 			(else local.get $x call $to_host local.get $y call $to_host call $path_line drop)))
@@ -813,10 +1028,11 @@
 		call $transform_pop drop)
 
 	(func $draw_asteroid (param $index i32) (param $address i32)
-		(local $vertex i32) (local $radius i64)
+		(local $vertex i32) (local $points i32) (local $radius i64)
 		local.get $address i32.load
 		(if (then
 			local.get $address i32.const 48 i32.add i64.load local.set $radius
+			local.get $address i32.const 76 i32.add i32.load local.set $points
 			local.get $address i32.const 56 i32.add i64.load call $to_host
 			local.get $address i32.const 64 i32.add i64.load call $to_host
 			i64.const 0 local.get $address i32.const 64 i32.add i64.load i64.sub call $to_host
@@ -825,7 +1041,7 @@
 			local.get $address i32.const 24 i32.add i64.load call $to_host call $transform_push drop
 			i32.const 200 local.get $index i32.add call $path_begin drop
 			(block $vertices_done (loop $vertices
-				local.get $vertex i32.const 10 i32.ge_u br_if $vertices_done
+				local.get $vertex local.get $points i32.ge_u br_if $vertices_done
 				local.get $address local.get $vertex local.get $vertex i32.eqz call $emit_rock_point
 				local.get $vertex i32.const 1 i32.add local.set $vertex br $vertices))
 			call $path_close drop f32.const 2 i32.const 0 i32.const 0x8894a8ff i32.const 0 call $path_end drop
@@ -867,16 +1083,32 @@
 			local.get $index i32.const 1 i32.add local.set $index br $again)))
 
 	(func (export "fp_render") (result i32)
-		(local $index i32) (local $address i32) (local $reserve_count i32)
+		(local $index i32) (local $address i32) (local $reserve_count i32) (local $alpha i32)
 		f32.const 0.03137255 f32.const 0.04313725 f32.const 0.07058824 f32.const 1 call $frame_begin drop
+		i32.const 1132 i32.load i32.const 0 i32.gt_s
+		(if (then
+			call $splash_alpha local.set $alpha
+			i32.const 10 i32.const 64 i32.const 12
+			i32.const 1032 i64.load i64.const 2 i64.div_s call $to_host
+			i32.const 1040 i64.load i64.const 333333 call $fixed_mul call $to_host
+			f32.const 54 i32.const 0xff5cf400 local.get $alpha i32.or i32.const 1 call $text drop
+			i32.const 12 i32.const 64 i32.const 12
+			i32.const 1032 i64.load i64.const 2 i64.div_s call $to_host
+			i32.const 1040 i64.load i64.const 333333 call $fixed_mul call $to_host
+			f32.const 52 i32.const 0x5ee7ff00 local.get $alpha i32.or i32.const 1 call $text drop
+			i32.const 13 i32.const 64 i32.const 12
+			i32.const 1032 i64.load i64.const 2 i64.div_s call $to_host
+			i32.const 1040 i64.load i64.const 333333 call $fixed_mul call $to_host
+			f32.const 50 i32.const 0xffffff00 local.get $alpha i32.or i32.const 1 call $text drop
+			i32.const 11 i32.const 80 i32.const 16
+			i32.const 1032 i64.load i64.const 2 i64.div_s i64.const 100000000 i64.sub call $to_host
+			i32.const 1040 i64.load i64.const 333333 call $fixed_mul i64.const 58000000 i64.add call $to_host
+			f32.const 18 i32.const 0x58ff7200 local.get $alpha i32.or i32.const 1 call $text drop))
 		call $draw_stars
 		i32.const 160 i32.const 1096 i32.load call $write_six_digits
 		i32.const 168 i32.const 1104 i32.load call $write_two_digits
-		i32.const 10 i32.const 64 i32.const 12
-		i32.const 1032 i64.load i64.const 2 i64.div_s call $to_host f32.const 28 f32.const 28 i32.const 0x5ee7ffff i32.const 1 call $text drop
-		i32.const 11 i32.const 80 i32.const 16
-		i32.const 1032 i64.load i64.const 2 i64.div_s call $to_host
-		i32.const 1040 i64.load i64.const 18000000 i64.sub call $to_host f32.const 13 i32.const 0x7f91a8ff i32.const 1 call $text drop
+		i32.const 1108 i32.load i32.const 64 i32.and i32.eqz
+		(if (then
 		i32.const 20 i32.const 128 i32.const 5 f32.const 24 f32.const 24 f32.const 15 i32.const 0x9bb8d1ff i32.const 0 call $text drop
 		i32.const 21 i32.const 160 i32.const 6 f32.const 24 f32.const 48 f32.const 22 i32.const 0x58ff72ff i32.const 0 call $text drop
 		i32.const 22 i32.const 136 i32.const 5
@@ -892,7 +1124,7 @@
 			i32.const 50 local.get $index i32.add
 			i32.const 1032 i64.load i64.const 40000000 i64.sub local.get $index i64.extend_i32_u i64.const 28000000 i64.mul i64.sub
 			i64.const 48000000 i64.const 1000000 i64.const 0 i64.const 550000 i32.const 0x58ff72ff i32.const 0 call $draw_ship
-			local.get $index i32.const 1 i32.add local.set $index br $reserves))
+			local.get $index i32.const 1 i32.add local.set $index br $reserves))))
 		i32.const 1124 i32.load local.set $index
 		local.get $index i32.eqz
 		(if (then
@@ -926,16 +1158,26 @@
 			local.get $index i32.const 4 i32.ge_u br_if $debris_done
 			local.get $index call $debris_address local.set $address local.get $index local.get $address call $draw_debris
 			local.get $index i32.const 1 i32.add local.set $index br $debris))
-		i32.const 1132 i32.load i32.const 0 i32.gt_s
-		(if (then
-			i32.const 30 i32.const 176 i32.const 4 i32.const 1032 i64.load i64.const 2 i64.div_s i64.const 35000000 i64.sub call $to_host
-			i32.const 1040 i64.load i64.const 680000 call $fixed_mul call $to_host f32.const 24 i32.const 0x5ee7ffff i32.const 1 call $text drop
-			i32.const 31 i32.const 168 i32.const 2 i32.const 1032 i64.load i64.const 2 i64.div_s i64.const 36000000 i64.add call $to_host
-			i32.const 1040 i64.load i64.const 680000 call $fixed_mul call $to_host f32.const 24 i32.const 0xffcf5cff i32.const 1 call $text drop))
 		i32.const 1124 i32.load i32.const 1 i32.eq
 		(if (then i32.const 32 i32.const 184 i32.const 14 i32.const 1032 i64.load i64.const 2 i64.div_s call $to_host i32.const 1040 i64.load i64.const 2 i64.div_s call $to_host f32.const 26 i32.const 0xff8a2bff i32.const 1 call $text drop))
+		i32.const 1108 i32.load i32.const 256 i32.and
+		(if (then i32.const 35 i32.const 488 i32.const 4 i32.const 1032 i64.load i64.const 2 i64.div_s call $to_host i64.const 82000000 call $to_host f32.const 24 i32.const 0xffcf5cff i32.const 1 call $text drop))
+		i32.const 1108 i32.load i32.const 128 i32.and
+		(if (then i32.const 36 i32.const 472 i32.const 14 i32.const 1032 i64.load i64.const 2 i64.div_s call $to_host i32.const 1040 i64.load i64.const 666667 call $fixed_mul call $to_host f32.const 36 i32.const 0xff5cf4ff i32.const 1 call $text drop))
 		i32.const 1108 i32.load i32.const 16 i32.and
 		(if (then i32.const 33 i32.const 100 i32.const 6 i32.const 1032 i64.load i64.const 2 i64.div_s call $to_host i32.const 1040 i64.load i64.const 2 i64.div_s call $to_host f32.const 36 i32.const 0xffcf5cff i32.const 1 call $text drop))
+		i32.const 1108 i32.load i32.const 512 i32.and
+		(if (then
+			i32.const 40 i32.const 224 i32.const 8 i32.const 1032 i64.load i64.const 2 i64.div_s call $to_host i64.const 140000000 call $to_host f32.const 36 i32.const 0x5ee7ffff i32.const 1 call $text drop
+			i32.const 41 i32.const 240 i32.const 21 i32.const 1032 i64.load i64.const 2 i64.div_s call $to_host i64.const 200000000 call $to_host f32.const 20 i32.const 0xffffffff i32.const 1 call $text drop
+			i32.const 42 i32.const 264 i32.const 21 i32.const 1032 i64.load i64.const 2 i64.div_s call $to_host i64.const 232000000 call $to_host f32.const 20 i32.const 0xffffffff i32.const 1 call $text drop
+			i32.const 43 i32.const 288 i32.const 19 i32.const 1032 i64.load i64.const 2 i64.div_s call $to_host i64.const 264000000 call $to_host f32.const 20 i32.const 0xffffffff i32.const 1 call $text drop
+			i32.const 44 i32.const 312 i32.const 24 i32.const 1032 i64.load i64.const 2 i64.div_s call $to_host i64.const 296000000 call $to_host f32.const 20 i32.const 0xffffffff i32.const 1 call $text drop
+			i32.const 45 i32.const 340 i32.const 23 i32.const 1032 i64.load i64.const 2 i64.div_s call $to_host i64.const 328000000 call $to_host f32.const 20 i32.const 0xffffffff i32.const 1 call $text drop
+			i32.const 46 i32.const 368 i32.const 28 i32.const 1032 i64.load i64.const 2 i64.div_s call $to_host i64.const 360000000 call $to_host f32.const 20 i32.const 0xffffffff i32.const 1 call $text drop
+			i32.const 47 i32.const 400 i32.const 20 i32.const 1032 i64.load i64.const 2 i64.div_s call $to_host i64.const 392000000 call $to_host f32.const 20 i32.const 0xffffffff i32.const 1 call $text drop
+			i32.const 48 i32.const 424 i32.const 22 i32.const 1032 i64.load i64.const 2 i64.div_s call $to_host i64.const 424000000 call $to_host f32.const 20 i32.const 0xffffffff i32.const 1 call $text drop
+			i32.const 49 i32.const 448 i32.const 19 i32.const 1032 i64.load i64.const 2 i64.div_s call $to_host i64.const 456000000 call $to_host f32.const 20 i32.const 0xffffffff i32.const 1 call $text drop))
 		i32.const 1124 i32.load i32.const 3 i32.eq
 		(if (then i32.const 34 i32.const 108 i32.const 9 i32.const 1032 i64.load i64.const 2 i64.div_s call $to_host i32.const 1040 i64.load i64.const 2 i64.div_s call $to_host f32.const 40 i32.const 0xff5c73ff i32.const 1 call $text drop))
 		call $frame_end drop i32.const 0)

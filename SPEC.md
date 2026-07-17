@@ -147,7 +147,7 @@ unsigned bit patterns after validation.
 memory                         linear memory
 fp_abi_major() -> i32          must return 0
 fp_abi_minor() -> i32          current module minor version
-fp_configure() -> i32          declare title and menu items through imports
+fp_configure() -> i32          declare title, menus, resources, and synth voices
 fp_init(seed_lo, seed_hi,
         viewport_w, viewport_h) -> i32
 fp_event(kind, code, a, b) -> i32
@@ -160,6 +160,12 @@ fp_state_schema() -> i32
 
 viewport_w/viewport_h and event a/b use f32 where declared by the actual Wasm
 signature. ticks is an i32 count and is bounded by host policy.
+
+The Vibesteroids application converts viewport scalars to signed decimal
+millionths exactly once on ingress and converts completed draw scalars exactly
+once on egress. A mechanically checked adapter is the only region containing
+floating-point arithmetic; snapshots and gameplay calculations contain no
+IEEE-754 state.
 
 The host snapshots exactly state_len bytes beginning at state_ptr. Restore
 writes a validated snapshot back to that region only when schema and length
@@ -180,6 +186,16 @@ Lifecycle metadata:
 host.v0.title(ptr: i32, len: i32) -> i32
 host.v0.menu_item(id: i32, label_ptr: i32, label_len: i32,
                   shortcut: i32, flags: i32) -> i32
+host.v0.synth_voice(program_id: i32, waveform: i32,
+                    delay_ms: i32, duration_ms: i32,
+                    frequency_start_millihz: i32,
+                    frequency_mid_millihz: i32,
+                    frequency_end_millihz: i32,
+                    gain_start_ppm: i32, gain_peak_ppm: i32,
+                    gain_end_ppm: i32, filter: i32,
+                    filter_start_millihz: i32,
+                    filter_end_millihz: i32,
+                    cooldown_ms: i32) -> i32
 ~~~
 
 Frame:
@@ -267,15 +283,18 @@ The Asteroids mapping is:
 Left/Right      rotate
 Up              thrust
 Space           fire
-P               pause
+P/Escape        pause
+F               toggle auto-fire
+K               toggle Kid Mode
+B               activate Death Blossom
+H/F1            Help / Controls
 R               new game
-Escape          frontplane menu/focus behavior
 ~~~
 
 The initial keyboard adapter uses stable frontplane key IDs rather than GPUI
-key names: Left=1, Right=2, Up=3, Fire=4, Pause=5, Restart=6. A later textual
-input ABI must not reinterpret these physical/game-control IDs as localized
-characters.
+key names: Left=1, Right=2, Up=3, Fire=4, Pause=5, Restart=6,
+AutoFire=7, KidMode=8, DeathBlossom=9, Help=10. A later textual input ABI must
+not reinterpret these physical/game-control IDs as localized characters.
 
 Input state is maintained by the plugin from down/up events. Focus loss must
 clear held controls to prevent stuck input.
@@ -291,12 +310,14 @@ Plugins declare menu items during fp_configure. IDs 1–1023 are reserved:
 4  Preferences
 5  About
 6  Quit
+7  Help / Controls
 ~~~
 
 The demo declares:
 
 - New Game using standard action 1;
 - separator;
+- Help / Controls using standard action 7; and
 - Quit using standard action 6.
 
 The host may render these through native menus or gpui-component menus. New is
@@ -375,22 +396,27 @@ cross-platform widget protocol. Conflating semantic UI with the high-rate scene
 stream would make both inefficient: game frames would churn widget trees, and
 painted "buttons" would lose keyboard, screen-reader, and platform behavior.
 
-### 6.7 Audio semantics
+### 6.7 Guest-declared audio synthesis
 
-Audio IDs are semantic events, not files:
+Audio program IDs are application-owned integers, not host-known semantics or
+file names. During `fp_configure`, a plugin composes each program from bounded
+`synth_voice` declarations. Waveforms are sine, sawtooth, white noise, or
+brown noise. Each voice declares scheduling, a three-point frequency envelope,
+an attack/decay gain envelope, an optional low-pass or band-pass filter sweep,
+and a playback cooldown. Integer millihertz and parts-per-million fields keep
+the declaration portable and deterministic.
 
-~~~text
-1  fire
-2  explosion-small
-3  explosion-large
-4  thrust-start
-5  thrust-stop
-6  extra-life
-~~~
+`host.v0.audio(id, volume, pitch, flags)` plays a previously declared program.
+Volume and pitch are finite normalized values with bounded pitch range. The
+host mixes deterministic mono samples and owns the audio device; it has no
+Vibesteroids-specific switch or sound names. The demo composes the original
+shot, thrust, two explosion textures, three-part Death Blossom siren, and
+five-note extra-life chime without audio assets.
 
-The host chooses synthesis or assets. volume and pitch are finite normalized
-values with bounded pitch range. Tests use a recording adapter; the GUI uses a
-generated tone adapter so the repository requires no copyrighted audio files.
+Oscillator phase, frequency/gain interpolation, noise shaping, filters, and
+mixing use signed decimal millionths. The `audio` call's host scalars convert
+once on ingress and completed PCM converts once for rodio; these adapters are
+mechanically excluded from the integer-only synthesis region.
 
 ### 6.8 Host status codes
 
@@ -411,29 +437,35 @@ a plugin status.
 
 ## 7. Asteroids state
 
-The spike plugin exposes a fixed 256-byte little-endian state region. Its
-current layout begins:
+The demo plugin exposes a fixed 16,384-byte little-endian state region. Its
+schema-3 layout begins:
 
 ~~~text
 offset  size  field
 0       4     simulation tick
 4       4     configured seed
-8       8     viewport width/height
-16      24    ship position, velocity, and direction
-40      16    score, lives, level, and control/state flags
-56      32    bullet active flag, position, velocity, lifetime
-96      72    three asteroid slots
+8       16    viewport width and height as signed decimal millionths
+24      48    ship position, velocity, and direction
+72      56    score, lives, level, flags, lifecycle, and blossom rotation
+256     3072  64 bullet records
+3328    2560  32 asteroid records
+5888    7200  150 particle records
+13088   320   four debris records
+13408   1600  100 deterministic star records
 ~~~
 
 The exact schema is documented beside vibesteroids.wat. Tests decode only
 independent invariants; the host treats the entire region as opaque for normal
 snapshots.
 
-V0 capacity is fixed to keep direct WAT manageable:
+V0 capacity is fixed to keep direct WAT bounded and inspectable:
 
 - one ship;
-- one bullet; and
-- three asteroids.
+- 64 bullets;
+- 32 asteroids;
+- 150 particles;
+- four ship-debris pieces; and
+- 100 stars.
 
 Fixed capacity is an intentional direct-WAT spike constraint, not an ABI
 constraint. The plugin can grow these pools without changing the host.
@@ -462,9 +494,9 @@ The plugin performs:
 - Audio commands are deterministic outputs but are not replayed when restoring
   an old snapshot unless the corresponding tick is executed again.
 
-Cross-engine floating-point replay is measured during the spike. If exact state
-hashes differ, gameplay values move to fixed-point integers before claiming
-cross-platform deterministic replay.
+Gameplay and synth values are signed decimal fixed-point integers. Structural
+tests reject floating-point guest arithmetic outside the marked host-scalar
+adapter, so snapshot/replay equality does not depend on an IEEE-754 engine.
 
 ## 9. GPUI frontplane
 
@@ -644,7 +676,8 @@ the strongest practical test that the ABI is genuinely generic.
 The native frontplane should load `./code.wat` when present, otherwise retain
 the embedded demonstration as a zero-configuration fallback. A positional
 file or application-directory argument selects another source; `--embedded`
-forces the bundled demo, while `--watch` polls the selected path's contents and
+forces the bundled demo, `--seed N` supplies a validated deterministic `u64`
+initialization seed, while `--watch` polls the selected path's contents and
 transactionally reloads after saves. Watching follows the path rather than an
 open inode so editor replace/rename saves remain visible.
 
@@ -670,17 +703,20 @@ Implemented and covered headlessly:
 - pointer, UTF-8, numeric, stable-ID, lifecycle, command, audio, effect, image,
   path, tick, and snapshot validation, with transactional failure rollback;
 - exact snapshot/restore, deterministic tick and input delivery, typed
-  metadata, standard menu actions, semantic audio, and host effects;
+  metadata, standard menu actions, guest-declared bounded synth programs, and
+  host effects;
 - lines, circles, text, balanced affine transforms, general vector paths,
   image resources, and sprite-sheet source/destination commands;
 - an independent non-gameplay composition fixture proving a rotated path,
   plugin-clocked atlas animation, and restoration of the selected frame;
-- a WAT-owned Vibesteroids conversion with seeded placement, ship motion,
-  firing, collisions, scoring, lives, levels, pause, restart, wrapping, audio,
-  and vector output; and
+- a WAT-owned Vibesteroids conversion with schema-3 decimal-fixed state,
+  seeded placement, ship motion, firing, collisions, scoring, lives, levels,
+  pause, restart, wrapping, auto-fire, Kid Mode, Death Blossom, particles,
+  debris, safe respawn, guest-declared audio, and vector output; and
 - a GPUI/gpui-component window adapter with plugin-declared title and standard
-  native menu actions, keyboard input, fixed simulation ticks, vector
-  painting, and rodio-generated tones; and
+  native menu actions, complete desktop keyboard input, fixed simulation
+  ticks, full-window resize delivery, vector painting, and rodio rendering of
+  guest-declared synth programs; and
 - deterministic headless SVG export for arbitrary requested ticks, including
   external WAT input and stdout/file output suitable for CI visual inspection.
 - conventional `code.wat` discovery, explicit file/directory and embedded
@@ -704,9 +740,10 @@ Honest boundaries discovered by the spike:
 - Native menus currently map only reserved standard action IDs. Arbitrary
   plugin action IDs await the retained semantic component/action plane because
   GPUI actions are compile-time Rust types.
-- The direct-WAT demo intentionally uses one bullet and three asteroids.
-  Vibesteroids' Kid Mode, Death Blossom, split rocks, particles, touch/shake,
-  and safe respawn remain WAT-only conversion backlog.
+- Browser-only device-motion permission, shake activation, touch zones, Eruda,
+  and URL test parameters remain outside the desktop proof. A future generic
+  pointer and motion capability can add parity without hard-coding mobile
+  Vibesteroids behavior into the host.
 - GPUI currently brings a very large Zed dependency graph. The first sandboxed
   Nix vendor pass took roughly 25 minutes, and Nixpkgs' buildRustPackage
   recompiles that graph when source changes. Cargo's local target cache makes
