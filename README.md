@@ -1,4 +1,4 @@
-# gpui-wasm
+# Mecha Aedicule
 
 [![Proof of concept](https://img.shields.io/badge/status-proof_of_concept-f59e0b)](#project-status)
 [![CI](https://github.com/pmarreck/gpui-wasm/actions/workflows/ci.yml/badge.svg?branch=yolo)](https://github.com/pmarreck/gpui-wasm/actions/workflows/ci.yml)
@@ -6,6 +6,11 @@
 
 A generic native [GPUI](https://www.gpui.rs/) frontplane for applications
 written directly in WebAssembly Text format (WAT).
+
+The repository and binaries still use the proof-of-concept identifier
+`gpui-wasm` while the WAT/WAST Vibesteroids application is prepared for its own
+repository. **Mecha Aedicule** is the working product name for the reusable
+frontplane.
 
 The experiment asks a slightly strange but useful question:
 
@@ -98,8 +103,10 @@ WAT is production-safe.
 - Live edits can replace code without restarting compatible game state.
 - A malformed replacement never displaces the last working plugin.
 - A changed state schema deliberately restarts with fresh state.
-- Headless tests can independently exercise lifecycle, determinism, rendering,
-  hostile inputs, resource limits, and reload behavior.
+- Standard WAST application tests exercise gameplay, state, rendering intent,
+  menus, and guest effects against an instrumented `host.v0`; independent Rust
+  tests exercise only the generic host, hostile inputs, limits, scheduling,
+  adapters, and reload behavior.
 
 ## Project status
 
@@ -110,7 +117,8 @@ Working now:
   two-child splitting, 80/120 scoring, escalating waves, particles, ship
   debris, safe respawn, auto-fire, Kid Mode, the semi-secret Death Blossom,
   Help/Controls, and game over;
-- schema-3 signed decimal-fixed gameplay state and physics, with IEEE-754
+- schema-4 signed decimal-fixed gameplay state and physics with canonical
+  per-second velocities, with IEEE-754
   conversion isolated to the GPUI/ABI adapter and mechanically checked;
 - deterministic fixed-capacity WAT pools for 32 asteroids, 64 bullets, 150
   particles, and four debris pieces;
@@ -143,7 +151,9 @@ Not yet production-ready:
 See [SPEC.md](SPEC.md) for the ABI, threat model, design decisions, and honest
 spike boundaries. [VIBESTEROIDS_BEHAVIOR_SPEC.md](VIBESTEROIDS_BEHAVIOR_SPEC.md)
 documents the original browser game's source-derived algorithms, constants,
-quirks, and the staged WAT conversion policy.
+and quirks. [GAMEPLAY_DESIGN_RESEARCH.md](GAMEPLAY_DESIGN_RESEARCH.md) records
+why the classic loop works, what Blasteroids added, and a staged design
+direction distinct from source fidelity.
 
 ## Try it
 
@@ -315,9 +325,11 @@ tools an exact inspectable artifact without requiring desktop access.
 | `src/lib.rs` | GPUI-independent Wasmtime runtime, synth/command validation, snapshots, and reload core |
 | `src/main.rs` | Full-window GPUI renderer, input, generic synth engine, menus, and live-file adapter |
 | `src/bin/gpui-wasm-render.rs` | Deterministic headless SVG adapter |
-| `tests/` | ABI, containment, rendering, CLI, launch, and hot-reload coverage |
+| `tests/wast/` | Standard WAST gameplay/state/render/effect behavior specifications |
+| `tests/` | Generic Rust ABI/containment/adapter tests plus WAST and structural runners |
 | `SPEC.md` | Protocol specification and feasibility findings |
 | `VIBESTEROIDS_BEHAVIOR_SPEC.md` | Source-derived original-game behavior and staged WAT port plan |
+| `GAMEPLAY_DESIGN_RESEARCH.md` | Sourced classic-gameplay analysis and prioritized design experiments |
 | `PROJECT_OVERVIEW.md` | Project goals and terminology |
 
 ## Why WAT?

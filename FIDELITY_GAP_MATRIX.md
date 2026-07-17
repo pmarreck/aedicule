@@ -11,7 +11,7 @@ applicable.
 | Source behavior | GPUI/WAT decision | Reason |
 |---|---|---|
 | Browser URL parameters | Provide validated `--seed`; defer initial-level selection until the generic ABI has application configuration | A generic frontplane must not grow a Vibesteroids-specific `--level` switch. |
-| Browser test-mode URL and in-page test UI | Keep the Rust/WAT headless test binaries | The native independent harness is stronger and already canonical. |
+| Browser test-mode URL and in-page test UI | Keep standard WAST behavior scripts plus independent generic Rust frontplane controls | WAST keeps application tests in the same ecosystem as the WAT while Rust remains outside the game boundary. |
 | Eruda mobile console and HTTPS development server | Not applicable | These exist solely to support a browser/mobile runtime. |
 | Device-motion permission and shake activation | Defer until a host motion capability exists | A desktop keyboard action remains available; the generic ABI must not pretend to have sensors. |
 | Browser touch controls | Implement pointer/touch semantics only after the generic pointer ABI is bounded and tested | GPUI can eventually supply pointer input, but this is separate from fixed-decimal and desktop parity. |
@@ -24,7 +24,7 @@ applicable.
 
 | Requirement | Current state | Completion evidence |
 |---|---|---|
-| Decimal fixed-point world values | **Implemented** | Schema 3 stores every gameplay scalar in signed `i64` decimal millionths; the decoded snapshot and exact-drag tests pass. |
+| Decimal fixed-point world values | **Implemented** | Schema 4 stores every gameplay scalar in signed `i64` decimal millionths and all velocities in canonical per-second units; WAST schema, motion, and exact-drag assertions pass. |
 | Integer-only simulation | **Implemented** | A structural classifier rejects floating-point arithmetic, loads, and stores outside explicitly marked host-scalar conversion adapters. |
 | Safe fixed-point multiplication and distance tests | **Implemented** | Collision deltas rescale to milli-fixed before squaring; exact `0.995`, negative values, collision equality, and 8K bounds are covered. |
 | One-way host conversion | **Implemented** | Host viewport scalars convert once on ingress and completed draw scalars once on egress; no converted value re-enters gameplay state. |

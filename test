@@ -2,6 +2,10 @@
 
 set -u
 
+if [[ -z ${IN_NIX_SHELL:-} ]]; then
+	exec nix develop -c "$0" "$@"
+fi
+
 failures=0
 
 run_check() {
@@ -12,10 +16,12 @@ run_check() {
 	fi
 }
 
-run_check nix develop -c cargo test --no-default-features
-run_check nix develop -c cargo test --bin gpui-wasm
-run_check nix develop -c cargo test --test gui_cli
-run_check nix develop -c cargo check
+run_check cargo test --no-default-features
+run_check cargo test --bin gpui-wasm
+run_check cargo test --test gui_cli
+run_check cargo check
+run_check ./tests/run-wast
+run_check ./tests/lint-wat
 run_check ./tests/cli/build_partition
 
 if (( failures > 255 )); then

@@ -1,8 +1,13 @@
-# GPUI WASM
+# Mecha Aedicule
 
-GPUI WASM explores a generic, cross-platform GPUI “frontplane” that loads an
+Mecha Aedicule explores a generic, cross-platform GPUI “frontplane” that loads an
 application authored in WebAssembly Text Format (WAT). The frontplane owns
 platform integration; the plugin owns application state and behavior.
+
+The working tree, package, and binaries retain the provisional `gpui-wasm`
+identifier until the generic frontplane and its Vibesteroids application are
+split into adjacent repositories. Product naming must not obscure that
+technical extraction or silently break existing launch paths.
 
 The initial feasibility demonstration is an Asteroids-style game:
 

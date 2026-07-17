@@ -294,10 +294,13 @@ H/F1            Help / Controls
 R               new game
 ~~~
 
-The initial keyboard adapter uses stable frontplane key IDs rather than GPUI
-key names: Left=1, Right=2, Up=3, Fire=4, Pause=5, Restart=6,
-AutoFire=7, KidMode=8, DeathBlossom=9, Help=10. A later textual input ABI must
-not reinterpret these physical/game-control IDs as localized characters.
+The keyboard adapter uses stable physical-key IDs rather than GPUI names or
+application actions: ArrowLeft=1, ArrowRight=2, ArrowUp=3, Space=4, P=5, R=6,
+F=7, K=8, B=9, H=10, Escape=11, and F1=12. Vibesteroids—not Rust—maps those
+codes to the actions above. A later textual input ABI must not reinterpret
+these physical IDs as localized characters. The native adapter suppresses
+duplicate held key-down notifications uniformly; it does not select a repeat
+policy by guessing what any key means to the guest.
 
 Input state is maintained by the plugin from down/up events. Focus loss must
 clear held controls to prevent stuck input.
@@ -576,8 +579,19 @@ No Wasmtime host import may call back into a live GPUI Context or Window borrow.
 
 ## 10. Headless test plan
 
-Tests are written before implementation and use the real WAT module plus a
-recording host adapter.
+Application behavior tests are standard WebAssembly Script (`.wast`) files.
+The runner composes the canonical production WAT with a deterministic,
+instrumented WAST implementation of `host.v0`; no custom Rust test runner or
+test-only export is added to the game. `wasmtime wast` executes the resulting
+script directly.
+
+Rust tests stop at the generic frontplane boundary: ABI validation, budgets,
+transactional host output, adapters, hot reload, scheduling, snapshots, and
+independent metamorphic controls. A test that knows a Vibesteroids state
+offset, score, weapon, level rule, or expected game drawing belongs in WAST.
+Structural source policies that WAST cannot observe, such as excluding float
+opcodes outside the marked ABI adapter, use a dedicated WAT lint rather than a
+Rust gameplay oracle.
 
 ### 10.1 ABI and lifecycle
 
@@ -763,7 +777,8 @@ Implemented and covered headlessly:
   image resources, and sprite-sheet source/destination commands;
 - an independent non-gameplay composition fixture proving a rotated path,
   plugin-clocked atlas animation, and restoration of the selected frame;
-- a WAT-owned Vibesteroids conversion with schema-3 decimal-fixed state,
+- a WAT-owned Vibesteroids conversion with schema-4 decimal-fixed state and
+  canonical per-second velocities,
   seeded placement, ship motion, firing, collisions, scoring, lives, levels,
   pause, restart, wrapping, auto-fire, Kid Mode, Death Blossom, particles,
   debris, safe respawn, guest-declared audio, and vector output; and

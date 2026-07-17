@@ -14,8 +14,18 @@
   gameplay equivalence matrix)
   - Curiosity poke: which original frame-based quirks are really intended
     durations, and which should remain deliberately tick-relative?
-- [ ] Migrate schema-3 per-tick quantities to a new schema of canonical
+- [x] Move every Vibesteroids-specific test oracle from Rust into standard
+  WAST while retaining Rust tests only for the generic frontplane.
+  (2026-07-17 02:34 EDT: stock `wasmtime wast` now owns the complete
+  application behavior contract; the remaining Rust tests use neutral guests
+  to exercise only generic host, snapshot, render, audio, and CLI controls)
+  - Curiosity poke: which controls need an independent metamorphic oracle in
+    addition to application-authored WAST examples?
+- [x] Migrate schema-3 per-tick quantities to a new schema of canonical
   per-second integer units while retaining 60 Hz output behavior.
+  (2026-07-17 02:05 EDT: schema 4 declares 60 Hz, stores linear/angular
+  velocities per second, converts only at named integration points, and passes
+  exact WAST equivalence assertions)
   - Curiosity poke: how many quotient remainders are required to prevent
     millionth-scale truncation drift across every moving entity?
 - [ ] Replace the one-timer/one-tick loop with an injected monotonic
@@ -26,6 +36,24 @@
   60/120 equivalence matrix and a Peter visual playtest pass.
   - Curiosity poke: which newly detected collisions are desirable reduced
     tunneling versus an unintended change to source difficulty?
+
+- [x] Record the Asteroids/Blasteroids gameplay research separately from the
+  source-derived behavior specification.
+  (2026-07-17 01:54 EDT: sourced historical design evidence, motivation/game-
+  feel research, prioritized experiments, scope guards, and falsifiable
+  playtest measures live in `GAMEPLAY_DESIGN_RESEARCH.md`)
+  - Curiosity poke: which recommendation survives Peter's actual repeated
+    play rather than merely sounding persuasive on paper?
+- [ ] Extract the WAT/WAST Vibesteroids application into its own repository and
+  rename the generic frontplane project Mecha Aedicule without losing history.
+  - Curiosity poke: should the game pin a released Mecha Aedicule ABI artifact,
+    a flake input, or both while retaining a convenient adjacent checkout?
+- [x] Replace application-semantic native key identifiers with a physical-key
+  ABI so control meaning remains entirely owned by the WAT guest.
+  (2026-07-17 02:34 EDT: Rust reports physical arrows, letters, function keys,
+  Space, and Escape; Vibesteroids maps pause/help aliases inside its WAT)
+  - Curiosity poke: when the ABI grows, can stable physical codes coexist with
+    localized display labels without leaking menu semantics into the host?
 
 - [x] Keep the animated thruster flame behind the ship for every heading.
   (2026-07-16 23:49 EDT: red-to-green local-space path regression, complete

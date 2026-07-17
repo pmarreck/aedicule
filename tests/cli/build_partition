@@ -21,6 +21,10 @@ else
 			failures=$((failures + 1))
 		elif [[ -e "$frontplane_source/plugins/vibesteroids.wat" ]]; then
 			failures=$((failures + 1))
+		elif [[ -e "$frontplane_source/README.md" ]]; then
+			failures=$((failures + 1))
+		elif [[ -e "$frontplane_source/LICENSE" ]]; then
+			failures=$((failures + 1))
 		fi
 	fi
 fi

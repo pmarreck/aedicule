@@ -81,10 +81,10 @@ fn svg_export_is_a_complete_deterministic_visual_artifact() {
 }
 
 #[test]
-fn exported_vibesteroids_frame_changes_after_simulation_ticks() {
-    const ASTEROIDS_WAT: &str = include_str!("../plugins/vibesteroids.wat");
+fn exported_guest_frame_changes_after_simulation_ticks() {
+    const ANIMATED_WAT: &str = include_str!("fixtures/animated.wat");
     let mut frontplane =
-        gpui_wasm::Frontplane::from_wat(ASTEROIDS_WAT, gpui_wasm::Limits::default()).unwrap();
+        gpui_wasm::Frontplane::from_wat(ANIMATED_WAT, gpui_wasm::Limits::default()).unwrap();
     frontplane.configure().unwrap();
     frontplane.init(0x5eed_cafe, 1024.0, 768.0).unwrap();
 
@@ -93,6 +93,6 @@ fn exported_vibesteroids_frame_changes_after_simulation_ticks() {
     let after = render_svg(&frontplane.render().unwrap(), 1024.0, 768.0);
 
     assert_ne!(before, after);
-    assert!(before.contains("VIBESTEROIDS"));
-    assert!(after.contains("VIBESTEROIDS"));
+    assert!(before.contains("<circle"));
+    assert!(after.contains("<circle"));
 }

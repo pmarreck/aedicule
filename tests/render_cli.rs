@@ -1,13 +1,13 @@
 use std::{fs, path::PathBuf, process::Command};
 
-fn asteroids_wat() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("plugins/vibesteroids.wat")
+fn animated_wat() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/animated.wat")
 }
 
 fn render(arguments: &[&str]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_gpui-wasm-render"))
         .env("MUTE_DEBUG_STATUS", "1")
-        .env("GPUI_WASM_DEFAULT_PLUGIN", asteroids_wat())
+        .env("GPUI_WASM_DEFAULT_PLUGIN", animated_wat())
         .args(arguments)
         .output()
         .expect("render CLI should execute")
@@ -75,7 +75,7 @@ fn cli_accepts_a_plugin_path_with_spaces_and_writes_the_requested_file() {
     fs::create_dir_all(&directory).unwrap();
     let plugin = directory.join("plugin with spaces.wat");
     let output = directory.join("frame with spaces.svg");
-    fs::copy(asteroids_wat(), &plugin).unwrap();
+    fs::copy(animated_wat(), &plugin).unwrap();
 
     let result = render(&[
         plugin.to_str().unwrap(),
@@ -88,11 +88,7 @@ fn cli_accepts_a_plugin_path_with_spaces_and_writes_the_requested_file() {
     assert!(result.status.success(), "{:?}", result.stderr);
     assert!(result.stdout.is_empty(), "{:?}", result.stdout);
     assert!(result.stderr.is_empty(), "{:?}", result.stderr);
-    assert!(
-        fs::read_to_string(&output)
-            .unwrap()
-            .contains("VIBESTEROIDS")
-    );
+    assert!(fs::read_to_string(&output).unwrap().contains("<circle"));
     fs::remove_dir_all(directory).unwrap();
 }
 

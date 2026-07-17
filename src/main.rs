@@ -684,17 +684,7 @@ impl FrontplaneView {
         let Some(key) = map_key(&event.keystroke.key) else {
             return;
         };
-        if event.is_held
-            && matches!(
-                key,
-                Key::Pause
-                    | Key::Restart
-                    | Key::AutoFire
-                    | Key::KidMode
-                    | Key::DeathBlossom
-                    | Key::Help
-            )
-        {
+        if event.is_held {
             return;
         }
         if let Err(error) = self.frontplane.event(Event::KeyDown(key)) {
@@ -870,19 +860,22 @@ impl Render for FrontplaneView {
     }
 }
 
-/// Normalizes GPUI's portable key names into the versioned gameplay key IDs.
+/// Normalizes GPUI's portable key names into versioned physical-key IDs,
+/// leaving all application meaning inside the guest.
 fn map_key(key: &str) -> Option<Key> {
     match key {
-        "left" => Some(Key::Left),
-        "right" => Some(Key::Right),
-        "up" => Some(Key::Thrust),
-        "space" | " " => Some(Key::Fire),
-        "p" | "escape" => Some(Key::Pause),
-        "r" => Some(Key::Restart),
-        "f" => Some(Key::AutoFire),
-        "k" => Some(Key::KidMode),
-        "b" => Some(Key::DeathBlossom),
-        "h" => Some(Key::Help),
+        "left" => Some(Key::ArrowLeft),
+        "right" => Some(Key::ArrowRight),
+        "up" => Some(Key::ArrowUp),
+        "space" | " " => Some(Key::Space),
+        "p" => Some(Key::P),
+        "escape" => Some(Key::Escape),
+        "r" => Some(Key::R),
+        "f" => Some(Key::F),
+        "k" => Some(Key::K),
+        "b" => Some(Key::B),
+        "h" => Some(Key::H),
+        "f1" => Some(Key::F1),
         _ => None,
     }
 }
@@ -1388,12 +1381,19 @@ mod tests {
     }
 
     #[test]
-    fn native_keys_cover_every_desktop_vibesteroids_control() {
-        assert_eq!(map_key("escape"), Some(Key::Pause));
-        assert_eq!(map_key("f"), Some(Key::AutoFire));
-        assert_eq!(map_key("k"), Some(Key::KidMode));
-        assert_eq!(map_key("b"), Some(Key::DeathBlossom));
-        assert_eq!(map_key("h"), Some(Key::Help));
+    fn native_key_mapping_exposes_physical_keys_without_guest_semantics() {
+        assert_eq!(map_key("left"), Some(Key::ArrowLeft));
+        assert_eq!(map_key("right"), Some(Key::ArrowRight));
+        assert_eq!(map_key("up"), Some(Key::ArrowUp));
+        assert_eq!(map_key("space"), Some(Key::Space));
+        assert_eq!(map_key("p"), Some(Key::P));
+        assert_eq!(map_key("escape"), Some(Key::Escape));
+        assert_eq!(map_key("r"), Some(Key::R));
+        assert_eq!(map_key("f"), Some(Key::F));
+        assert_eq!(map_key("k"), Some(Key::K));
+        assert_eq!(map_key("b"), Some(Key::B));
+        assert_eq!(map_key("h"), Some(Key::H));
+        assert_eq!(map_key("f1"), Some(Key::F1));
     }
 
     #[test]

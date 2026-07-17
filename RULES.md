@@ -20,3 +20,7 @@
    i18n prepare phase.
 10. The complete suite runs through ./test and the optimized build through
     ./build.
+11. Vibesteroids-specific behavior oracles live in standard WAST. Rust tests
+    cover only generic frontplane behavior and independent cross-boundary
+    controls; structural WAT policies may use a source lint when WAST cannot
+    observe them.

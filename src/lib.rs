@@ -764,16 +764,18 @@ pub enum Event {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 pub enum Key {
-    Left = 1,
-    Right = 2,
-    Thrust = 3,
-    Fire = 4,
-    Pause = 5,
-    Restart = 6,
-    AutoFire = 7,
-    KidMode = 8,
-    DeathBlossom = 9,
-    Help = 10,
+    ArrowLeft = 1,
+    ArrowRight = 2,
+    ArrowUp = 3,
+    Space = 4,
+    P = 5,
+    R = 6,
+    F = 7,
+    K = 8,
+    B = 9,
+    H = 10,
+    Escape = 11,
+    F1 = 12,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

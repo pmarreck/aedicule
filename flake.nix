@@ -38,8 +38,6 @@
 								|| builtins.elem relative [
 									"/Cargo.toml"
 									"/Cargo.lock"
-									"/README.md"
-									"/LICENSE"
 									"/src"
 									"/third_party"
 								]
@@ -97,6 +95,7 @@
 							clang
 							cargo-nextest
 							actionlint
+							wasmtime
 						]
 							++ pkgs.lib.optionals pkgs.stdenv.isLinux (linuxLibraries pkgs);
 						LD_LIBRARY_PATH = pkgs.lib.optionalString pkgs.stdenv.isLinux

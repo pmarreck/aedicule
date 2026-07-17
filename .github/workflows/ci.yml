@@ -29,5 +29,8 @@ jobs:
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and test
+      - name: Build optimized package
         run: nix build --print-build-logs
+
+      - name: Run complete test suite
+        run: ./test
