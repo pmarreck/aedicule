@@ -27,6 +27,10 @@
   through the ship gate)
   - Curiosity poke: which existing links and clone URLs need compatibility
     redirects after GitHub's automatic redirect expires or is superseded?
+- [x] Rename the local project directory to `aedicule`, matching the canonical
+  repository and future organization-neutral identifier. (2026-07-17 09:04 EDT)
+  - Curiosity poke: which local tools cache absolute project paths and need a
+    clean rebuild or session recreation after a directory rename?
 - [ ] Add a second, unrelated WAT application as the strongest falsification
   test of the generic ABI.
   - Curiosity poke: would a small editor expose retained widgets, text input,

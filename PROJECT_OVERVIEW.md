@@ -5,13 +5,15 @@ directly in WebAssembly Text format (WAT). The trusted Rust host owns platform
 integration and bounded capabilities. An untrusted guest owns application
 state, rules, rendering intent, menus, audio declarations, and effects.
 
+**Project identifier:** `aedicule`
+
 The project's goal is a stable native appliance into which independently
 versioned WAT applications can be loaded, tested, watched, and transactionally
 replaced. Application-only edits must not rebuild the GPUI/Rust dependency
 graph, and no specific application's rules or behavioral oracle may leak into
 this repository.
 
-The first substantial application is the separate `vibesteroids-aedicule`
+The first substantial application is the separate `vibesteroids_wat`
 repository. A second non-game application is required before claiming that the
 v0 capability model is broadly reusable.
 

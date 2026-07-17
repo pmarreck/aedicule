@@ -7,6 +7,10 @@
 A generic native [GPUI](https://www.gpui.rs/) frontplane for applications
 written directly in WebAssembly Text format (WAT).
 
+The product name is **Mecha Aedicule**; its project, repository, and path
+identifier is `aedicule`, leaving room for a future move under Peter's `mecha`
+organization without the redundant `mecha/mecha-aedicule` form.
+
 Mecha Aedicule asks a slightly strange but useful question:
 
 > Can a small, capability-bounded WAT module own an application's state and
@@ -18,7 +22,7 @@ lifecycle management, deterministic headless rendering, and transactional hot
 reload. A guest supplies the application.
 
 The first substantial guest is maintained separately in
-[Vibesteroids Aedicule](https://github.com/pmarreck/vibesteroids-aedicule).
+[`vibesteroids_wat`](https://github.com/pmarreck/vibesteroids_wat).
 Keeping it separate is an architectural control: changing application WAT must
 not rebuild the large native dependency graph, and application behavior must
 not leak into the generic host or its tests.
