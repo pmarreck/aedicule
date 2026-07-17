@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+
+set -u
+
+root=$(cd "$(dirname "$0")/../.." && pwd)
+application_paths=(
+	"plugins"
+	"tests/wast"
+	"tests/run-wast"
+	"tests/lint-wat"
+	"FIDELITY_GAP_MATRIX.md"
+	"GAMEPLAY_DESIGN_RESEARCH.md"
+	"VIBESTEROIDS_BEHAVIOR_SPEC.md"
+)
+failures=0
+
+for relative in "${application_paths[@]}"; do
+	if [[ -e "$root/$relative" ]]; then
+		printf 'application-owned path remains in generic frontplane: %s\n' "$relative" >&2
+		failures=$((failures + 1))
+	fi
+done
+
+exit "$failures"

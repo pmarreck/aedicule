@@ -14,7 +14,7 @@ fn render(arguments: &[&str]) -> std::process::Output {
 }
 
 #[test]
-fn default_plugin_environment_selects_runtime_data_instead_of_compiled_gameplay() {
+fn default_plugin_environment_selects_runtime_data_instead_of_compiled_application() {
     let directory =
         std::env::temp_dir().join(format!("gpui wasm runtime default {}", std::process::id()));
     fs::create_dir_all(&directory).unwrap();

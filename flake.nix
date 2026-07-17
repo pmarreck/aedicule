@@ -44,7 +44,7 @@
 								|| pkgs.lib.hasPrefix "/src/" relative
 								|| pkgs.lib.hasPrefix "/third_party/" relative;
 					};
-				in rec {
+				in {
 					frontplane = pkgs.rustPlatform.buildRustPackage {
 						pname = "gpui-wasm";
 						version = "0.1.0";
@@ -58,26 +58,13 @@
 							wrapProgram $out/bin/gpui-wasm \
 								--prefix LD_LIBRARY_PATH : ${pkgs.lib.makeLibraryPath (linuxLibraries pkgs)}
 							'';
+						meta.mainProgram = "gpui-wasm";
 					};
-					vibesteroids = pkgs.runCommand "vibesteroids-wat" {} ''
-						mkdir -p $out/share/gpui-wasm/plugins
-						cp ${./plugins/vibesteroids.wat} $out/share/gpui-wasm/plugins/vibesteroids.wat
-					'';
-					default = pkgs.runCommand "gpui-wasm-0.1.0" {
-						nativeBuildInputs = [ pkgs.makeWrapper ];
-					} ''
-						mkdir -p $out/bin $out/share/gpui-wasm/plugins
-						ln -s ${vibesteroids}/share/gpui-wasm/plugins/vibesteroids.wat \
-							$out/share/gpui-wasm/plugins/vibesteroids.wat
-						makeWrapper ${frontplane}/bin/gpui-wasm $out/bin/gpui-wasm \
-							--set GPUI_WASM_DEFAULT_PLUGIN $out/share/gpui-wasm/plugins/vibesteroids.wat
-						makeWrapper ${frontplane}/bin/gpui-wasm-render $out/bin/gpui-wasm-render \
-							--set GPUI_WASM_DEFAULT_PLUGIN $out/share/gpui-wasm/plugins/vibesteroids.wat
-					'';
+					default = self.packages.${system}.frontplane;
 				});
 
 			checks = forAllSystems (system: {
-				inherit (self.packages.${system}) default;
+				frontplane = self.packages.${system}.frontplane;
 			});
 
 			devShells = forAllSystems (system:
@@ -97,7 +84,6 @@
 							actionlint
 							nix
 							ripgrep
-							wasmtime
 						]
 							++ pkgs.lib.optionals pkgs.stdenv.isLinux (linuxLibraries pkgs);
 						LD_LIBRARY_PATH = pkgs.lib.optionalString pkgs.stdenv.isLinux

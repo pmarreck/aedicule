@@ -2,7 +2,7 @@
 
 set -u
 
-required=(cargo nix nix-store rg wasmtime)
+required=(cargo nix nix-store rg)
 failures=0
 
 for executable in "${required[@]}"; do

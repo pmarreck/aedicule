@@ -33,7 +33,7 @@ fn temporary_directory(label: &str) -> PathBuf {
 #[test]
 fn default_source_prefers_colocated_then_packaged_then_embedded_fallback() {
     let directory = temporary_directory("default");
-    let packaged = directory.join("installed/vibesteroids.wat");
+    let packaged = directory.join("installed/application.wat");
 
     assert_eq!(
         resolve_launch(arguments(&[]), &directory).unwrap(),

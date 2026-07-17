@@ -1,7 +1,7 @@
 # Rules
 
-1. The WAT plugin owns gameplay state and rules. GPUI code must not contain
-   Asteroids-specific physics, scoring, collision, or spawning behavior.
+1. Applications own their state and domain rules. GPUI code must not contain
+   behavior belonging to any particular guest application.
 2. The frontplane ABI is independent of GPUI Rust types and platform-native
    handles.
 3. The plugin receives no ambient WASI, filesystem, network, clock, process, or
@@ -20,7 +20,6 @@
    i18n prepare phase.
 10. The complete suite runs through ./test and the optimized build through
     ./build.
-11. Vibesteroids-specific behavior oracles live in standard WAST. Rust tests
-    cover only generic frontplane behavior and independent cross-boundary
-    controls; structural WAT policies may use a source lint when WAST cannot
-    observe them.
+11. This repository contains no production application plugin or application
+    behavior oracle. Application WAT/WAST lives in a separate repository;
+    Rust tests here use only neutral conformance fixtures.

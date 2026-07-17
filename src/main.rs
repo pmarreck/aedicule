@@ -60,7 +60,7 @@ struct Strings {
 const EN: Strings = Strings {
     fallback_title: "WAT Application — GPUI Frontplane",
     application_menu: "Application",
-    abi_status: "WAT owns gameplay • GPUI owns the window",
+    abi_status: "WAT owns behavior • GPUI owns the window",
     runtime_status: "ABI v0 • 60 Hz • capability-bounded",
     plugin_stopped: "WAT plugin stopped safely",
     reload: "Reload",
