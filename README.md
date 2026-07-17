@@ -1,6 +1,7 @@
 # Mecha Aedicule
 
 [![Proof of concept](https://img.shields.io/badge/status-proof_of_concept-f59e0b)](#status)
+[![Mechatron Prime CI](https://img.shields.io/endpoint?url=https%3A%2F%2Fthelio-nixos.tail66c90.ts.net%2Fbadges%2Faedicule.json&style=for-the-badge)](https://thelio-nixos.tail66c90.ts.net/mechatron-prime/)
 [![CI](https://github.com/pmarreck/aedicule/actions/workflows/ci.yml/badge.svg?branch=yolo)](https://github.com/pmarreck/aedicule/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
@@ -76,18 +77,19 @@ flowchart LR
 	HOST --> HEADLESS["deterministic SVG"]
 ```
 
-The guest imports only the versioned `host.v0` capabilities it needs. The host
+The guest imports only the versioned `aedicule.v0` `AE_*` capabilities it needs. The host
 exposes no WASI filesystem, network, process, environment, or wall clock. Fuel,
 memory, table, command, resource, and output budgets bound guest work. A guest
 emits one finite immutable frame before GPUI paints it, avoiding Wasmtime/GPUI
 re-entrancy.
 
-Guest state is an opaque byte snapshot identified by `fp_state_schema` and
+Guest state is an opaque byte snapshot identified by `AE_state_schema` and
 length. Reload compiles, initializes, restores when compatible, and renders a
 candidate in isolation. Only a completely valid candidate replaces the active
 module; otherwise the last working application continues.
 
-See [SPEC.md](SPEC.md) for the ABI and threat model.
+See [WAT_ABI.md](WAT_ABI.md) for the generated client ABI reference and
+[SPEC.md](SPEC.md) for the threat model.
 
 ## What the POC proves
 
@@ -152,7 +154,7 @@ deceleration while Peter was actively playing: the new physics appeared in the
 next simulation tick while score, lives, wave, and object state survived. The
 game repository records the application-specific experiment and regression.
 
-Plugin authors must increment `fp_state_schema` whenever an equal-length state
+Plugin authors must increment `AE_state_schema` whenever an equal-length state
 layout changes meaning. Byte length alone cannot establish semantic
 compatibility.
 
@@ -174,11 +176,13 @@ adapter behavior.
 
 Working:
 
-- bounded Wasmtime lifecycle and `host.v0` ABI;
+- bounded Wasmtime lifecycle and `aedicule.v0` / `AE_*` ABI;
 - full-window GPUI canvas, native input, standard menus, and status/error UI;
 - vector, path, transform, text, image-resource, and sprite commands;
 - guest-declared decimal-fixed synth programs with audio-device adaptation;
-- exact rational fixed-step accumulation and plugin-declared tick rates;
+- exact rational, absolute-deadline scheduling at every supported guest-declared
+  rate, with timestamped input, display-refresh events, and visible
+  bounded-catch-up drops;
 - deterministic snapshots, replay, SVG rendering, and seeded execution;
 - external WAT loading, content watching, and transactional hot reload; and
 - reproducible Nix builds with a pure deterministic test suite.
@@ -189,6 +193,11 @@ Known limits:
 - GPUI sprite-atlas source cropping is modeled but not fully painted natively;
 - retained widgets, accessibility semantics, clipping, and richer images need
   further protocol and adapter work;
+- the public GPUI display API identifies the display but does not expose its
+  refresh mode, so the runtime core accepts exact display-change events but the
+  native adapter currently starts from deterministic 60/1 Hz rather than
+  observing a window move across displays. `AE_DISPLAY_REFRESH_RATE` can set
+  an exact process-start override such as `60000/1001` or canonical `59.94`;
 - candidate compilation currently occurs on the UI thread;
 - platform parity beyond x86_64 Linux is unproven; and
 - arbitrary hostile WAT should not yet be treated as production-safe.
@@ -200,7 +209,10 @@ Known limits:
 | `src/lib.rs` | GPUI-independent Wasmtime runtime, bounded ABI, snapshots, reload, synth metadata, and SVG core |
 | `src/main.rs` | Native GPUI adapter, input, menus, audio, scheduling, and live reload |
 | `src/bin/gpui-wasm-render.rs` | Deterministic headless SVG adapter |
+| `src/wat_abi.rs` | Declarative source for the generated WAT ABI reference |
 | `src/fallback.wat` | Stable neutral ABI-conformance fallback |
+| `WAT_ABI.md` | Generated complete reference for WAT application authors |
+| `GPUI_REFRESH_API_PROPOSAL.md` | Deferred human-owned upstream design for native refresh and presentation APIs |
 | `tests/` | Generic ABI, containment, adapter, scheduling, reload, and CLI tests |
 | `SPEC.md` | Protocol, trust boundary, lifecycle, and feasibility specification |
 

@@ -2,6 +2,8 @@
 
 use std::process::Command;
 
+use gpui_wasm::DISPLAY_REFRESH_RATE_ENV;
+
 fn run(arguments: &[&str]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_gpui-wasm"))
         .env("MUTE_DEBUG_STATUS", "1")
@@ -22,6 +24,7 @@ fn native_frontplane_reports_live_source_options_without_opening_a_window() {
     assert!(help.contains("--embedded"));
     assert!(help.contains("--seed"));
     assert!(help.contains("./code.wat"));
+    assert!(help.contains(DISPLAY_REFRESH_RATE_ENV));
 
     assert!(about.status.success(), "{:?}", about.stderr);
     assert!(about.stderr.is_empty(), "{:?}", about.stderr);

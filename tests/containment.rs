@@ -4,15 +4,15 @@ fn wat_module(body: &str) -> String {
     format!(
         r#"(module
 			(memory (export "memory") 1)
-			(func (export "fp_abi_major") (result i32) i32.const 0)
-			(func (export "fp_abi_minor") (result i32) i32.const 0)
-			(func (export "fp_configure") (result i32) i32.const 0)
-			(func (export "fp_init") (param i32 i32 f32 f32) (result i32) i32.const 0)
-			(func (export "fp_event") (param i32 i32 f32 f32) (result i32) i32.const 0)
+			(func (export "AE_abi_major") (result i32) i32.const 0)
+			(func (export "AE_abi_minor") (result i32) i32.const 0)
+			(func (export "AE_configure") (result i32) i32.const 0)
+			(func (export "AE_init") (param i32 i32 f32 f32) (result i32) i32.const 0)
+			(func (export "AE_event") (param i32 i32 f32 f32) (result i32) i32.const 0)
 			{body}
-			(func (export "fp_state_ptr") (result i32) i32.const 0)
-			(func (export "fp_state_len") (result i32) i32.const 4)
-			(func (export "fp_state_schema") (result i32) i32.const 1)
+			(func (export "AE_state_ptr") (result i32) i32.const 0)
+			(func (export "AE_state_len") (result i32) i32.const 4)
+			(func (export "AE_state_schema") (result i32) i32.const 1)
 		)"#
     )
 }
@@ -29,16 +29,16 @@ fn host_module(
             {imports}
             (memory (export "memory") 1 64)
             {declarations}
-            (func (export "fp_abi_major") (result i32) i32.const 0)
-            (func (export "fp_abi_minor") (result i32) i32.const 0)
-            (func (export "fp_configure") (result i32) {configure})
-            (func (export "fp_init") (param i32 i32 f32 f32) (result i32) i32.const 0)
-            (func (export "fp_event") (param i32 i32 f32 f32) (result i32) i32.const 0)
-            (func (export "fp_tick") (param i32) (result i32) {tick})
-            (func (export "fp_render") (result i32) {render})
-            (func (export "fp_state_ptr") (result i32) i32.const 32)
-            (func (export "fp_state_len") (result i32) i32.const 4)
-            (func (export "fp_state_schema") (result i32) i32.const 1)
+            (func (export "AE_abi_major") (result i32) i32.const 0)
+            (func (export "AE_abi_minor") (result i32) i32.const 0)
+            (func (export "AE_configure") (result i32) {configure})
+            (func (export "AE_init") (param i32 i32 f32 f32) (result i32) i32.const 0)
+            (func (export "AE_event") (param i32 i32 f32 f32) (result i32) i32.const 0)
+            (func (export "AE_tick") (param i32) (result i32) {tick})
+            (func (export "AE_render") (result i32) {render})
+            (func (export "AE_state_ptr") (result i32) i32.const 32)
+            (func (export "AE_state_len") (result i32) i32.const 4)
+            (func (export "AE_state_schema") (result i32) i32.const 1)
         )"#
     )
 }
@@ -57,10 +57,10 @@ fn unknown_host_capabilities_are_rejected() {
 #[test]
 fn fuel_stops_a_nonterminating_plugin_call() {
     let source = wat_module(
-        r#"(func (export "fp_tick") (param i32) (result i32)
+        r#"(func (export "AE_tick") (param i32) (result i32)
 			(loop $forever br $forever)
 			i32.const 0)
-		(func (export "fp_render") (result i32) i32.const 0)"#,
+		(func (export "AE_render") (result i32) i32.const 0)"#,
     );
     let mut frontplane = Frontplane::from_wat(&source, Limits::default()).unwrap();
 
@@ -71,25 +71,25 @@ fn fuel_stops_a_nonterminating_plugin_call() {
 #[test]
 fn non_finite_drawing_values_fail_closed() {
     let source = r#"(module
-			(import "host.v0" "frame_begin" (func $begin (param f32 f32 f32 f32) (result i32)))
-			(import "host.v0" "circle" (func $circle (param i32 f32 f32 f32 f32 i32 i32) (result i32)))
-			(import "host.v0" "frame_end" (func $end (result i32)))
+			(import "aedicule.v0" "AE_frame_begin" (func $begin (param f32 f32 f32 f32) (result i32)))
+			(import "aedicule.v0" "AE_circle" (func $circle (param i32 f32 f32 f32 f32 i32 i32) (result i32)))
+			(import "aedicule.v0" "AE_frame_end" (func $end (result i32)))
 			(memory (export "memory") 1)
-			(func (export "fp_abi_major") (result i32) i32.const 0)
-			(func (export "fp_abi_minor") (result i32) i32.const 0)
-			(func (export "fp_configure") (result i32) i32.const 0)
-			(func (export "fp_init") (param i32 i32 f32 f32) (result i32) i32.const 0)
-			(func (export "fp_event") (param i32 i32 f32 f32) (result i32) i32.const 0)
-			(func (export "fp_tick") (param i32) (result i32) i32.const 0)
-			(func (export "fp_render") (result i32)
+			(func (export "AE_abi_major") (result i32) i32.const 0)
+			(func (export "AE_abi_minor") (result i32) i32.const 0)
+			(func (export "AE_configure") (result i32) i32.const 0)
+			(func (export "AE_init") (param i32 i32 f32 f32) (result i32) i32.const 0)
+			(func (export "AE_event") (param i32 i32 f32 f32) (result i32) i32.const 0)
+			(func (export "AE_tick") (param i32) (result i32) i32.const 0)
+			(func (export "AE_render") (result i32)
 				(f32.const 0) (f32.const 0) (f32.const 0) (f32.const 1) call $begin drop
 				(i32.const 1) (f32.const nan) (f32.const 0) (f32.const 1)
 				(f32.const 1) (i32.const -1) (i32.const 1) call $circle drop
 				call $end drop
 				i32.const 0)
-			(func (export "fp_state_ptr") (result i32) i32.const 0)
-			(func (export "fp_state_len") (result i32) i32.const 4)
-			(func (export "fp_state_schema") (result i32) i32.const 1)
+			(func (export "AE_state_ptr") (result i32) i32.const 0)
+			(func (export "AE_state_len") (result i32) i32.const 4)
+			(func (export "AE_state_schema") (result i32) i32.const 1)
         )"#;
     let mut frontplane = Frontplane::from_wat(source, Limits::default()).unwrap();
 
@@ -100,9 +100,9 @@ fn non_finite_drawing_values_fail_closed() {
 #[test]
 fn finite_but_pathological_coordinates_fail_closed() {
     let imports = r#"
-        (import "host.v0" "frame_begin" (func $begin (param f32 f32 f32 f32) (result i32)))
-        (import "host.v0" "line" (func $line (param i32 f32 f32 f32 f32 f32 i32) (result i32)))
-        (import "host.v0" "frame_end" (func $end (result i32)))
+        (import "aedicule.v0" "AE_frame_begin" (func $begin (param f32 f32 f32 f32) (result i32)))
+        (import "aedicule.v0" "AE_line" (func $line (param i32 f32 f32 f32 f32 f32 i32) (result i32)))
+        (import "aedicule.v0" "AE_frame_end" (func $end (result i32)))
     "#;
     let render = r#"
         f32.const 0 f32.const 0 f32.const 0 f32.const 1 call $begin drop
@@ -122,8 +122,8 @@ fn finite_but_pathological_coordinates_fail_closed() {
 
 #[test]
 fn incomplete_frames_are_rejected() {
-    let body = r#"(func (export "fp_tick") (param i32) (result i32) i32.const 0)
-		(func (export "fp_render") (result i32) i32.const 0)"#;
+    let body = r#"(func (export "AE_tick") (param i32) (result i32) i32.const 0)
+		(func (export "AE_render") (result i32) i32.const 0)"#;
     let limits = Limits {
         max_commands: 2,
         ..Limits::default()
@@ -138,7 +138,8 @@ fn incomplete_frames_are_rejected() {
 
 #[test]
 fn pointer_and_utf8_failures_are_typed_and_fail_closed() {
-    let title_import = r#"(import "host.v0" "title" (func $title (param i32 i32) (result i32)))"#;
+    let title_import =
+        r#"(import "aedicule.v0" "AE_title" (func $title (param i32 i32) (result i32)))"#;
     let sources = [
         host_module(
             title_import,
@@ -170,9 +171,9 @@ fn pointer_and_utf8_failures_are_typed_and_fail_closed() {
 #[test]
 fn command_budget_classifies_complete_frames_as_a_set() {
     let imports = r#"
-        (import "host.v0" "frame_begin" (func $begin (param f32 f32 f32 f32) (result i32)))
-        (import "host.v0" "line" (func $line (param i32 f32 f32 f32 f32 f32 i32) (result i32)))
-        (import "host.v0" "frame_end" (func $end (result i32)))
+        (import "aedicule.v0" "AE_frame_begin" (func $begin (param f32 f32 f32 f32) (result i32)))
+        (import "aedicule.v0" "AE_line" (func $line (param i32 f32 f32 f32 f32 f32 i32) (result i32)))
+        (import "aedicule.v0" "AE_frame_end" (func $end (result i32)))
     "#;
     let outcomes: Vec<_> = (0..=4)
         .map(|count| {
@@ -202,7 +203,7 @@ fn command_budget_classifies_complete_frames_as_a_set() {
 #[test]
 fn memory_and_audio_budgets_are_independent_classifiers() {
     let audio_import =
-        r#"(import "host.v0" "audio" (func $audio (param i32 f32 f32 i32) (result i32)))"#;
+        r#"(import "aedicule.v0" "AE_audio" (func $audio (param i32 f32 f32 i32) (result i32)))"#;
     let audio_calls = r#"
         i32.const 1 f32.const 1 f32.const 1 i32.const 0 call $audio drop
         i32.const 2 f32.const 1 f32.const 1 i32.const 0 call $audio drop
@@ -245,8 +246,8 @@ fn memory_and_audio_budgets_are_independent_classifiers() {
 #[test]
 fn a_partial_trapped_frame_is_discarded_and_the_host_recovers() {
     let imports = r#"
-        (import "host.v0" "frame_begin" (func $begin (param f32 f32 f32 f32) (result i32)))
-        (import "host.v0" "frame_end" (func $end (result i32)))
+        (import "aedicule.v0" "AE_frame_begin" (func $begin (param f32 f32 f32 f32) (result i32)))
+        (import "aedicule.v0" "AE_frame_end" (func $end (result i32)))
     "#;
     let render = r#"
         global.get $first
@@ -278,8 +279,8 @@ fn a_partial_trapped_frame_is_discarded_and_the_host_recovers() {
 #[test]
 fn a_failed_call_rolls_back_partial_audio_and_effect_output() {
     let imports = r#"
-        (import "host.v0" "audio" (func $audio (param i32 f32 f32 i32) (result i32)))
-        (import "host.v0" "effect" (func $effect (param i32 i32 i32) (result i32)))
+        (import "aedicule.v0" "AE_audio" (func $audio (param i32 f32 f32 i32) (result i32)))
+        (import "aedicule.v0" "AE_effect" (func $effect (param i32 i32 i32) (result i32)))
     "#;
     let tick = r#"
         i32.const 1 f32.const 1 f32.const 1 i32.const 0 call $audio drop
@@ -297,7 +298,8 @@ fn a_failed_call_rolls_back_partial_audio_and_effect_output() {
 
 #[test]
 fn failed_configuration_discards_partial_metadata() {
-    let title_import = r#"(import "host.v0" "title" (func $title (param i32 i32) (result i32)))"#;
+    let title_import =
+        r#"(import "aedicule.v0" "AE_title" (func $title (param i32 i32) (result i32)))"#;
     let configure = r#"
         i32.const 0 i32.const 2 call $title drop
         i32.const 65535 i32.const 2 call $title drop
@@ -339,18 +341,18 @@ fn table_growth_is_bounded_even_when_the_guest_ignores_failure() {
     let source = r#"(module
         (memory (export "memory") 1)
         (table 1 10000 funcref)
-        (func (export "fp_abi_major") (result i32) i32.const 0)
-        (func (export "fp_abi_minor") (result i32) i32.const 0)
-        (func (export "fp_configure") (result i32) i32.const 0)
-        (func (export "fp_init") (param i32 i32 f32 f32) (result i32) i32.const 0)
-        (func (export "fp_event") (param i32 i32 f32 f32) (result i32) i32.const 0)
-        (func (export "fp_tick") (param i32) (result i32)
+        (func (export "AE_abi_major") (result i32) i32.const 0)
+        (func (export "AE_abi_minor") (result i32) i32.const 0)
+        (func (export "AE_configure") (result i32) i32.const 0)
+        (func (export "AE_init") (param i32 i32 f32 f32) (result i32) i32.const 0)
+        (func (export "AE_event") (param i32 i32 f32 f32) (result i32) i32.const 0)
+        (func (export "AE_tick") (param i32) (result i32)
             ref.null func i32.const 100 table.grow drop
             i32.const 0)
-        (func (export "fp_render") (result i32) i32.const 0)
-        (func (export "fp_state_ptr") (result i32) i32.const 0)
-        (func (export "fp_state_len") (result i32) i32.const 4)
-        (func (export "fp_state_schema") (result i32) table.size)
+        (func (export "AE_render") (result i32) i32.const 0)
+        (func (export "AE_state_ptr") (result i32) i32.const 0)
+        (func (export "AE_state_len") (result i32) i32.const 4)
+        (func (export "AE_state_schema") (result i32) table.size)
     )"#;
     let limits = Limits {
         max_table_elements: 16,
@@ -365,20 +367,20 @@ fn table_growth_is_bounded_even_when_the_guest_ignores_failure() {
 #[test]
 fn unavailable_and_unknown_effects_are_rejected_as_a_set() {
     let template = r#"(module
-        (import "host.v0" "effect" (func $effect (param i32 i32 i32) (result i32)))
+        (import "aedicule.v0" "AE_effect" (func $effect (param i32 i32 i32) (result i32)))
         (memory (export "memory") 1)
-        (func (export "fp_abi_major") (result i32) i32.const 0)
-        (func (export "fp_abi_minor") (result i32) i32.const 0)
-        (func (export "fp_configure") (result i32) i32.const 0)
-        (func (export "fp_init") (param i32 i32 f32 f32) (result i32) i32.const 0)
-        (func (export "fp_event") (param i32 i32 f32 f32) (result i32) i32.const 0)
-        (func (export "fp_tick") (param i32) (result i32)
+        (func (export "AE_abi_major") (result i32) i32.const 0)
+        (func (export "AE_abi_minor") (result i32) i32.const 0)
+        (func (export "AE_configure") (result i32) i32.const 0)
+        (func (export "AE_init") (param i32 i32 f32 f32) (result i32) i32.const 0)
+        (func (export "AE_event") (param i32 i32 f32 f32) (result i32) i32.const 0)
+        (func (export "AE_tick") (param i32) (result i32)
             i32.const $KIND i32.const 0 i32.const 0 call $effect drop
             i32.const 0)
-        (func (export "fp_render") (result i32) i32.const 0)
-        (func (export "fp_state_ptr") (result i32) i32.const 0)
-        (func (export "fp_state_len") (result i32) i32.const 4)
-        (func (export "fp_state_schema") (result i32) i32.const 1)
+        (func (export "AE_render") (result i32) i32.const 0)
+        (func (export "AE_state_ptr") (result i32) i32.const 0)
+        (func (export "AE_state_len") (result i32) i32.const 4)
+        (func (export "AE_state_schema") (result i32) i32.const 1)
     )"#;
     let outcomes: Vec<_> = [5, 99]
         .into_iter()

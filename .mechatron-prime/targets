@@ -1,0 +1,3 @@
+# Build the distributable frontplane and run its isolated Rust/CLI checks.
+packages.x86_64-linux.default
+checks.x86_64-linux.test

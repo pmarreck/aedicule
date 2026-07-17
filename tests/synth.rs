@@ -2,16 +2,16 @@ use gpui_wasm::{Frontplane, Limits, SynthFilter, SynthVoice, SynthWaveform};
 
 const DECLARED_SYNTH_WAT: &str = r#"
 (module
-	(import "host.v0" "frame_begin" (func $frame_begin (param f32 f32 f32 f32) (result i32)))
-	(import "host.v0" "frame_end" (func $frame_end (result i32)))
-	(import "host.v0" "synth_voice"
+	(import "aedicule.v0" "AE_frame_begin" (func $frame_begin (param f32 f32 f32 f32) (result i32)))
+	(import "aedicule.v0" "AE_frame_end" (func $frame_end (result i32)))
+	(import "aedicule.v0" "AE_synth_voice"
 		(func $synth_voice
 			(param i32 i32 i32 i32 i32 i32 i32 i32 i32 i32 i32 i32 i32 i32)
 			(result i32)))
 	(memory (export "memory") 1 1)
-	(func (export "fp_abi_major") (result i32) i32.const 0)
-	(func (export "fp_abi_minor") (result i32) i32.const 0)
-	(func (export "fp_configure") (result i32)
+	(func (export "AE_abi_major") (result i32) i32.const 0)
+	(func (export "AE_abi_minor") (result i32) i32.const 0)
+	(func (export "AE_configure") (result i32)
 		i32.const 42  ;; program
 		i32.const 2   ;; saw
 		i32.const 150 ;; delay ms
@@ -22,15 +22,15 @@ const DECLARED_SYNTH_WAT: &str = r#"
 		i32.const 55 ;; cooldown ms
 		call $synth_voice drop
 		i32.const 0)
-	(func (export "fp_init") (param i32 i32 f32 f32) (result i32) i32.const 0)
-	(func (export "fp_event") (param i32 i32 f32 f32) (result i32) i32.const 0)
-	(func (export "fp_tick") (param i32) (result i32) i32.const 0)
-	(func (export "fp_render") (result i32)
+	(func (export "AE_init") (param i32 i32 f32 f32) (result i32) i32.const 0)
+	(func (export "AE_event") (param i32 i32 f32 f32) (result i32) i32.const 0)
+	(func (export "AE_tick") (param i32) (result i32) i32.const 0)
+	(func (export "AE_render") (result i32)
 		f32.const 0 f32.const 0 f32.const 0 f32.const 1 call $frame_begin drop
 		call $frame_end drop i32.const 0)
-	(func (export "fp_state_ptr") (result i32) i32.const 0)
-	(func (export "fp_state_len") (result i32) i32.const 0)
-	(func (export "fp_state_schema") (result i32) i32.const 1))
+	(func (export "AE_state_ptr") (result i32) i32.const 0)
+	(func (export "AE_state_len") (result i32) i32.const 0)
+	(func (export "AE_state_schema") (result i32) i32.const 1))
 "#;
 
 #[test]

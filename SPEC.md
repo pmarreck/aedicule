@@ -46,7 +46,7 @@ assurance are not yet claimed.
 downstream code.wat
        |
        v
-wat parser -> Wasmtime instance <-> bounded host.v0 imports
+wat parser -> Wasmtime instance <-> bounded aedicule.v0 imports
                    |                         |
              opaque snapshot           command frame
                    |                   /      |      \
@@ -89,7 +89,8 @@ candidate hardening work.
 
 ## 5. ABI principles
 
-The namespace is `host.v0`. All boundary `i32` values are signed in Wasm but
+The namespace is `aedicule.v0`; every WAT-facing function is named `AE_*`. All
+boundary `i32` values are signed in Wasm but
 IDs, masks, colors, pointers, and lengths are interpreted as documented
 unsigned bit patterns after validation.
 
@@ -104,49 +105,46 @@ unsigned bit patterns after validation.
 - Stable IDs are guest-scoped and unique within their required scope.
 - Unsupported flags and capabilities fail closed.
 
-## 6. Module contract: gpui-frontplane-v0
+## 6. Module contract: Aedicule v0
+
+[WAT_ABI.md](WAT_ABI.md) is the single generated client reference. It is built
+from the host's declarative ABI table and must match it byte-for-byte during
+every build. The summary below deliberately defers import signatures and the
+minimal WAT module to that canonical document.
 
 ### 6.1 Guest exports
 
 ~~~text
 memory
-fp_abi_major() -> i32
-fp_abi_minor() -> i32
-fp_configure() -> i32
-fp_init(seed_lo: i32, seed_hi: i32,
+AE_abi_major() -> i32
+AE_abi_minor() -> i32
+AE_configure() -> i32
+AE_init(seed_lo: i32, seed_hi: i32,
         viewport_w: f32, viewport_h: f32) -> i32
-fp_event(kind: i32, code: i32, a: f32, b: f32) -> i32
-fp_tick(ticks: i32) -> i32
-fp_tick_hz() -> i32                 optional; defaults to 60
-fp_render() -> i32
-fp_state_ptr() -> i32
-fp_state_len() -> i32
-fp_state_schema() -> i32
-fp_after_restore() -> i32           optional in ABI minor 0
+AE_event(kind: i32, code: i32, a: f32, b: f32) -> i32
+AE_tick(ticks: i32) -> i32
+AE_tick_rate(current_numerator: i32, current_denominator: i32)
+  -> (numerator: i32, denominator: i32) optional; (0, 0) follows display
+AE_render() -> i32
+AE_state_ptr() -> i32
+AE_state_len() -> i32
+AE_state_schema() -> i32
+AE_after_restore() -> i32           optional in ABI minor 0
 ~~~
 
-`fp_abi_major` must return 0. A declared tick rate must be in `1..=1000`; a
-wrong signature or out-of-range result rejects the guest before initialization.
-The host snapshots exactly `fp_state_len` bytes at `fp_state_ptr`.
+`AE_abi_major` must return 0. A declared rational tick rate must be in
+`1..=1000` Hz with a denominator no greater than 1,000,000; a wrong signature
+or out-of-range result rejects the guest before initialization. The host
+snapshots exactly `AE_state_len` bytes at `AE_state_ptr`.
 
 Restoration is allowed only when schema and byte length match. Guest authors
 must increment the schema when an equal-length layout changes meaning. The
-optional `fp_after_restore` rebuilds derived caches after bytes are installed.
+optional `AE_after_restore` rebuilds derived caches after bytes are installed.
 
 ### 6.2 Metadata and audio imports
 
-~~~text
-host.v0.title(ptr, len) -> i32
-host.v0.menu_item(id, label_ptr, label_len, shortcut, flags) -> i32
-host.v0.synth_voice(program_id, waveform,
-                    delay_ms, duration_ms,
-                    frequency_start_millihz,
-                    frequency_mid_millihz,
-                    frequency_end_millihz,
-                    gain_start_ppm, gain_peak_ppm, gain_end_ppm,
-                    filter, filter_start_millihz,
-                    filter_end_millihz, cooldown_ms) -> i32
-~~~
+The generated ABI reference contains the exact `AE_title`, `AE_menu_item`, and
+`AE_synth_voice` declarations, including bounded flag and scalar meanings.
 
 Audio program IDs are application-owned. Waveforms currently include sine,
 sawtooth, white noise, and brown noise. Integer millihertz and parts-per-million
@@ -156,39 +154,13 @@ to `f32` PCM occurs only at the audio-device adapter.
 
 ### 6.3 Scene imports
 
-~~~text
-host.v0.frame_begin(r: f32, g: f32, b: f32, a: f32) -> i32
-host.v0.line(id, x1, y1, x2, y2, width, rgba) -> i32
-host.v0.circle(id, x, y, radius, width, rgba, flags) -> i32
-host.v0.rect(id, x, y, w, h, radius, width, rgba, flags) -> i32
-host.v0.text(id, ptr, len, x, y, size, rgba, flags) -> i32
-host.v0.frame_end() -> i32
+The generated ABI reference contains the complete supported `AE_frame_*`,
+`AE_transform_*`, `AE_path_*`, `AE_image_*`, `AE_sprite`, `AE_line`,
+`AE_circle`, and `AE_text` declarations. It does not promise rectangles,
+clipping, or layers, which are future protocol work.
 
-host.v0.transform_push(m11, m12, m21, m22, tx, ty) -> i32
-host.v0.transform_pop() -> i32
-host.v0.clip_rect_push(x, y, w, h) -> i32
-host.v0.clip_pop() -> i32
-host.v0.layer_push(opacity, blend, flags) -> i32
-host.v0.layer_pop() -> i32
-
-host.v0.path_begin(id) -> i32
-host.v0.path_move(x, y) -> i32
-host.v0.path_line(x, y) -> i32
-host.v0.path_quad(cx, cy, x, y) -> i32
-host.v0.path_cubic(c1x, c1y, c2x, c2y, x, y) -> i32
-host.v0.path_close() -> i32
-host.v0.path_end(width, fill_rgba, stroke_rgba, flags) -> i32
-
-host.v0.image_define(id, ptr, len, flags) -> i32
-host.v0.image_release(id) -> i32
-host.v0.sprite(id, image_id,
-               src_x, src_y, src_w, src_h,
-               dst_x, dst_y, dst_w, dst_h,
-               pivot_x, pivot_y, rgba, flags) -> i32
-~~~
-
-`frame_begin` is first and `frame_end` last. There is at most one completed
-frame per `fp_render`. Transform, clip, layer, and path stacks must balance.
+`AE_frame_begin` is first and `AE_frame_end` last. There is at most one completed
+frame per `AE_render`. Transform and path stacks must balance.
 Underflow, overflow, non-finite or out-of-policy geometry, incomplete paths,
 duplicate IDs, and unsupported flags reject the complete frame.
 
@@ -214,6 +186,8 @@ stream.
 6  viewport       a=width, b=height
 7  menu-action    code=guest-declared action ID
 8  focus          code=0 lost, 1 gained
+9  AE_EVENT_DISPLAY_REFRESH
+                 code=refresh_numerator_hz, a=refresh_denominator, b=0
 ~~~
 
 The host suppresses duplicate held key-down notifications uniformly. It does
@@ -227,9 +201,9 @@ Quit is host-owned and may require native confirmation by policy.
 ### 6.5 Effects and diagnostics
 
 ~~~text
-host.v0.audio(id, volume, pitch, flags) -> i32
-host.v0.effect(kind, a, b) -> i32
-host.v0.log(level, ptr, len) -> i32
+AE_audio(id, volume, pitch, flags) -> i32
+AE_effect(kind, a, b) -> i32
+AE_log(level, ptr, len) -> i32
 
 effect 1  request-redraw
 effect 2  request-quit
@@ -259,7 +233,7 @@ Guest export errors reserve -1000 through -1999. Traps remain distinct.
 
 ## 7. Determinism and scheduling
 
-- Simulation advances only through integer `fp_tick` counts.
+- Simulation advances only through integer `AE_tick` counts.
 - The seed is the sole randomness input; all derived values enter snapshots.
 - Snapshot, N ticks, restore, and the same N ticks must yield identical state
   bytes and command frames.
@@ -268,19 +242,44 @@ Guest export errors reserve -1000 through -1999. Traps remain distinct.
   restoring an old snapshot.
 
 The native scheduler accumulates monotonic elapsed nanoseconds as the exact
-rational `elapsed_ns * tick_hz`, carries the remainder modulo one billion,
-advances all due fixed ticks, and renders once. It does not loop on truncated
-`Duration::from_nanos(1e9 / hz)`, which introduces fractional-period drift and
-adds work duration to the clock.
+rational `elapsed_ns * tick_rate_numerator`, carries the remainder modulo one
+billion times the rate denominator,
+advances all due fixed ticks, and renders once. Each GPUI wake is a freshly
+computed one-shot delay to the next ceil-rounded absolute boundary; timer jitter
+never becomes the origin of the following tick. The host does not loop on
+truncated `Duration::from_nanos(1e9 / hz)`, which introduces fractional-period
+drift and adds work duration to the clock.
 
-Catch-up is bounded. Whole excess ticks are dropped and counted as diagnostics
-rather than retained as debt that can cause a spiral of death. The clock,
-elapsed samples, and catch-up policy are injected for deterministic testing.
+Native events receive monotonic timestamps on arrival. An event at or before a
+tick boundary is delivered before that tick; an event after the boundary cannot
+retroactively affect it. A late wake batches adjacent event-free ticks but
+splits guest calls at event boundaries, preserving input ordering without one
+Wasmtime call per tick.
+
+Catch-up is bounded. The oldest whole excess ticks are dropped and counted in
+the visible runtime status rather than retained as debt that can cause a spiral
+of death. Events timestamped inside dropped time are still delivered before the
+first surviving tick. The clock, elapsed samples, event times, and catch-up
+policy are injected for deterministic testing.
 
 Applications should store dimensional quantities in canonical units—such as
 logical pixels per second—so a tick-rate change is a policy edit rather than a
 rewrite of every velocity constant. Any cross-rate equivalence tolerances and
 application-specific mechanics belong to that application's WAST suite.
+
+The display refresh is host input, not a guest query. The initial known display
+mode and each changed mode are delivered once as `AE_EVENT_DISPLAY_REFRESH`;
+the guest then optionally selects an exact rational simulation rate via
+`AE_tick_rate`. The selector sees the prior agreed simulation rate, never the
+display mode directly. `(0, 0)` follows the newly delivered display mode.
+
+Until GPUI exposes native display-mode observation, the host may receive an
+exact process-start override through `AE_DISPLAY_REFRESH_RATE`. Fractions such
+as `60000/1001` are normalized by GCF. The canonical nominal spellings
+`23.976`, `29.97`, `59.94`, and `119.88` select their exact
+1000/1001-family rationals; every other decimal is parsed exactly as written,
+without floating point. Invalid values fail startup. This configuration only
+sets the initial host event and never creates a guest display-query capability.
 
 ## 8. Transactional loading and reload
 
@@ -294,7 +293,7 @@ and atomic rename saves are both observed. A candidate must:
 1. parse, compile, instantiate, and validate under policy;
 2. configure and initialize successfully;
 3. restore the active snapshot only when schema and length match;
-4. run `fp_after_restore` when exported; and
+4. run `AE_after_restore` when exported; and
 5. emit a valid complete first frame.
 
 Only then is it swapped into the active slot. Every failure leaves the active
@@ -316,7 +315,7 @@ Rust tests stop at the frontplane boundary:
 
 Neutral WAT fixtures may exercise these host behaviors, but may not implement a
 production application's rules. Downstream behavior belongs in standard WAST
-files executed by stock Wasmtime, with an instrumented `host.v0` module when
+files executed by stock Wasmtime, with an instrumented `aedicule.v0` module when
 output assertions are required.
 
 Visual adapters are pure functions wherever practical. Deterministic SVG gives
@@ -334,9 +333,11 @@ The canonical commands are:
 ## 10. Nix and downstream composition
 
 `packages.frontplane` is the optimized native derivation and
-`packages.default` is its alias. Its filtered source includes only Cargo
-metadata, `src/`, and `third_party/`; documentation or downstream WAT changes
-cannot alter its derivation path. `checks.frontplane` builds the same artifact.
+`packages.default` is its alias. Its filtered source includes Cargo metadata,
+`build.rs`, `WAT_ABI.md`, `src/`, and `third_party/`; the ABI reference is
+included because the build rejects documentation drift. Other documentation or
+downstream WAT changes cannot alter its derivation path. `checks.frontplane`
+builds the same artifact.
 
 A downstream application should pin this flake as an input, build its WAT as a
 small data derivation, and expose a wrapper that sets the packaged-default

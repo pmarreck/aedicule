@@ -22,8 +22,9 @@ use gpui_component::{
 use gpui_wasm::{
     Affine, AudioEvent, DEFAULT_PLUGIN_ENV, DrawCommand, Event, FALLBACK_WAT, FileRevision,
     FrameOutput, Frontplane, HostEffect, Key, LaunchAction, Limits, Metadata, PathSegment,
-    PluginInit, PluginSource, RevisionTracker, StateTransfer, SynthFilter, SynthVoice,
-    SynthWaveform, prepare_reload, resolve_launch,
+    PluginInit, PluginSource, RevisionTracker, SimulationCall, SimulationScheduler, StateTransfer,
+    SynthFilter, SynthVoice, SynthWaveform, display_refresh_rate_from_environment,
+    initialize_frontplane, prepare_reload, resolve_launch,
 };
 use rodio::{DeviceSinkBuilder, MixerDeviceSink, buffer::SamplesBuffer};
 use smol::Timer;
@@ -32,15 +33,18 @@ actions!(gpui_wasm, [NewApplication, ShowHelp, ReloadPlugin, Quit]);
 
 const LOGICAL_WIDTH: f32 = 1024.0;
 const LOGICAL_HEIGHT: f32 = 768.0;
-const FRAME_INTERVAL: Duration = Duration::from_micros(16_667);
 const WATCH_INTERVAL: Duration = Duration::from_millis(250);
+const MAX_TICKS_PER_WAKE: u32 = 8;
 const DEFAULT_PLUGIN_INIT: PluginInit = PluginInit::new(0x5eed_cafe, LOGICAL_WIDTH, LOGICAL_HEIGHT);
 
 struct Strings {
     fallback_title: &'static str,
     application_menu: &'static str,
     abi_status: &'static str,
-    runtime_status: &'static str,
+    abi_version: &'static str,
+    hertz: &'static str,
+    capability_bounded: &'static str,
+    dropped_ticks: &'static str,
     plugin_stopped: &'static str,
     reload: &'static str,
     reload_failed: &'static str,
@@ -61,7 +65,10 @@ const EN: Strings = Strings {
     fallback_title: "WAT Application — GPUI Frontplane",
     application_menu: "Application",
     abi_status: "WAT owns behavior • GPUI owns the window",
-    runtime_status: "ABI v0 • 60 Hz • capability-bounded",
+    abi_version: "ABI v0",
+    hertz: "Hz",
+    capability_bounded: "capability-bounded",
+    dropped_ticks: "dropped ticks",
     plugin_stopped: "WAT plugin stopped safely",
     reload: "Reload",
     reload_failed: "Reload failed; previous plugin remains active",
@@ -88,7 +95,9 @@ Options:
 
 Without arguments, ./code.wat is loaded when present, followed by any packaged
 default plugin, then the embedded fallback. An application directory resolves
-to its code.wat file.
+to its code.wat file. Set AE_DISPLAY_REFRESH_RATE to an exact initial display
+rate such as 60000/1001; canonical 59.94, 29.97, 23.976, and 119.88 are also
+accepted.
 ",
     about: "generic native GPUI frontplane for capability-bounded WAT applications",
     cli_error: "gpui-wasm",
@@ -431,6 +440,9 @@ struct FrontplaneView {
     reload_notice: Option<&'static str>,
     viewport: ViewportTracker,
     plugin_init: PluginInit,
+    monotonic_origin: Instant,
+    scheduler: SimulationScheduler,
+    timing_generation: u64,
 }
 
 #[derive(Default)]
@@ -468,8 +480,14 @@ impl FrontplaneView {
             plugin_init,
         } = startup;
         let metadata = frontplane.metadata().clone();
+        let monotonic_origin = Instant::now();
+        let scheduler = SimulationScheduler::new(
+            frontplane.simulation_rate(),
+            MAX_TICKS_PER_WAKE,
+            Duration::ZERO,
+        );
         let entries = standard_menu_entries(&metadata);
-        let view = Self {
+        let mut view = Self {
             frontplane,
             frame,
             title: metadata.title.clone(),
@@ -494,23 +512,12 @@ impl FrontplaneView {
             reload_notice: None,
             viewport: ViewportTracker::default(),
             plugin_init,
+            monotonic_origin,
+            scheduler,
+            timing_generation: 0,
         };
 
-        cx.spawn(async move |this, cx| {
-            loop {
-                Timer::after(FRAME_INTERVAL).await;
-                if this
-                    .update(cx, |this, cx| {
-                        this.advance(cx);
-                        cx.notify();
-                    })
-                    .is_err()
-                {
-                    break;
-                }
-            }
-        })
-        .detach();
+        view.spawn_timing_loop(cx);
         if view.source.as_ref().is_some_and(|source| source.watch) {
             cx.spawn(async move |this, cx| {
                 loop {
@@ -530,6 +537,53 @@ impl FrontplaneView {
             .detach();
         }
         view
+    }
+
+    /// Runs a single cancellable-by-generation timer loop whose delay is
+    /// recomputed from the scheduler's next absolute rational boundary.
+    fn spawn_timing_loop(&mut self, cx: &mut Context<Self>) {
+        let generation = self.timing_generation;
+        cx.spawn(async move |this, cx| {
+            loop {
+                let delay = match this.update(cx, |this, _| {
+                    (this.timing_generation == generation).then(|| {
+                        this.scheduler
+                            .time_until_next_wake(this.monotonic_origin.elapsed())
+                    })
+                }) {
+                    Ok(Some(delay)) => delay,
+                    Ok(None) | Err(_) => break,
+                };
+                Timer::after(delay).await;
+                let keep_running = match this.update(cx, |this, cx| {
+                    if this.timing_generation != generation {
+                        return false;
+                    }
+                    let now = this.monotonic_origin.elapsed();
+                    if this.pump_simulation(now, cx) {
+                        cx.notify();
+                    }
+                    true
+                }) {
+                    Ok(keep_running) => keep_running,
+                    Err(_) => false,
+                };
+                if !keep_running {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
+    /// Restarts the rational timeline at the candidate swap instant so a
+    /// changed guest-declared frequency cannot inherit an obsolete wake.
+    fn restart_timing_loop(&mut self, cx: &mut Context<Self>) {
+        let now = self.monotonic_origin.elapsed();
+        self.scheduler =
+            SimulationScheduler::new(self.frontplane.simulation_rate(), MAX_TICKS_PER_WAKE, now);
+        self.timing_generation = self.timing_generation.wrapping_add(1);
+        self.spawn_timing_loop(cx);
     }
 
     fn poll_reload(&mut self, cx: &mut Context<Self>) -> bool {
@@ -602,6 +656,7 @@ impl FrontplaneView {
                     _ => None,
                 });
                 self.audio.replace_programs(&metadata.synth_voices);
+                self.restart_timing_loop(cx);
                 self.fatal_error = None;
                 self.reload_error = None;
                 self.reload_notice = Some(match prepared.state_transfer {
@@ -629,19 +684,31 @@ impl FrontplaneView {
         });
     }
 
-    /// Runs one fixed guest tick, atomically replaces the last good frame, and
-    /// drains semantic effects only after Wasmtime releases its store borrow.
-    fn advance(&mut self, cx: &mut Context<Self>) {
+    /// Executes one pure scheduler plan, renders at most once, and drains
+    /// semantic effects only after Wasmtime releases its store borrow.
+    fn pump_simulation(&mut self, now: Duration, cx: &mut Context<Self>) -> bool {
+        let pump = self.scheduler.pump(now);
         if self.fatal_error.is_some() {
-            return;
+            return pump.dropped_ticks > 0;
         }
-        if let Err(error) = self
-            .frontplane
-            .tick(1)
-            .and_then(|_| self.frontplane.render().map(|frame| self.frame = frame))
-        {
-            self.fatal_error = Some(error.to_string());
-            return;
+        for call in pump.calls {
+            let result = match call {
+                SimulationCall::Event(event) => self.frontplane.event(event),
+                SimulationCall::Tick(ticks) => self.frontplane.tick(ticks),
+            };
+            if let Err(error) = result {
+                self.fatal_error = Some(error.to_string());
+                return true;
+            }
+        }
+        if pump.render {
+            match self.frontplane.render() {
+                Ok(frame) => self.frame = frame,
+                Err(error) => {
+                    self.fatal_error = Some(error.to_string());
+                    return true;
+                }
+            }
         }
         for event in self.frontplane.drain_audio() {
             self.audio.play(event);
@@ -651,29 +718,26 @@ impl FrontplaneView {
                 cx.quit();
             }
         }
+        pump.render || pump.dropped_ticks > 0
+    }
+
+    /// Stamps native input in the scheduler's monotonic clock domain before
+    /// pumping, preventing a late wake from applying it to an overdue tick.
+    fn queue_native_event(&mut self, event: Event, cx: &mut Context<Self>) {
+        let now = self.monotonic_origin.elapsed();
+        self.scheduler.queue_event(now, event);
+        if self.pump_simulation(now, cx) {
+            cx.notify();
+        }
     }
 
     fn new_application(&mut self, _: &NewApplication, _: &mut Window, cx: &mut Context<Self>) {
         self.fatal_error = None;
-        if let Err(error) = self
-            .frontplane
-            .event(Event::MenuAction(1))
-            .and_then(|_| self.frontplane.render().map(|frame| self.frame = frame))
-        {
-            self.fatal_error = Some(error.to_string());
-        }
-        cx.notify();
+        self.queue_native_event(Event::MenuAction(1), cx);
     }
 
     fn show_help(&mut self, _: &ShowHelp, _: &mut Window, cx: &mut Context<Self>) {
-        if let Err(error) = self
-            .frontplane
-            .event(Event::MenuAction(7))
-            .and_then(|_| self.frontplane.render().map(|frame| self.frame = frame))
-        {
-            self.fatal_error = Some(error.to_string());
-        }
-        cx.notify();
+        self.queue_native_event(Event::MenuAction(7), cx);
     }
 
     fn quit(&mut self, _: &Quit, _: &mut Window, cx: &mut Context<Self>) {
@@ -687,20 +751,14 @@ impl FrontplaneView {
         if event.is_held {
             return;
         }
-        if let Err(error) = self.frontplane.event(Event::KeyDown(key)) {
-            self.fatal_error = Some(error.to_string());
-        }
-        cx.notify();
+        self.queue_native_event(Event::KeyDown(key), cx);
     }
 
     fn key_up(&mut self, event: &KeyUpEvent, _: &mut Window, cx: &mut Context<Self>) {
         let Some(key) = map_key(&event.keystroke.key) else {
             return;
         };
-        if let Err(error) = self.frontplane.event(Event::KeyUp(key)) {
-            self.fatal_error = Some(error.to_string());
-        }
-        cx.notify();
+        self.queue_native_event(Event::KeyUp(key), cx);
     }
 }
 
@@ -717,13 +775,7 @@ impl Render for FrontplaneView {
             .viewport
             .observe(f32::from(viewport.width), f32::from(viewport.height))
         {
-            if let Err(error) = self
-                .frontplane
-                .event(Event::Viewport { width, height })
-                .and_then(|_| self.frontplane.render().map(|frame| self.frame = frame))
-            {
-                self.fatal_error = Some(error.to_string());
-            }
+            self.queue_native_event(Event::Viewport { width, height }, cx);
         }
         let frame = self.frame.clone();
         let fatal_error = self.fatal_error.clone();
@@ -740,9 +792,20 @@ impl Render for FrontplaneView {
             Some(source) => format!("{} {}", EN.external_source, source.path.display()),
             None => EN.embedded_source.to_owned(),
         };
+        let timing_status = format!(
+            "{} • {} {} • {}",
+            EN.abi_version,
+            self.frontplane.simulation_rate(),
+            EN.hertz,
+            EN.capability_bounded,
+        );
+        let timing_status = match self.scheduler.total_dropped_ticks() {
+            0 => timing_status,
+            dropped => format!("{timing_status} • {dropped} {}", EN.dropped_ticks),
+        };
         let runtime_status = match self.reload_notice {
-            Some(notice) => format!("{notice} • {source_status}"),
-            None => format!("{} • {source_status}", EN.runtime_status),
+            Some(notice) => format!("{notice} • {timing_status} • {source_status}"),
+            None => format!("{timing_status} • {source_status}"),
         };
         div()
             .relative()
@@ -1148,12 +1211,7 @@ fn load_frontplane(
     plugin_init: PluginInit,
 ) -> Result<(Frontplane, FrameOutput), gpui_wasm::FrontplaneError> {
     Frontplane::from_wat(source, Limits::default()).and_then(|mut frontplane| {
-        frontplane.configure()?;
-        frontplane.init(
-            plugin_init.seed,
-            plugin_init.viewport_width,
-            plugin_init.viewport_height,
-        )?;
+        initialize_frontplane(&mut frontplane, plugin_init)?;
         let frame = frontplane.render()?;
         frontplane.drain_audio();
         frontplane.drain_effects();
@@ -1161,13 +1219,18 @@ fn load_frontplane(
     })
 }
 
-fn startup(source: PluginSource, watch: bool, seed: Option<u64>) -> Startup {
-    let plugin_init = PluginInit::new(
+fn startup(source: PluginSource, watch: bool, seed: Option<u64>) -> Result<Startup, String> {
+    let mut plugin_init = PluginInit::new(
         seed.unwrap_or(DEFAULT_PLUGIN_INIT.seed),
         DEFAULT_PLUGIN_INIT.viewport_width,
         DEFAULT_PLUGIN_INIT.viewport_height,
     );
-    match source {
+    if let Some(display_refresh) =
+        display_refresh_rate_from_environment().map_err(|error| error.to_string())?
+    {
+        plugin_init = plugin_init.with_display_refresh(display_refresh);
+    }
+    Ok(match source {
         PluginSource::Embedded => {
             let (frontplane, frame) = load_fallback(plugin_init);
             Startup {
@@ -1214,7 +1277,7 @@ fn startup(source: PluginSource, watch: bool, seed: Option<u64>) -> Startup {
                 }
             }
         }
-    }
+    })
 }
 
 fn source_text(path: &Path, revision: &FileRevision) -> Result<String, String> {
@@ -1311,7 +1374,13 @@ fn main() -> ExitCode {
             source,
             watch,
             seed,
-        } => run_application(startup(source, watch, seed)),
+        } => match startup(source, watch, seed) {
+            Ok(startup) => run_application(startup),
+            Err(error) => {
+                eprintln!("{}: {error}", EN.cli_error);
+                return ExitCode::from(2);
+            }
+        },
     }
     ExitCode::SUCCESS
 }

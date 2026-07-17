@@ -1,0 +1,7 @@
+Display refresh overrides are human configuration but become deterministic host
+input. Parse decimal strings into integer numerator/denominator pairs without
+floating point, then normalize by greatest common divisor. Map only explicitly
+listed canonical nominal spellings (for example `59.94` to `60000/1001`);
+nearby values such as `59.97` remain literal rather than being guessed as a
+broadcast-standard rate. An explicit fraction remains the escape hatch for an
+exact literal rate.

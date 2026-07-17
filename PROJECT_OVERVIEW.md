@@ -17,10 +17,11 @@ The first substantial application is the separate `vibesteroids_wat`
 repository. A second non-game application is required before claiming that the
 v0 capability model is broadly reusable.
 
-**Proof-of-concept status:** successful. Native rendering, input, generated
-audio, deterministic headless SVG, bounded guest execution, snapshots, and
-state-preserving live reload all work on the exercised NixOS path. ABI and
-cross-platform stability remain pre-production.
+**Proof-of-concept status:** successful. Native rendering, timestamped input,
+guest-rate absolute-deadline scheduling, generated audio, deterministic
+headless SVG, bounded guest execution, snapshots, and state-preserving live
+reload all work on the exercised NixOS path. ABI and cross-platform stability
+remain pre-production.
 
 **Main branch:** yolo
 
@@ -39,7 +40,18 @@ application brain. It receives no ambient platform authority.
 effect requests emitted during a guest lifecycle call.
 
 **Fixed tick** — one deterministic simulation step. The host converts elapsed
-monotonic time into integer ticks; the guest never observes wall time.
+monotonic time into integer ticks against absolute rational boundaries; the
+guest never observes wall time. Display mode is instead an explicit `AE_event`
+that can trigger the guest's optional rational-rate policy.
+
+**Display observation limit** — the core delivers and tests the exact
+display-refresh event contract, but GPUI's public display object does not yet
+provide a refresh mode. The native adapter therefore uses deterministic 60/1
+Hz at startup until GPUI exposes a portable change notification or an explicit
+platform adapter is added. For development and deterministic testing,
+`AE_DISPLAY_REFRESH_RATE` supplies an exact process-start override; it accepts
+fractions such as `60000/1001`, canonical `59.94`-style aliases, and otherwise
+exactly parsed decimal input.
 
 **State schema** — a guest-owned compatibility identifier for opaque snapshot
 bytes. The host also checks length, but only the guest author can determine

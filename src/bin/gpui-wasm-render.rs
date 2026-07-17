@@ -4,7 +4,10 @@ use std::{
     process::ExitCode,
 };
 
-use gpui_wasm::{DEFAULT_PLUGIN_ENV, FALLBACK_WAT, Frontplane, Limits, render_svg};
+use gpui_wasm::{
+    DEFAULT_PLUGIN_ENV, FALLBACK_WAT, Frontplane, Limits, PluginInit,
+    display_refresh_rate_from_environment, initialize_frontplane, render_svg,
+};
 
 const DEFAULT_WIDTH: f32 = 1024.0;
 const DEFAULT_HEIGHT: f32 = 768.0;
@@ -25,6 +28,9 @@ Options:
   -o, --output PATH  Write SVG to PATH, -/@stdout, or @stderr (default: -)
   -h, --help         Show this help
   --about            Show version and build platform
+
+Environment:
+  AE_DISPLAY_REFRESH_RATE  Exact initial display rate, e.g. 60000/1001 or 59.94
 ";
 
 #[derive(Debug, PartialEq)]
@@ -167,14 +173,17 @@ fn set_plugin(options: &mut RenderOptions, path: String) -> Result<(), String> {
 /// Executes guest lifecycle calls headlessly and emits the same immutable
 /// frame-command buffer consumed by the GPUI adapter.
 fn run(options: RenderOptions) -> Result<(), String> {
+    let mut plugin_init = PluginInit::new(options.seed, options.width, options.height);
+    if let Some(display_refresh) =
+        display_refresh_rate_from_environment().map_err(|error| error.to_string())?
+    {
+        plugin_init = plugin_init.with_display_refresh(display_refresh);
+    }
     let wat = read_plugin(options.plugin.as_deref())?;
     let limits = Limits::default();
     let max_ticks_per_call = u64::from(limits.max_ticks_per_call);
     let mut frontplane = Frontplane::from_wat(&wat, limits).map_err(|error| error.to_string())?;
-    frontplane.configure().map_err(|error| error.to_string())?;
-    frontplane
-        .init(options.seed, options.width, options.height)
-        .map_err(|error| error.to_string())?;
+    initialize_frontplane(&mut frontplane, plugin_init).map_err(|error| error.to_string())?;
 
     let mut remaining = options.ticks;
     while remaining > 0 {

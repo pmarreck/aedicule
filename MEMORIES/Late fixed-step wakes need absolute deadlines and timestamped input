@@ -1,0 +1,14 @@
+Treat native timer wakes as advisory samples of a monotonic clock. Compute each
+one-shot delay from `origin + ceil(tick_ordinal * 1e9 / tick_hz)` so early,
+late, and spurious wakes cannot shift the simulation timeline or accumulate
+callback work as drift.
+
+Stamp input in that same clock domain when it arrives. Deliver timestamps at
+or before a boundary before its tick, never apply later input retroactively,
+and batch only adjacent event-free tick runs. Under overload, drop the oldest
+whole tick boundaries while retaining every queued event and deliver events
+from dropped time before the first surviving tick. Count dropped ticks visibly.
+
+When hot reload changes the guest-declared rate, replace the scheduler at the
+swap instant and generation-cancel the obsolete timer loop; otherwise an old
+armed wake can continue driving the new guest's rate.

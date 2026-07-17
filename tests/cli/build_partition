@@ -26,6 +26,10 @@ else
 			failures=$((failures + 1))
 		elif [[ -e "$frontplane_source/plugins" ]]; then
 			failures=$((failures + 1))
+		elif [[ ! -f "$frontplane_source/build.rs" ]]; then
+			failures=$((failures + 1))
+		elif [[ ! -f "$frontplane_source/WAT_ABI.md" ]]; then
+			failures=$((failures + 1))
 		elif [[ -e "$frontplane_source/README.md" ]]; then
 			failures=$((failures + 1))
 		elif [[ -e "$frontplane_source/LICENSE" ]]; then

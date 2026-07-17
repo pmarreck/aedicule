@@ -1,34 +1,34 @@
 use gpui_wasm::{Affine, DrawCommand, Frontplane, ImageFormat, Limits, PathSegment, Point, Rect};
 
 const COMPOSITION_WAT: &str = r#"(module
-	(import "host.v0" "image_define" (func $image (param i32 i32 i32 i32) (result i32)))
-	(import "host.v0" "frame_begin" (func $begin (param f32 f32 f32 f32) (result i32)))
-	(import "host.v0" "transform_push" (func $push (param f32 f32 f32 f32 f32 f32) (result i32)))
-	(import "host.v0" "transform_pop" (func $pop (result i32)))
-	(import "host.v0" "path_begin" (func $path_begin (param i32) (result i32)))
-	(import "host.v0" "path_move" (func $move (param f32 f32) (result i32)))
-	(import "host.v0" "path_line" (func $line (param f32 f32) (result i32)))
-	(import "host.v0" "path_close" (func $close (result i32)))
-	(import "host.v0" "path_end" (func $path_end (param f32 i32 i32 i32) (result i32)))
-	(import "host.v0" "sprite" (func $sprite
+	(import "aedicule.v0" "AE_image_define" (func $image (param i32 i32 i32 i32) (result i32)))
+	(import "aedicule.v0" "AE_frame_begin" (func $begin (param f32 f32 f32 f32) (result i32)))
+	(import "aedicule.v0" "AE_transform_push" (func $push (param f32 f32 f32 f32 f32 f32) (result i32)))
+	(import "aedicule.v0" "AE_transform_pop" (func $pop (result i32)))
+	(import "aedicule.v0" "AE_path_begin" (func $path_begin (param i32) (result i32)))
+	(import "aedicule.v0" "AE_path_move" (func $move (param f32 f32) (result i32)))
+	(import "aedicule.v0" "AE_path_line" (func $line (param f32 f32) (result i32)))
+	(import "aedicule.v0" "AE_path_close" (func $close (result i32)))
+	(import "aedicule.v0" "AE_path_end" (func $path_end (param f32 i32 i32 i32) (result i32)))
+	(import "aedicule.v0" "AE_sprite" (func $sprite
 		(param i32 i32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 i32 i32)
 		(result i32)))
-	(import "host.v0" "frame_end" (func $end (result i32)))
+	(import "aedicule.v0" "AE_frame_end" (func $end (result i32)))
 	(memory (export "memory") 1)
 	(data (i32.const 0) "\89PNG")
-	(func (export "fp_abi_major") (result i32) i32.const 0)
-	(func (export "fp_abi_minor") (result i32) i32.const 0)
-	(func (export "fp_configure") (result i32)
+	(func (export "AE_abi_major") (result i32) i32.const 0)
+	(func (export "AE_abi_minor") (result i32) i32.const 0)
+	(func (export "AE_configure") (result i32)
 		i32.const 7 i32.const 0 i32.const 4 i32.const 0 call $image drop
 		i32.const 0)
-	(func (export "fp_init") (param i32 i32 f32 f32) (result i32)
+	(func (export "AE_init") (param i32 i32 f32 f32) (result i32)
 		i32.const 64 i32.const 0 i32.store
 		i32.const 0)
-	(func (export "fp_event") (param i32 i32 f32 f32) (result i32) i32.const 0)
-	(func (export "fp_tick") (param $count i32) (result i32)
+	(func (export "AE_event") (param i32 i32 f32 f32) (result i32) i32.const 0)
+	(func (export "AE_tick") (param $count i32) (result i32)
 		i32.const 64 i32.const 64 i32.load local.get $count i32.add i32.store
 		i32.const 0)
-	(func (export "fp_render") (result i32)
+	(func (export "AE_render") (result i32)
 		f32.const 0 f32.const 0 f32.const 0 f32.const 1 call $begin drop
 		;; 90-degree rotation followed by translation.
 		f32.const 0 f32.const 1 f32.const -1 f32.const 0 f32.const 100 f32.const 50 call $push drop
@@ -46,9 +46,9 @@ const COMPOSITION_WAT: &str = r#"(module
 		call $pop drop
 		call $end drop
 		i32.const 0)
-	(func (export "fp_state_ptr") (result i32) i32.const 64)
-	(func (export "fp_state_len") (result i32) i32.const 4)
-	(func (export "fp_state_schema") (result i32) i32.const 1)
+	(func (export "AE_state_ptr") (result i32) i32.const 64)
+	(func (export "AE_state_len") (result i32) i32.const 4)
+	(func (export "AE_state_schema") (result i32) i32.const 1)
 )"#;
 
 fn fixture() -> Frontplane {

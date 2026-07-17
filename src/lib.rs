@@ -4,7 +4,7 @@
 //! output independent of GPUI. Native and future web frontplanes are adapters
 //! over the same lifecycle, validation, snapshot, and command-buffer logic.
 
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::ffi::OsString;
 use std::fmt;
 use std::fmt::Write as _;
@@ -17,15 +17,203 @@ use wasmtime::{
     StoreLimitsBuilder, TypedFunc,
 };
 
-pub const ABI_MAJOR: i32 = 0;
-pub const ABI_MINOR: i32 = 0;
+mod wat_abi;
+
+pub use wat_abi::{WAT_ABI_IMPORTS, WatAbiImport, wat_abi_markdown};
+
+pub const ABI_MAJOR: i32 = wat_abi::ABI_MAJOR;
+pub const ABI_MINOR: i32 = wat_abi::ABI_MINOR;
 pub const DEFAULT_PLUGIN_FILE: &str = "code.wat";
 pub const DEFAULT_PLUGIN_ENV: &str = "GPUI_WASM_DEFAULT_PLUGIN";
+/// Overrides the host's nominal initial display timing with an exact rate.
+pub const DISPLAY_REFRESH_RATE_ENV: &str = "AE_DISPLAY_REFRESH_RATE";
 pub const FALLBACK_WAT: &str = include_str!("fallback.wat");
 pub const DEFAULT_SIMULATION_HZ: u32 = 60;
 pub const MAX_SIMULATION_HZ: u32 = 1_000;
+pub const MAX_TICK_RATE_DENOMINATOR: u32 = 1_000_000;
 
 const NANOS_PER_SECOND: u128 = 1_000_000_000;
+const WAT_IMPORT_MODULE: &str = wat_abi::IMPORT_MODULE;
+
+/// An exact fixed-step frequency expressed as whole ticks per rational second.
+/// This keeps fractional display modes such as 60,000/1,001 Hz out of `f32`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct TickRate {
+    pub numerator: u32,
+    pub denominator: u32,
+}
+
+impl TickRate {
+    /// Constructs a normalized supported rate. Invalid programmer-supplied
+    /// values panic; untrusted WAT values use `validate_tick_rate` instead.
+    pub const fn new(numerator: u32, denominator: u32) -> Self {
+        assert!(numerator > 0);
+        assert!(denominator > 0);
+        assert!(denominator <= MAX_TICK_RATE_DENOMINATOR);
+        assert!(numerator >= denominator);
+        assert!((numerator as u128) <= (MAX_SIMULATION_HZ as u128) * (denominator as u128));
+        let divisor = greatest_common_divisor(numerator, denominator);
+        Self {
+            numerator: numerator / divisor,
+            denominator: denominator / divisor,
+        }
+    }
+
+    /// Returns the ceil-rounded offset of the boundary after `ticks` exact
+    /// fixed steps, preserving phase for non-integral periods.
+    pub fn boundary_after(self, ticks: u32) -> Duration {
+        let nanos = u128::from(ticks)
+            .saturating_mul(NANOS_PER_SECOND)
+            .saturating_mul(u128::from(self.denominator))
+            .div_ceil(u128::from(self.numerator));
+        duration_from_nanos(nanos)
+    }
+}
+
+impl From<u32> for TickRate {
+    fn from(hz: u32) -> Self {
+        Self::new(hz, 1)
+    }
+}
+
+impl fmt::Display for TickRate {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.denominator == 1 {
+            write!(formatter, "{}", self.numerator)
+        } else {
+            write!(formatter, "{}/{}", self.numerator, self.denominator)
+        }
+    }
+}
+
+/// Explains why a user-supplied display refresh override cannot become a
+/// bounded exact simulation rate.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[error("invalid AE_DISPLAY_REFRESH_RATE value {value:?}: {reason}")]
+pub struct DisplayRefreshRateError {
+    value: String,
+    reason: &'static str,
+}
+
+impl DisplayRefreshRateError {
+    fn invalid(value: &str, reason: &'static str) -> Self {
+        Self {
+            value: value.to_owned(),
+            reason,
+        }
+    }
+}
+
+/// Parses the exact `AE_DISPLAY_REFRESH_RATE` grammar without floating point.
+/// Canonical broadcast-rate spellings select their 1000/1001 rational forms;
+/// all other decimals preserve precisely the digits the user supplied.
+pub fn parse_display_refresh_rate(value: &str) -> Result<TickRate, DisplayRefreshRateError> {
+    let value = value.trim();
+    match value {
+        "23.976" => Ok(TickRate::new(24_000, 1_001)),
+        "29.97" => Ok(TickRate::new(30_000, 1_001)),
+        "59.94" => Ok(TickRate::new(60_000, 1_001)),
+        "119.88" => Ok(TickRate::new(120_000, 1_001)),
+        _ => {
+            let (numerator, denominator) =
+                if let Some((numerator, denominator)) = value.split_once('/') {
+                    (
+                        parse_rate_component(value, numerator)?,
+                        parse_rate_component(value, denominator)?,
+                    )
+                } else {
+                    parse_decimal_rate(value)?
+                };
+            validate_host_tick_rate(value, numerator, denominator)
+        }
+    }
+}
+
+/// Reads one process-start display override. Its absence deliberately leaves
+/// platform display discovery in control of future display-change events.
+pub fn display_refresh_rate_from_environment() -> Result<Option<TickRate>, DisplayRefreshRateError>
+{
+    match std::env::var(DISPLAY_REFRESH_RATE_ENV) {
+        Ok(value) => parse_display_refresh_rate(&value).map(Some),
+        Err(std::env::VarError::NotPresent) => Ok(None),
+        Err(std::env::VarError::NotUnicode(_)) => Err(DisplayRefreshRateError::invalid(
+            "<non-Unicode>",
+            "the value must be UTF-8",
+        )),
+    }
+}
+
+/// Parses a decimal token as an integer fraction, so user configuration never
+/// crosses an `f32` or `f64` rounding boundary before rate validation.
+fn parse_decimal_rate(value: &str) -> Result<(u32, u32), DisplayRefreshRateError> {
+    let Some((whole, fraction)) = value.split_once('.') else {
+        return Ok((parse_rate_component(value, value)?, 1));
+    };
+    if whole.is_empty() || fraction.is_empty() || fraction.contains('.') {
+        return Err(DisplayRefreshRateError::invalid(
+            value,
+            "expected a whole decimal such as 120 or 59.97",
+        ));
+    }
+    let whole = parse_rate_component(value, whole)?;
+    let fraction = parse_rate_component(value, fraction)?;
+    let denominator = 10_u32
+        .checked_pow(fraction_decimal_places(value)?)
+        .ok_or_else(|| DisplayRefreshRateError::invalid(value, "too many decimal places"))?;
+    let numerator = whole
+        .checked_mul(denominator)
+        .and_then(|whole| whole.checked_add(fraction))
+        .ok_or_else(|| DisplayRefreshRateError::invalid(value, "rate overflows u32"))?;
+    Ok((numerator, denominator))
+}
+
+fn fraction_decimal_places(value: &str) -> Result<u32, DisplayRefreshRateError> {
+    let (_, fraction) = value
+        .split_once('.')
+        .expect("decimal rates have a fractional separator");
+    u32::try_from(fraction.len())
+        .map_err(|_| DisplayRefreshRateError::invalid(value, "too many decimal places"))
+}
+
+fn parse_rate_component(value: &str, component: &str) -> Result<u32, DisplayRefreshRateError> {
+    if component.is_empty() || !component.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(DisplayRefreshRateError::invalid(
+            value,
+            "expected positive base-10 numerator and denominator digits",
+        ));
+    }
+    component
+        .parse()
+        .map_err(|_| DisplayRefreshRateError::invalid(value, "rate component overflows u32"))
+}
+
+fn validate_host_tick_rate(
+    value: &str,
+    numerator: u32,
+    denominator: u32,
+) -> Result<TickRate, DisplayRefreshRateError> {
+    if numerator == 0
+        || denominator == 0
+        || denominator > MAX_TICK_RATE_DENOMINATOR
+        || numerator < denominator
+        || u128::from(numerator) > u128::from(MAX_SIMULATION_HZ) * u128::from(denominator)
+    {
+        return Err(DisplayRefreshRateError::invalid(
+            value,
+            "expected a rate in the inclusive 1..=1000 Hz range with denominator at most 1,000,000",
+        ));
+    }
+    Ok(TickRate::new(numerator, denominator))
+}
+
+const fn greatest_common_divisor(mut left: u32, mut right: u32) -> u32 {
+    while right != 0 {
+        let remainder = left % right;
+        left = right;
+        right = remainder;
+    }
+    left
+}
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct TickAdvance {
@@ -42,12 +230,25 @@ impl FixedStepClock {
     /// Converts arbitrary monotonic elapsed-time partitions into exact fixed
     /// ticks by retaining the rational nanoseconds-times-hertz remainder.
     pub fn advance(&mut self, elapsed: Duration, hz: u32, max_ticks: u32) -> TickAdvance {
-        assert!((1..=MAX_SIMULATION_HZ).contains(&hz));
-        let total = self
-            .fractional_tick_nanos
-            .saturating_add(elapsed.as_nanos().saturating_mul(u128::from(hz)));
-        let due = total / NANOS_PER_SECOND;
-        self.fractional_tick_nanos = total % NANOS_PER_SECOND;
+        self.advance_rate(elapsed, TickRate::from(hz), max_ticks)
+    }
+
+    /// Converts elapsed monotonic time into exact ticks at a rational rate by
+    /// carrying the numerator-times-nanoseconds remainder over its full period.
+    pub fn advance_rate(
+        &mut self,
+        elapsed: Duration,
+        rate: TickRate,
+        max_ticks: u32,
+    ) -> TickAdvance {
+        let total = self.fractional_tick_nanos.saturating_add(
+            elapsed
+                .as_nanos()
+                .saturating_mul(u128::from(rate.numerator)),
+        );
+        let tick_units = NANOS_PER_SECOND.saturating_mul(u128::from(rate.denominator));
+        let due = total / tick_units;
+        self.fractional_tick_nanos = total % tick_units;
         let ticks = due.min(u128::from(max_ticks)) as u32;
         let dropped = due.saturating_sub(u128::from(ticks));
         TickAdvance {
@@ -59,11 +260,167 @@ impl FixedStepClock {
     /// Returns the ceil-rounded monotonic delay until the next exact tick so
     /// timer adapters never wake late merely because 1e9/hz is fractional.
     pub fn time_until_next_tick(&self, hz: u32) -> Duration {
-        assert!((1..=MAX_SIMULATION_HZ).contains(&hz));
-        let remaining = NANOS_PER_SECOND - self.fractional_tick_nanos;
-        let nanos = remaining.div_ceil(u128::from(hz));
-        Duration::from_nanos(nanos as u64)
+        self.time_until_next_tick_at(TickRate::from(hz))
     }
+
+    /// Returns the ceil-rounded delay to the next exact rational boundary.
+    pub fn time_until_next_tick_at(&self, rate: TickRate) -> Duration {
+        let tick_units = NANOS_PER_SECOND.saturating_mul(u128::from(rate.denominator));
+        let remaining = tick_units - self.fractional_tick_nanos;
+        duration_from_nanos(remaining.div_ceil(u128::from(rate.numerator)))
+    }
+}
+
+/// One ordered guest invocation planned for a monotonic scheduler wake.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SimulationCall {
+    Event(Event),
+    Tick(u32),
+}
+
+/// Bounded work and overload telemetry produced without touching the guest.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SimulationPump {
+    pub calls: Vec<SimulationCall>,
+    pub dropped_ticks: u64,
+    pub render: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct TimestampedEvent {
+    timestamp: Duration,
+    event: Event,
+}
+
+/// Maps advisory timer wakes and timestamped input onto exact fixed-step
+/// boundaries while bounding the amount of guest catch-up work per pump.
+#[derive(Debug, Clone)]
+pub struct SimulationScheduler {
+    tick_rate: TickRate,
+    max_ticks_per_pump: u32,
+    origin: Duration,
+    last_sample: Duration,
+    elapsed_boundaries: u128,
+    total_dropped_ticks: u64,
+    clock: FixedStepClock,
+    events: VecDeque<TimestampedEvent>,
+}
+
+impl SimulationScheduler {
+    /// Plans deterministic event/tick calls against absolute rational
+    /// boundaries, making timer wakes advisory rather than authoritative.
+    pub fn new(tick_rate: impl Into<TickRate>, max_ticks_per_pump: u32, origin: Duration) -> Self {
+        assert!(max_ticks_per_pump > 0);
+        Self {
+            tick_rate: tick_rate.into(),
+            max_ticks_per_pump,
+            origin,
+            last_sample: origin,
+            elapsed_boundaries: 0,
+            total_dropped_ticks: 0,
+            clock: FixedStepClock::default(),
+            events: VecDeque::new(),
+        }
+    }
+
+    /// Preserves native arrival order while attaching the monotonic timestamp
+    /// used to classify the event at an exact simulation boundary.
+    pub fn queue_event(&mut self, timestamp: Duration, event: Event) {
+        self.events.push_back(TimestampedEvent { timestamp, event });
+    }
+
+    /// Converts one arbitrary wake into the smallest ordered sequence of guest
+    /// calls, batching only adjacent ticks with no intervening input boundary.
+    pub fn pump(&mut self, now: Duration) -> SimulationPump {
+        assert!(now >= self.last_sample);
+        let elapsed = now - self.last_sample;
+        let advance = self
+            .clock
+            .advance_rate(elapsed, self.tick_rate, self.max_ticks_per_pump);
+        self.last_sample = now;
+
+        let dropped = u128::from(advance.dropped_ticks);
+        let first_surviving_boundary = self
+            .elapsed_boundaries
+            .saturating_add(dropped)
+            .saturating_add(1);
+        let mut calls = Vec::new();
+        let mut pending_ticks = 0_u32;
+
+        for tick_offset in 0..advance.ticks {
+            let boundary =
+                self.boundary_at(first_surviving_boundary.saturating_add(u128::from(tick_offset)));
+            let has_due_event = self
+                .events
+                .front()
+                .is_some_and(|event| event.timestamp <= boundary);
+            if has_due_event {
+                push_tick_run(&mut calls, &mut pending_ticks);
+                while self
+                    .events
+                    .front()
+                    .is_some_and(|event| event.timestamp <= boundary)
+                {
+                    let event = self.events.pop_front().expect("front event exists");
+                    calls.push(SimulationCall::Event(event.event));
+                }
+            }
+            pending_ticks += 1;
+        }
+        push_tick_run(&mut calls, &mut pending_ticks);
+
+        self.elapsed_boundaries = self
+            .elapsed_boundaries
+            .saturating_add(dropped)
+            .saturating_add(u128::from(advance.ticks));
+        self.total_dropped_ticks = self
+            .total_dropped_ticks
+            .saturating_add(advance.dropped_ticks);
+
+        SimulationPump {
+            render: !calls.is_empty(),
+            calls,
+            dropped_ticks: advance.dropped_ticks,
+        }
+    }
+
+    /// Returns the next absolute rational boundary in the scheduler clock domain.
+    pub fn next_deadline(&self) -> Duration {
+        self.boundary_at(self.elapsed_boundaries.saturating_add(1))
+    }
+
+    /// Derives a fresh one-shot timer delay without letting prior wake jitter drift.
+    pub fn time_until_next_wake(&self, now: Duration) -> Duration {
+        self.next_deadline().saturating_sub(now)
+    }
+
+    /// Exposes cumulative overload debt so the UI cannot hide simulation slowdown.
+    pub fn total_dropped_ticks(&self) -> u64 {
+        self.total_dropped_ticks
+    }
+
+    fn boundary_at(&self, ordinal: u128) -> Duration {
+        let offset_nanos = ordinal
+            .saturating_mul(NANOS_PER_SECOND)
+            .saturating_mul(u128::from(self.tick_rate.denominator))
+            .div_ceil(u128::from(self.tick_rate.numerator));
+        duration_from_nanos(self.origin.as_nanos().saturating_add(offset_nanos))
+    }
+}
+
+fn push_tick_run(calls: &mut Vec<SimulationCall>, pending_ticks: &mut u32) {
+    if *pending_ticks > 0 {
+        calls.push(SimulationCall::Tick(*pending_ticks));
+        *pending_ticks = 0;
+    }
+}
+
+fn duration_from_nanos(nanos: u128) -> Duration {
+    let seconds = nanos / NANOS_PER_SECOND;
+    if seconds > u128::from(u64::MAX) {
+        return Duration::new(u64::MAX, 999_999_999);
+    }
+    Duration::new(seconds as u64, (nanos % NANOS_PER_SECOND) as u32)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -753,12 +1110,29 @@ pub enum HostEffect {
 pub enum Event {
     KeyDown(Key),
     KeyUp(Key),
-    PointerMove { x: f32, y: f32 },
-    PointerDown { button: u32, x: f32, y: f32 },
-    PointerUp { button: u32, x: f32, y: f32 },
-    Viewport { width: f32, height: f32 },
+    PointerMove {
+        x: f32,
+        y: f32,
+    },
+    PointerDown {
+        button: u32,
+        x: f32,
+        y: f32,
+    },
+    PointerUp {
+        button: u32,
+        x: f32,
+        y: f32,
+    },
+    Viewport {
+        width: f32,
+        height: f32,
+    },
     MenuAction(u32),
     Focus(bool),
+    /// Host-reported nominal display mode. The numerator travels in the `code`
+    /// slot and the bounded denominator in `a` for WAT ABI event kind 9.
+    DisplayRefresh(TickRate),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -789,6 +1163,9 @@ pub struct PluginInit {
     pub seed: u64,
     pub viewport_width: f32,
     pub viewport_height: f32,
+    /// The nominal display timing known at this lifecycle boundary. It is
+    /// delivered once as an event before the guest chooses its simulation rate.
+    pub display_refresh: TickRate,
 }
 
 impl PluginInit {
@@ -797,7 +1174,15 @@ impl PluginInit {
             seed,
             viewport_width,
             viewport_height,
+            display_refresh: TickRate::new(DEFAULT_SIMULATION_HZ, 1),
         }
+    }
+
+    /// Replaces the deterministic default display mode for a host lifecycle
+    /// boundary without giving the guest an ambient display-query capability.
+    pub const fn with_display_refresh(mut self, display_refresh: TickRate) -> Self {
+        self.display_refresh = display_refresh;
+        self
     }
 }
 
@@ -805,6 +1190,14 @@ impl PluginInit {
 pub enum StateTransfer {
     Preserved,
     Restarted,
+}
+
+/// A display-timing event can retain or replace the simulation rate after the
+/// guest has processed the new display mode and selected its own policy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SimulationRateChange {
+    pub previous: TickRate,
+    pub current: TickRate,
 }
 
 #[derive(Debug)]
@@ -828,6 +1221,14 @@ pub enum FrontplaneError {
     WrongAbi { expected: i32, found: i32 },
     #[error("plugin tick rate {found} Hz is outside the supported 1..={maximum} range")]
     InvalidSimulationHz { found: i32, maximum: u32 },
+    #[error(
+        "plugin rational tick rate {numerator}/{denominator} Hz is outside the supported 1..={maximum} range"
+    )]
+    InvalidSimulationRate {
+        numerator: i32,
+        denominator: i32,
+        maximum: u32,
+    },
     #[error("plugin exhausted its fuel during {operation}")]
     FuelExhausted { operation: &'static str },
     #[error("plugin trapped during {operation}: {message}")]
@@ -935,7 +1336,7 @@ struct Exports {
     state_ptr: TypedFunc<(), i32>,
     state_len: TypedFunc<(), i32>,
     state_schema: TypedFunc<(), i32>,
-    tick_hz: Option<TypedFunc<(), i32>>,
+    tick_rate: Option<TypedFunc<(i32, i32), (i32, i32)>>,
     after_restore: Option<TypedFunc<(), i32>>,
 }
 
@@ -945,7 +1346,8 @@ pub struct Frontplane {
     _memory: Memory,
     _instance: Instance,
     exports: Exports,
-    simulation_hz: u32,
+    simulation_rate: TickRate,
+    display_refresh: Option<TickRate>,
 }
 
 impl fmt::Debug for Frontplane {
@@ -969,7 +1371,11 @@ impl Frontplane {
         let module = Module::new(&engine, bytes).map_err(runtime_error)?;
 
         for import in module.imports() {
-            if import.module() != "host.v0" || !SUPPORTED_IMPORTS.contains(&import.name()) {
+            if import.module() != WAT_IMPORT_MODULE
+                || !WAT_ABI_IMPORTS
+                    .iter()
+                    .any(|supported| supported.name == import.name())
+            {
                 return Err(FrontplaneError::UnsupportedImport {
                     module: import.module().to_owned(),
                     name: import.name().to_owned(),
@@ -1015,19 +1421,19 @@ impl Frontplane {
             .get_memory(&mut store, "memory")
             .ok_or(FrontplaneError::MissingExport { name: "memory" })?;
         let exports = Exports {
-            abi_major: required_func(&instance, &mut store, "fp_abi_major")?,
-            abi_minor: required_func(&instance, &mut store, "fp_abi_minor")?,
-            configure: required_func(&instance, &mut store, "fp_configure")?,
-            init: required_func(&instance, &mut store, "fp_init")?,
-            event: required_func(&instance, &mut store, "fp_event")?,
-            tick: required_func(&instance, &mut store, "fp_tick")?,
-            render: required_func(&instance, &mut store, "fp_render")?,
-            state_ptr: required_func(&instance, &mut store, "fp_state_ptr")?,
-            state_len: required_func(&instance, &mut store, "fp_state_len")?,
-            state_schema: required_func(&instance, &mut store, "fp_state_schema")?,
-            tick_hz: optional_func(&instance, &mut store, "fp_tick_hz")?,
+            abi_major: required_func(&instance, &mut store, "AE_abi_major")?,
+            abi_minor: required_func(&instance, &mut store, "AE_abi_minor")?,
+            configure: required_func(&instance, &mut store, "AE_configure")?,
+            init: required_func(&instance, &mut store, "AE_init")?,
+            event: required_func(&instance, &mut store, "AE_event")?,
+            tick: required_func(&instance, &mut store, "AE_tick")?,
+            render: required_func(&instance, &mut store, "AE_render")?,
+            state_ptr: required_func(&instance, &mut store, "AE_state_ptr")?,
+            state_len: required_func(&instance, &mut store, "AE_state_len")?,
+            state_schema: required_func(&instance, &mut store, "AE_state_schema")?,
+            tick_rate: optional_func(&instance, &mut store, "AE_tick_rate")?,
             after_restore: instance
-                .get_typed_func::<(), i32>(&mut store, "fp_after_restore")
+                .get_typed_func::<(), i32>(&mut store, "AE_after_restore")
                 .ok(),
         };
         let mut frontplane = Self {
@@ -1035,10 +1441,11 @@ impl Frontplane {
             _memory: memory,
             _instance: instance,
             exports,
-            simulation_hz: DEFAULT_SIMULATION_HZ,
+            simulation_rate: TickRate::from(DEFAULT_SIMULATION_HZ),
+            display_refresh: None,
         };
         let abi_major_function = frontplane.exports.abi_major.clone();
-        let abi_major = frontplane.call_value("fp_abi_major", abi_major_function)?;
+        let abi_major = frontplane.call_value("AE_abi_major", abi_major_function)?;
         if abi_major != ABI_MAJOR {
             return Err(FrontplaneError::WrongAbi {
                 expected: ABI_MAJOR,
@@ -1046,17 +1453,7 @@ impl Frontplane {
             });
         }
         let abi_minor_function = frontplane.exports.abi_minor.clone();
-        let _ = frontplane.call_value("fp_abi_minor", abi_minor_function)?;
-        if let Some(function) = frontplane.exports.tick_hz.clone() {
-            let found = frontplane.call_value("fp_tick_hz", function)?;
-            if !(1..=MAX_SIMULATION_HZ as i32).contains(&found) {
-                return Err(FrontplaneError::InvalidSimulationHz {
-                    found,
-                    maximum: MAX_SIMULATION_HZ,
-                });
-            }
-            frontplane.simulation_hz = found as u32;
-        }
+        let _ = frontplane.call_value("AE_abi_minor", abi_minor_function)?;
         Ok(frontplane)
     }
 
@@ -1068,7 +1465,7 @@ impl Frontplane {
         self.store.data_mut().images.clear();
         self.store.data_mut().image_ids.clear();
         let function = self.exports.configure.clone();
-        let result = self.call_status("fp_configure", function, ());
+        let result = self.call_status("AE_configure", function, ());
         if result.is_err() {
             let state = self.store.data_mut();
             state.metadata = Metadata::default();
@@ -1088,18 +1485,18 @@ impl Frontplane {
         viewport_height: f32,
     ) -> Result<(), FrontplaneError> {
         validate_bounded_numbers(
-            "fp_init",
+            "AE_init",
             &[viewport_width, viewport_height],
             self.store.data().limits.max_coordinate_abs,
         )?;
         if viewport_width <= 0.0 || viewport_height <= 0.0 {
             return Err(FrontplaneError::InvalidNumber {
-                operation: "fp_init",
+                operation: "AE_init",
             });
         }
         let function = self.exports.init.clone();
         self.call_status(
-            "fp_init",
+            "AE_init",
             function,
             (
                 seed as i32,
@@ -1114,10 +1511,35 @@ impl Frontplane {
         &self.store.data().metadata
     }
 
-    /// Returns the plugin's validated fixed simulation rate, defaulting legacy
-    /// ABI-v0 modules to 60 Hz without exposing a wall clock to the guest.
-    pub fn simulation_hz(&self) -> u32 {
-        self.simulation_hz
+    /// Returns the currently agreed exact simulation rate. Before a host
+    /// supplies display timing, compatibility startup uses 60/1 Hz.
+    pub fn simulation_rate(&self) -> TickRate {
+        self.simulation_rate
+    }
+
+    /// Delivers a newly observed display mode exactly once, then asks the
+    /// guest to choose a rational simulation rate using the prior agreement.
+    /// A `(0, 0)` guest response follows the just-delivered display rate.
+    pub fn observe_display_refresh(
+        &mut self,
+        refresh: TickRate,
+    ) -> Result<Option<SimulationRateChange>, FrontplaneError> {
+        if self.display_refresh == Some(refresh) {
+            return Ok(None);
+        }
+
+        let previous = self.simulation_rate;
+        if self.display_refresh.is_none() {
+            self.simulation_rate = refresh;
+        }
+        self.display_refresh = Some(refresh);
+        self.event(Event::DisplayRefresh(refresh))?;
+        self.simulation_rate = self.select_simulation_rate()?;
+
+        Ok(Some(SimulationRateChange {
+            previous,
+            current: self.simulation_rate,
+        }))
     }
 
     pub fn images(&self) -> &[ImageResource] {
@@ -1136,26 +1558,45 @@ impl Frontplane {
             Event::Viewport { width, height } => (6, 0, width, height),
             Event::MenuAction(id) => (7, id as i32, 0.0, 0.0),
             Event::Focus(focused) => (8, i32::from(focused), 0.0, 0.0),
+            Event::DisplayRefresh(rate) => (9, rate.numerator as i32, rate.denominator as f32, 0.0),
         };
         validate_bounded_numbers(
-            "fp_event",
+            "AE_event",
             &[a, b],
             self.store.data().limits.max_coordinate_abs,
         )?;
         let function = self.exports.event.clone();
-        self.call_status("fp_event", function, (kind, code, a, b))
+        self.call_status("AE_event", function, (kind, code, a, b))
+    }
+
+    /// Resolves the guest's stateful rate policy after it has received the
+    /// display event, keeping display discovery outside the selector arguments.
+    fn select_simulation_rate(&mut self) -> Result<TickRate, FrontplaneError> {
+        if let Some(function) = self.exports.tick_rate.clone() {
+            let current = self.simulation_rate;
+            let (numerator, denominator) = self.call_tick_rate(function, current)?;
+            if numerator == 0 && denominator == 0 {
+                return Ok(self
+                    .display_refresh
+                    .expect("display refresh is set before selection"));
+            }
+            return validate_tick_rate(numerator, denominator);
+        }
+        Ok(self
+            .display_refresh
+            .expect("display refresh is set before selection"))
     }
 
     /// Advances deterministic simulation time by a bounded integer count.
     pub fn tick(&mut self, ticks: u32) -> Result<(), FrontplaneError> {
         if ticks > self.store.data().limits.max_ticks_per_call {
             return Err(FrontplaneError::BudgetExhausted {
-                operation: "fp_tick",
+                operation: "AE_tick",
                 kind: "tick",
             });
         }
         let function = self.exports.tick.clone();
-        self.call_status("fp_tick", function, ticks as i32)
+        self.call_status("AE_tick", function, ticks as i32)
     }
 
     /// Captures one all-or-nothing immutable command buffer, rejecting partial
@@ -1169,13 +1610,13 @@ impl Frontplane {
             state.completed_frame = None;
         }
         let function = self.exports.render.clone();
-        self.call_status("fp_render", function, ())?;
+        self.call_status("AE_render", function, ())?;
         self.store
             .data_mut()
             .completed_frame
             .take()
             .ok_or(FrontplaneError::InvalidFrame(
-                "fp_render did not complete a frame",
+                "AE_render did not complete a frame",
             ))
     }
 
@@ -1207,7 +1648,7 @@ impl Frontplane {
                 operation: "restore",
             })?;
         if let Some(after_restore) = self.exports.after_restore.clone() {
-            self.call_status("fp_after_restore", after_restore, ())?;
+            self.call_status("AE_after_restore", after_restore, ())?;
         }
         Ok(())
     }
@@ -1226,9 +1667,9 @@ impl Frontplane {
         let state_ptr = self.exports.state_ptr.clone();
         let state_len = self.exports.state_len.clone();
         let state_schema = self.exports.state_schema.clone();
-        let pointer = self.call_value("fp_state_ptr", state_ptr)?;
-        let length = self.call_value("fp_state_len", state_len)?;
-        let schema = self.call_value("fp_state_schema", state_schema)?;
+        let pointer = self.call_value("AE_state_ptr", state_ptr)?;
+        let length = self.call_value("AE_state_len", state_len)?;
+        let schema = self.call_value("AE_state_schema", state_schema)?;
         if pointer < 0
             || length < 0
             || length as usize > self.store.data().limits.max_snapshot_bytes
@@ -1259,6 +1700,19 @@ impl Frontplane {
         self.prepare_call()?;
         let result = function.call(&mut self.store, ());
         self.finish_call(operation, result)
+    }
+
+    fn call_tick_rate(
+        &mut self,
+        function: TypedFunc<(i32, i32), (i32, i32)>,
+        current: TickRate,
+    ) -> Result<(i32, i32), FrontplaneError> {
+        self.prepare_call()?;
+        let result = function.call(
+            &mut self.store,
+            (current.numerator as i32, current.denominator as i32),
+        );
+        self.finish_call("AE_tick_rate", result)
     }
 
     fn call_status<P>(
@@ -1295,11 +1749,11 @@ impl Frontplane {
 
     /// Converts Wasmtime traps and host-import rejections into typed failures,
     /// rolling back semantic side effects from the failed export.
-    fn finish_call(
+    fn finish_call<T>(
         &mut self,
         operation: &'static str,
-        result: Result<i32, wasmtime::Error>,
-    ) -> Result<i32, FrontplaneError> {
+        result: Result<T, wasmtime::Error>,
+    ) -> Result<T, FrontplaneError> {
         let pending_error = self.store.data_mut().pending_error.take();
         let outcome = if let Some(error) = pending_error {
             Err(error.into_public())
@@ -1333,6 +1787,35 @@ impl Frontplane {
     }
 }
 
+/// Applies the shared startup lifecycle so every frontplane adapter delivers
+/// the first display mode before the optional guest rate selector runs.
+pub fn initialize_frontplane(
+    frontplane: &mut Frontplane,
+    init: PluginInit,
+) -> Result<(), FrontplaneError> {
+    frontplane.configure()?;
+    frontplane.init(init.seed, init.viewport_width, init.viewport_height)?;
+    frontplane.observe_display_refresh(init.display_refresh)?;
+    Ok(())
+}
+
+fn validate_tick_rate(numerator: i32, denominator: i32) -> Result<TickRate, FrontplaneError> {
+    if numerator <= 0
+        || denominator <= 0
+        || (denominator as u32) > MAX_TICK_RATE_DENOMINATOR
+        || (numerator as u32) < (denominator as u32)
+        || u128::from(numerator as u32)
+            > u128::from(MAX_SIMULATION_HZ).saturating_mul(u128::from(denominator as u32))
+    {
+        return Err(FrontplaneError::InvalidSimulationRate {
+            numerator,
+            denominator,
+            maximum: MAX_SIMULATION_HZ,
+        });
+    }
+    Ok(TickRate::new(numerator as u32, denominator as u32))
+}
+
 /// Builds and smoke-renders a replacement instance before exposing it to the
 /// caller, preserving exact compatible snapshots while leaving `current`
 /// untouched on every candidate failure.
@@ -1351,6 +1834,7 @@ pub fn prepare_reload(
         Err(FrontplaneError::SnapshotMismatch) => StateTransfer::Restarted,
         Err(error) => return Err(error),
     };
+    candidate.observe_display_refresh(current.display_refresh.unwrap_or(init.display_refresh))?;
     let frame = candidate.render()?;
     candidate.drain_audio();
     candidate.drain_effects();
@@ -1360,32 +1844,6 @@ pub fn prepare_reload(
         state_transfer,
     })
 }
-
-const SUPPORTED_IMPORTS: &[&str] = &[
-    "title",
-    "menu_item",
-    "synth_voice",
-    "image_define",
-    "image_release",
-    "frame_begin",
-    "transform_push",
-    "transform_pop",
-    "path_begin",
-    "path_move",
-    "path_line",
-    "path_quad",
-    "path_cubic",
-    "path_close",
-    "path_end",
-    "sprite",
-    "line",
-    "circle",
-    "text",
-    "frame_end",
-    "audio",
-    "effect",
-    "log",
-];
 
 fn required_func<P, R>(
     instance: &Instance,
@@ -1440,8 +1898,8 @@ fn validate_bounded_numbers(
 fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneError> {
     linker
         .func_wrap(
-            "host.v0",
-            "title",
+            WAT_IMPORT_MODULE,
+            "AE_title",
             |mut caller: Caller<'_, HostState>, ptr: i32, len: i32| match read_string(
                 &mut caller,
                 ptr,
@@ -1458,8 +1916,8 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
         .map_err(runtime_error)?;
     linker
         .func_wrap(
-            "host.v0",
-            "menu_item",
+            WAT_IMPORT_MODULE,
+            "AE_menu_item",
             |mut caller: Caller<'_, HostState>,
              id: i32,
              ptr: i32,
@@ -1513,8 +1971,8 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
         .map_err(runtime_error)?;
     linker
         .func_wrap(
-            "host.v0",
-            "synth_voice",
+            WAT_IMPORT_MODULE,
+            "AE_synth_voice",
             |mut caller: Caller<'_, HostState>,
              program_id: i32,
              waveform: i32,
@@ -1605,8 +2063,8 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
         .map_err(runtime_error)?;
     linker
         .func_wrap(
-            "host.v0",
-            "image_define",
+            WAT_IMPORT_MODULE,
+            "AE_image_define",
             |mut caller: Caller<'_, HostState>, id: i32, ptr: i32, len: i32, flags: i32| {
                 if flags & !1 != 0 {
                     return caller
@@ -1657,8 +2115,8 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
         .map_err(runtime_error)?;
     linker
         .func_wrap(
-            "host.v0",
-            "image_release",
+            WAT_IMPORT_MODULE,
+            "AE_image_release",
             |mut caller: Caller<'_, HostState>, id: i32| {
                 let id = id as u32;
                 caller.data_mut().image_ids.remove(&id);
@@ -1669,8 +2127,8 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
         .map_err(runtime_error)?;
     linker
         .func_wrap(
-            "host.v0",
-            "frame_begin",
+            WAT_IMPORT_MODULE,
+            "AE_frame_begin",
             |mut caller: Caller<'_, HostState>, r: f32, g: f32, b: f32, a: f32| {
                 if !normalized(&[r, g, b, a]) {
                     return caller
@@ -1693,8 +2151,8 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
         .map_err(runtime_error)?;
     linker
         .func_wrap(
-            "host.v0",
-            "transform_push",
+            WAT_IMPORT_MODULE,
+            "AE_transform_push",
             |mut caller: Caller<'_, HostState>,
              m11: f32,
              m12: f32,
@@ -1726,8 +2184,8 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
         .map_err(runtime_error)?;
     linker
         .func_wrap(
-            "host.v0",
-            "transform_pop",
+            WAT_IMPORT_MODULE,
+            "AE_transform_pop",
             |mut caller: Caller<'_, HostState>| {
                 if caller.data().transform_depth == 0 {
                     return caller
@@ -1748,8 +2206,8 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
         .map_err(runtime_error)?;
     linker
         .func_wrap(
-            "host.v0",
-            "path_begin",
+            WAT_IMPORT_MODULE,
+            "AE_path_begin",
             |mut caller: Caller<'_, HostState>, id: i32| {
                 if caller.data().frame.is_none() || caller.data().current_path.is_some() {
                     return caller.data_mut().reject(
@@ -1767,8 +2225,8 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
         .map_err(runtime_error)?;
     linker
         .func_wrap(
-            "host.v0",
-            "path_move",
+            WAT_IMPORT_MODULE,
+            "AE_path_move",
             |mut caller: Caller<'_, HostState>, x: f32, y: f32| {
                 push_path_segment(
                     &mut caller,
@@ -1781,8 +2239,8 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
         .map_err(runtime_error)?;
     linker
         .func_wrap(
-            "host.v0",
-            "path_line",
+            WAT_IMPORT_MODULE,
+            "AE_path_line",
             |mut caller: Caller<'_, HostState>, x: f32, y: f32| {
                 push_path_segment(
                     &mut caller,
@@ -1795,8 +2253,8 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
         .map_err(runtime_error)?;
     linker
         .func_wrap(
-            "host.v0",
-            "path_quad",
+            WAT_IMPORT_MODULE,
+            "AE_path_quad",
             |mut caller: Caller<'_, HostState>, cx: f32, cy: f32, x: f32, y: f32| {
                 push_path_segment(
                     &mut caller,
@@ -1812,8 +2270,8 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
         .map_err(runtime_error)?;
     linker
         .func_wrap(
-            "host.v0",
-            "path_cubic",
+            WAT_IMPORT_MODULE,
+            "AE_path_cubic",
             |mut caller: Caller<'_, HostState>,
              c1x: f32,
              c1y: f32,
@@ -1836,8 +2294,8 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
         .map_err(runtime_error)?;
     linker
         .func_wrap(
-            "host.v0",
-            "path_close",
+            WAT_IMPORT_MODULE,
+            "AE_path_close",
             |mut caller: Caller<'_, HostState>| {
                 push_path_segment(&mut caller, PathSegment::Close, &[], "path_close")
             },
@@ -1845,8 +2303,8 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
         .map_err(runtime_error)?;
     linker
         .func_wrap(
-            "host.v0",
-            "path_end",
+            WAT_IMPORT_MODULE,
+            "AE_path_end",
             |mut caller: Caller<'_, HostState>, width: f32, fill: i32, stroke: i32, flags: i32| {
                 let max_abs = caller.data().limits.max_coordinate_abs;
                 if !bounded_finite(&[width], max_abs) || width < 0.0 || flags != 0 {
@@ -1877,8 +2335,8 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
         .map_err(runtime_error)?;
     linker
         .func_wrap(
-            "host.v0",
-            "sprite",
+            WAT_IMPORT_MODULE,
+            "AE_sprite",
             |mut caller: Caller<'_, HostState>,
              id: i32,
              image_id: i32,
@@ -1947,8 +2405,8 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
         .map_err(runtime_error)?;
     linker
         .func_wrap(
-            "host.v0",
-            "line",
+            WAT_IMPORT_MODULE,
+            "AE_line",
             |mut caller: Caller<'_, HostState>,
              id: i32,
              x1: f32,
@@ -1982,8 +2440,8 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
         .map_err(runtime_error)?;
     linker
         .func_wrap(
-            "host.v0",
-            "circle",
+            WAT_IMPORT_MODULE,
+            "AE_circle",
             |mut caller: Caller<'_, HostState>,
              id: i32,
              x: f32,
@@ -2021,8 +2479,8 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
         .map_err(runtime_error)?;
     linker
         .func_wrap(
-            "host.v0",
-            "text",
+            WAT_IMPORT_MODULE,
+            "AE_text",
             |mut caller: Caller<'_, HostState>,
              id: i32,
              ptr: i32,
@@ -2061,8 +2519,8 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
         .map_err(runtime_error)?;
     linker
         .func_wrap(
-            "host.v0",
-            "frame_end",
+            WAT_IMPORT_MODULE,
+            "AE_frame_end",
             |mut caller: Caller<'_, HostState>| {
                 if caller.data().transform_depth != 0 || caller.data().current_path.is_some() {
                     return caller.data_mut().reject(
@@ -2086,8 +2544,8 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
         .map_err(runtime_error)?;
     linker
         .func_wrap(
-            "host.v0",
-            "audio",
+            WAT_IMPORT_MODULE,
+            "AE_audio",
             |mut caller: Caller<'_, HostState>, id: i32, volume: f32, pitch: f32, flags: i32| {
                 if !finite(&[volume, pitch])
                     || !(0.0..=1.0).contains(&volume)
@@ -2114,8 +2572,8 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
         .map_err(runtime_error)?;
     linker
         .func_wrap(
-            "host.v0",
-            "effect",
+            WAT_IMPORT_MODULE,
+            "AE_effect",
             |mut caller: Caller<'_, HostState>, kind: i32, a: i32, _b: i32| {
                 if caller.data().effects.len() >= caller.data().limits.max_effects {
                     return caller
@@ -2141,8 +2599,8 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
         .map_err(runtime_error)?;
     linker
         .func_wrap(
-            "host.v0",
-            "log",
+            WAT_IMPORT_MODULE,
+            "AE_log",
             |mut caller: Caller<'_, HostState>, _level: i32, ptr: i32, len: i32| match read_string(
                 &mut caller,
                 ptr,
