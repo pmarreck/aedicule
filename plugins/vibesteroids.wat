@@ -1021,8 +1021,9 @@
 		local.get $flame
 		(if (then
 			local.get $id i32.const 3 i32.add call $path_begin drop f32.const -5 f32.const -3 call $path_move drop
+			i64.const 0
 			i32.const 1024 i32.load i32.const 7 i32.and i64.extend_i32_u i64.const 2000000 i64.mul i64.const 12000000 i64.add
-			i64.const 0 i64.sub local.set $flame_x
+			i64.sub local.set $flame_x
 			local.get $flame_x call $to_host f32.const 0 call $path_line drop f32.const -5 f32.const 3 call $path_line drop
 			f32.const 2 i32.const 0 i32.const 0xff8a2bff i32.const 0 call $path_end drop))
 		call $transform_pop drop)

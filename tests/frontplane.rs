@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 
-use gpui_wasm::{AudioEvent, DrawCommand, Event, Frontplane, HostEffect, Key, Limits, MenuItem};
+use gpui_wasm::{
+    AudioEvent, DrawCommand, Event, Frontplane, HostEffect, Key, Limits, MenuItem, PathSegment,
+};
 
 const ASTEROIDS_WAT: &str = include_str!("../plugins/vibesteroids.wat");
 
@@ -333,6 +335,34 @@ fn initial_state_has_a_real_hud_and_five_jagged_asteroids() {
             .count(),
         2,
         "three lives should render as two reserve-ship icons"
+    );
+}
+
+#[test]
+fn animated_thruster_flame_stays_behind_the_ship() {
+    let mut frontplane = demo();
+    frontplane.event(Event::KeyDown(Key::Thrust)).unwrap();
+
+    let frame = frontplane.render().unwrap();
+    let flame_segments = frame
+        .commands
+        .iter()
+        .find_map(|command| match command {
+            DrawCommand::Path { id: 4, segments, .. } => Some(segments),
+            _ => None,
+        })
+        .expect("thrusting ship should render an animated flame path");
+    let flame_tip_x = flame_segments
+        .iter()
+        .find_map(|segment| match segment {
+            PathSegment::Line(end) if end.x != -5.0 => Some(end.x),
+            _ => None,
+        })
+        .expect("flame should have a distinct animated tip");
+
+    assert!(
+        flame_tip_x < -10.0,
+        "flame tip {flame_tip_x} must extend behind the hull tail at local x=-10"
     );
 }
 

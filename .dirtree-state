@@ -14,6 +14,7 @@ annotate=[
 	MEMORIES/Live WAT reloads need transactional candidate swap and explicit state schema = Project lesson from content-watched transactional hot reload and real-window verification
 	MEMORIES/Long headless simulations must divide Wasmtime work into refueled calls = Why deterministic headless simulation slices guest ticks across fresh Wasmtime fuel budgets
 	MEMORIES/Port per-second browser physics to fixed ticks by converting dimensions exactly once = Dimensional-analysis lesson for velocity, acceleration, rotation, and strict time thresholds in 60-Hz fixed simulation
+	MEMORIES/WAT subtraction negates a value only when zero is pushed before it = Records noncommutative WAT operand order and the local-space thruster regression.
 	PLAN.md = TDD work plan with completed milestones, curiosity pokes, and current fidelity tasks
 	PROJECT_OVERVIEW.md = Project purpose, terminology, and success definition
 	README.md = Public concept, architecture, live-reload demonstration, controls, status, and limitations

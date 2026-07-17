@@ -1,5 +1,11 @@
 # Plan
 
+- [x] Keep the animated thruster flame behind the ship for every heading.
+  (2026-07-16 23:49 EDT: red-to-green local-space path regression, complete
+  canonical suite, live state-preserving reload, and Peter visual confirmation)
+  - Curiosity poke: can a local-space regression catch the sign error without
+    coupling the test to GPUI's unavoidable floating-point projection?
+
 - [x] Define the spike boundary and provisional ABI in SPEC.md. (2026-07-15 EDT)
   - Curiosity poke: does a push-style render ABI remain usable in a browser
     host where nested WASM calls may be mediated by JavaScript?
