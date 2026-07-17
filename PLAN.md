@@ -20,8 +20,9 @@
   mechanics documentation from this generic repository. (2026-07-17 EDT)
   - Curiosity poke: does any remaining Rust fixture encode an application rule
     under a generic name?
-- [x] Publish the history-preserving repository rename to `mecha-aedicule`.
-  (2026-07-17 08:15 EDT: GitHub rename preserved public history and redirects;
+- [x] Publish the history-preserving repository rename, now canonical at
+  `pmarreck/aedicule`.
+  (2026-07-17 09:00 EDT: GitHub renames preserved public history and redirects;
   canonical remote and `yolo` commit independently verified, with CI observed
   through the ship gate)
   - Curiosity poke: which existing links and clone URLs need compatibility

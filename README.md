@@ -1,7 +1,7 @@
 # Mecha Aedicule
 
 [![Proof of concept](https://img.shields.io/badge/status-proof_of_concept-f59e0b)](#status)
-[![CI](https://github.com/pmarreck/mecha-aedicule/actions/workflows/ci.yml/badge.svg?branch=yolo)](https://github.com/pmarreck/mecha-aedicule/actions/workflows/ci.yml)
+[![CI](https://github.com/pmarreck/aedicule/actions/workflows/ci.yml/badge.svg?branch=yolo)](https://github.com/pmarreck/aedicule/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 A generic native [GPUI](https://www.gpui.rs/) frontplane for applications

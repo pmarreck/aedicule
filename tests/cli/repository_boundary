@@ -12,11 +12,24 @@ application_paths=(
 	"GAMEPLAY_DESIGN_RESEARCH.md"
 	"VIBESTEROIDS_BEHAVIOR_SPEC.md"
 )
+application_identifiers=(
+	"NewGame"
+	"HelpControls"
+	"new_game"
+	"help_controls"
+)
 failures=0
 
 for relative in "${application_paths[@]}"; do
 	if [[ -e "$root/$relative" ]]; then
 		printf 'application-owned path remains in generic frontplane: %s\n' "$relative" >&2
+		failures=$((failures + 1))
+	fi
+done
+
+for identifier in "${application_identifiers[@]}"; do
+	if rg --glob '*.rs' --fixed-strings --quiet "$identifier" "$root/src" "$root/tests"; then
+		printf 'application-shaped identifier remains in generic frontplane: %s\n' "$identifier" >&2
 		failures=$((failures + 1))
 	fi
 done

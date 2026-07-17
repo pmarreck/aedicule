@@ -28,7 +28,7 @@ use gpui_wasm::{
 use rodio::{DeviceSinkBuilder, MixerDeviceSink, buffer::SamplesBuffer};
 use smol::Timer;
 
-actions!(gpui_wasm, [NewGame, HelpControls, ReloadPlugin, Quit]);
+actions!(gpui_wasm, [NewApplication, ShowHelp, ReloadPlugin, Quit]);
 
 const LOGICAL_WIDTH: f32 = 1024.0;
 const LOGICAL_HEIGHT: f32 = 768.0;
@@ -126,8 +126,8 @@ fn native_menus(metadata: &Metadata, can_reload: bool) -> Vec<Menu> {
     let mut items: Vec<_> = standard_menu_entries(metadata)
         .into_iter()
         .map(|entry| match entry {
-            StandardMenuEntry::New(label) => MenuItem::action(label, NewGame),
-            StandardMenuEntry::Help(label) => MenuItem::action(label, HelpControls),
+            StandardMenuEntry::New(label) => MenuItem::action(label, NewApplication),
+            StandardMenuEntry::Help(label) => MenuItem::action(label, ShowHelp),
             StandardMenuEntry::Separator => MenuItem::Separator,
             StandardMenuEntry::Quit(label) => MenuItem::action(label, Quit),
         })
@@ -653,7 +653,7 @@ impl FrontplaneView {
         }
     }
 
-    fn new_game(&mut self, _: &NewGame, _: &mut Window, cx: &mut Context<Self>) {
+    fn new_application(&mut self, _: &NewApplication, _: &mut Window, cx: &mut Context<Self>) {
         self.fatal_error = None;
         if let Err(error) = self
             .frontplane
@@ -665,7 +665,7 @@ impl FrontplaneView {
         cx.notify();
     }
 
-    fn help_controls(&mut self, _: &HelpControls, _: &mut Window, cx: &mut Context<Self>) {
+    fn show_help(&mut self, _: &ShowHelp, _: &mut Window, cx: &mut Context<Self>) {
         if let Err(error) = self
             .frontplane
             .event(Event::MenuAction(7))
@@ -750,8 +750,8 @@ impl Render for FrontplaneView {
             .track_focus(&self.focus_handle)
             .on_key_down(cx.listener(Self::key_down))
             .on_key_up(cx.listener(Self::key_up))
-            .on_action(cx.listener(Self::new_game))
-            .on_action(cx.listener(Self::help_controls))
+            .on_action(cx.listener(Self::new_application))
+            .on_action(cx.listener(Self::show_help))
             .on_action(cx.listener(Self::reload_plugin))
             .on_action(cx.listener(Self::quit))
             .child(
@@ -820,7 +820,7 @@ impl Render for FrontplaneView {
                                     this.child(
                                         Button::new("new-game").primary().label(label).on_click(
                                             cx.listener(|this, _, window, cx| {
-                                                this.new_game(&NewGame, window, cx)
+                                                this.new_application(&NewApplication, window, cx)
                                             }),
                                         ),
                                     )
@@ -828,7 +828,7 @@ impl Render for FrontplaneView {
                                 .when_some(help_label, |this, label| {
                                     this.child(Button::new("help-controls").label(label).on_click(
                                         cx.listener(|this, _, window, cx| {
-                                            this.help_controls(&HelpControls, window, cx)
+                                            this.show_help(&ShowHelp, window, cx)
                                         }),
                                     ))
                                 })
@@ -1243,8 +1243,8 @@ fn run_application(startup: Startup) {
     app.run(move |cx| {
         gpui_component::init(cx);
         cx.bind_keys([
-            KeyBinding::new("ctrl-n", NewGame, None),
-            KeyBinding::new("f1", HelpControls, None),
+            KeyBinding::new("ctrl-n", NewApplication, None),
+            KeyBinding::new("f1", ShowHelp, None),
             KeyBinding::new("ctrl-r", ReloadPlugin, None),
             KeyBinding::new("ctrl-q", Quit, None),
         ]);
