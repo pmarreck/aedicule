@@ -39,8 +39,10 @@
 - [x] Provision the Thelio-signed GitHub webhook for `pmarreck/aedicule`.
   (2026-07-18 14:37 EDT: GitHub hook `654189443` is active, accepts `push`,
   and returned `200` from Thelio.)
-- [ ] Push the first post-provisioning `yolo` commit and confirm its Mechatron
+- [x] Push the first post-provisioning `yolo` commit and confirm its Mechatron
   build reaches `PASSING` and creates the dynamic badge JSON.
+  (2026-07-18 14:39 EDT: signed push `7152ff8` was accepted; the public badge
+  endpoint reports `PASSING`.)
 - [x] Complete the host half of the 120 Hz migration by wiring the exact
   rational accumulator into the live GPUI loop with bounded catch-up. Do not
   call the end-to-end migration complete until `vibesteroids_wat` proves equal
