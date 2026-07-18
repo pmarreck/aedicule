@@ -36,9 +36,11 @@
   passed; its first webhook delivery needs the privileged Thelio provisioner.)
   - Curiosity poke: can a later Cargo dependency-artifact layer keep the
     isolated test derivation from recompiling GPUI and Wasmtime unnecessarily?
-- [ ] Provision the Thelio-signed GitHub webhook for `pmarreck/aedicule` once
-  a privileged host session is available, then confirm the first Mechatron
-  build reaches `PASSING`.
+- [x] Provision the Thelio-signed GitHub webhook for `pmarreck/aedicule`.
+  (2026-07-18 14:37 EDT: GitHub hook `654189443` is active, accepts `push`,
+  and returned `200` from Thelio.)
+- [ ] Push the first post-provisioning `yolo` commit and confirm its Mechatron
+  build reaches `PASSING` and creates the dynamic badge JSON.
 - [x] Complete the host half of the 120 Hz migration by wiring the exact
   rational accumulator into the live GPUI loop with bounded catch-up. Do not
   call the end-to-end migration complete until `vibesteroids_wat` proves equal

@@ -18,6 +18,7 @@ annotate=[
 	MEMORIES/Late fixed-step wakes need absolute deadlines and timestamped input = Absolute-deadline wake, timestamped event ordering, overload preservation, and hot-reload generation lesson
 	MEMORIES/Live WAT reloads need transactional candidate swap and explicit state schema = Project lesson from content-watched transactional hot reload and real-window verification
 	MEMORIES/Long headless simulations must divide Wasmtime work into refueled calls = Why deterministic headless simulation slices guest ticks across fresh Wasmtime fuel budgets
+	MEMORIES/Mechatron needs a post-hook push to create its first badge = Records why a new Mechatron webhook needs a subsequent signed push before its dynamic badge exists.
 	MEMORIES/Mutable WAT belongs outside the native Nix source closure = Why runtime application WAT must remain outside the native Rust derivation, with structural enforcement
 	MEMORIES/Nix sandboxed CLI scripts need patched interpreter paths = Records preserving portable scripts while patching copied interpreters in Nix checks.
 	PLAN.md = Current completed and pending project behaviors with curiosity pokes and finish gates
