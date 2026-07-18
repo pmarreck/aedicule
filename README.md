@@ -8,10 +8,6 @@
 A generic native [GPUI](https://www.gpui.rs/) frontplane for applications
 written directly in WebAssembly Text format (WAT).
 
-The product name is **Mecha Aedicule**; its project, repository, and path
-identifier is `aedicule`, leaving room for a future move under Peter's `mecha`
-organization without the redundant `mecha/mecha-aedicule` form.
-
 Mecha Aedicule asks a slightly strange but useful question:
 
 > Can a small, capability-bounded WAT module own an application's state and
