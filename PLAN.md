@@ -43,6 +43,12 @@
   build reaches `PASSING` and creates the dynamic badge JSON.
   (2026-07-18 14:39 EDT: signed push `7152ff8` was accepted; the public badge
   endpoint reports `PASSING`.)
+- [x] Make `run` resolve the Aedicule flake and Cargo manifest from its own
+  script directory when an adjacent application invokes it.
+  (2026-07-19 11:07 EDT: fake-Nix foreign-CWD regression, full suite, and
+  optimized build passed.)
+  - Curiosity poke: does this remain correct when a caller invokes a symlink to
+    the launcher rather than the checked-out script directly?
 - [x] Complete the host half of the 120 Hz migration by wiring the exact
   rational accumulator into the live GPUI loop with bounded catch-up. Do not
   call the end-to-end migration complete until `vibesteroids_wat` proves equal

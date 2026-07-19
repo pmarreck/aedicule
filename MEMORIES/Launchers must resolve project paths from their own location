@@ -1,0 +1,6 @@
+An adjacent application may execute Aedicule's `run` script while retaining its
+own working directory. The launcher must resolve its flake path and Cargo
+manifest from `BASH_SOURCE[0]`, then pass both as absolute paths without
+changing the caller's CWD. `tests/cli/launcher_cwd` uses a fake `nix` to
+classify the complete argument vector and the observed CWD, so a future wrapper
+edit cannot silently fall back to the application checkout.

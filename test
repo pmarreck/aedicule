@@ -22,6 +22,7 @@ run_check() {
 
 run_check ./tests/cli/development_dependencies
 run_check ./tests/cli/repository_boundary
+run_check ./tests/cli/launcher_cwd
 run_check cargo test --no-default-features
 run_check cargo test --bin gpui-wasm
 run_check cargo test --test gui_cli

@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+
+set -u
+
+source "$HOME/dotfiles/bin/src/capture.bash"
+
+root=$(cd "$(dirname "$0")/../.." && pwd -P)
+tmp=$(mktemp -d "$TMPDIR/aedicule-launcher-cwd.XXXXXX")
+trap 'rm -rf "$tmp"' EXIT
+foreign_dir="$tmp/adjacent application"
+fake_bin="$tmp/fake-bin"
+argv_file="$tmp/nix-argv"
+cwd_file="$tmp/nix-cwd"
+mkdir -p "$foreign_dir" "$fake_bin"
+
+printf '%s\n' \
+	'#!/usr/bin/env bash' \
+	'set -u' \
+	'printf "%s\0" "$@" > "$FAKE_NIX_ARGV"' \
+	'pwd -P > "$FAKE_NIX_CWD"' \
+	> "$fake_bin/nix"
+chmod +x "$fake_bin/nix"
+
+out=
+err=
+rc=0
+capture env \
+	PATH="$fake_bin:$PATH" \
+	FAKE_NIX_ARGV="$argv_file" \
+	FAKE_NIX_CWD="$cwd_file" \
+	bash -c 'cd "$1" && exec "$2" --watch "$3"' \
+	bash "$foreign_dir" "$root/run" "$foreign_dir/code.wat"
+
+failures=0
+if (( rc != 0 )); then
+	printf 'run failed from a foreign working directory: %s\n' "$err" >&2
+	failures=$((failures + 1))
+fi
+
+expected=(
+	develop
+	"$root"
+	-c
+	cargo
+	run
+	--manifest-path
+	"$root/Cargo.toml"
+	--release
+	--
+	--watch
+	"$foreign_dir/code.wat"
+)
+mapfile -d '' -t observed < "$argv_file"
+if (( ${#observed[@]} != ${#expected[@]} )); then
+	printf 'run passed %d nix arguments; expected %d\n' "${#observed[@]}" "${#expected[@]}" >&2
+	failures=$((failures + 1))
+else
+	for index in "${!expected[@]}"; do
+		if [[ "${observed[$index]}" != "${expected[$index]}" ]]; then
+			printf 'nix argument %d was %q; expected %q\n' \
+			"$index" "${observed[$index]}" "${expected[$index]}" >&2
+			failures=$((failures + 1))
+		fi
+	done
+fi
+
+if [[ $(<"$cwd_file") != "$foreign_dir" ]]; then
+	printf 'run changed the caller working directory\n' >&2
+	failures=$((failures + 1))
+fi
+
+exit "$failures"
