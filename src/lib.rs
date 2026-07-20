@@ -31,9 +31,50 @@ pub const FALLBACK_WAT: &str = include_str!("fallback.wat");
 pub const DEFAULT_SIMULATION_HZ: u32 = 60;
 pub const MAX_SIMULATION_HZ: u32 = 1_000;
 pub const MAX_TICK_RATE_DENOMINATOR: u32 = 1_000_000;
+/// Stable terminal prefix for rejected external WAT sources.
+pub const WAT_REJECTION_DIAGNOSTIC_PREFIX: &str = "AEDICULE_WAT_REJECTED";
 
 const NANOS_PER_SECOND: u128 = 1_000_000_000;
 const WAT_IMPORT_MODULE: &str = wat_abi::IMPORT_MODULE;
+
+/// Identifies whether a rejection retained the embedded fallback or the last
+/// known-good external guest, so terminal diagnostics describe the survivor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WatRejectionStage {
+    InitialLoad,
+    Reload,
+}
+
+impl WatRejectionStage {
+    fn label(self) -> &'static str {
+        match self {
+            Self::InitialLoad => "initial-load",
+            Self::Reload => "reload",
+        }
+    }
+
+    fn survivor(self) -> &'static str {
+        match self {
+            Self::InitialLoad => "embedded fallback remains active",
+            Self::Reload => "previous plugin remains active",
+        }
+    }
+}
+
+/// Renders a stable, grep-friendly terminal diagnostic without performing I/O,
+/// so native watcher tests can prove the source, error, and retained guest.
+pub fn format_wat_rejection_diagnostic(
+    path: &Path,
+    stage: WatRejectionStage,
+    error: &str,
+) -> String {
+    format!(
+        "{WAT_REJECTION_DIAGNOSTIC_PREFIX}: {}: {}: {error}: {}",
+        stage.label(),
+        path.display(),
+        stage.survivor(),
+    )
+}
 
 /// An exact fixed-step frequency expressed as whole ticks per rational second.
 /// This keeps fractional display modes such as 60,000/1,001 Hz out of `f32`.
@@ -1124,6 +1165,11 @@ pub enum Event {
         x: f32,
         y: f32,
     },
+    PointerScroll {
+        unit: PointerScrollUnit,
+        delta_x: f32,
+        delta_y: f32,
+    },
     Viewport {
         width: f32,
         height: f32,
@@ -1133,6 +1179,59 @@ pub enum Event {
     /// Host-reported nominal display mode. The numerator travels in the `code`
     /// slot and the bounded denominator in `a` for WAT ABI event kind 9.
     DisplayRefresh(TickRate),
+}
+
+/// Identifies the portable pointer buttons that Aedicule adapters currently
+/// expose to WAT without leaking platform-specific button representations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+pub enum PointerButton {
+    Primary = 1,
+    Secondary = 2,
+    Middle = 3,
+}
+
+impl PointerButton {
+    /// Creates the stable ABI press edge with logical-pixel coordinates.
+    pub fn down(self, x: f32, y: f32) -> Event {
+        Event::PointerDown {
+            button: self as u32,
+            x,
+            y,
+        }
+    }
+
+    /// Creates the matching release edge so guests can clear held state.
+    pub fn up(self, x: f32, y: f32) -> Event {
+        Event::PointerUp {
+            button: self as u32,
+            x,
+            y,
+        }
+    }
+}
+
+/// Preserves whether GPUI reported discrete wheel lines or precise logical
+/// pixels, avoiding a platform-dependent conversion constant at the WAT ABI.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+pub enum PointerScrollUnit {
+    Lines = 1,
+    LogicalPixels = 2,
+}
+
+impl PointerScrollUnit {
+    /// Creates a two-axis scroll edge while omitting phase-only zero motion.
+    pub fn event(self, delta_x: f32, delta_y: f32) -> Option<Event> {
+        if delta_x == 0.0 && delta_y == 0.0 {
+            return None;
+        }
+        Some(Event::PointerScroll {
+            unit: self,
+            delta_x,
+            delta_y,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1559,6 +1658,11 @@ impl Frontplane {
             Event::MenuAction(id) => (7, id as i32, 0.0, 0.0),
             Event::Focus(focused) => (8, i32::from(focused), 0.0, 0.0),
             Event::DisplayRefresh(rate) => (9, rate.numerator as i32, rate.denominator as f32, 0.0),
+            Event::PointerScroll {
+                unit,
+                delta_x,
+                delta_y,
+            } => (10, unit as i32, delta_x, delta_y),
         };
         validate_bounded_numbers(
             "AE_event",

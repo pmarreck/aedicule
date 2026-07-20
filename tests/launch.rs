@@ -6,6 +6,7 @@ use std::{
 
 use gpui_wasm::{
     FALLBACK_WAT, FileRevision, Frontplane, LaunchAction, Limits, PluginSource, RevisionTracker,
+    WatRejectionStage, format_wat_rejection_diagnostic,
     resolve_launch as resolve_launch_with_default,
 };
 
@@ -188,6 +189,34 @@ fn revision_tracker_reports_each_distinct_editor_save_once() {
             FileRevision::Content(b"fixed".to_vec()),
         ]
     );
+}
+
+#[test]
+fn wat_rejections_have_searchable_stage_path_error_and_survivor_diagnostics() {
+    let path = Path::new("/applications/example/code.wat");
+    let cases = [
+        (
+            WatRejectionStage::InitialLoad,
+            "invalid frame lifecycle: unsupported synth filter",
+            "AEDICULE_WAT_REJECTED: initial-load: /applications/example/code.wat: invalid frame lifecycle: unsupported synth filter: embedded fallback remains active",
+        ),
+        (
+            WatRejectionStage::Reload,
+            "invalid frame lifecycle: unsupported synth filter",
+            "AEDICULE_WAT_REJECTED: reload: /applications/example/code.wat: invalid frame lifecycle: unsupported synth filter: previous plugin remains active",
+        ),
+    ];
+
+    let actual: Vec<_> = cases
+        .iter()
+        .map(|(stage, error, _)| format_wat_rejection_diagnostic(path, *stage, error))
+        .collect();
+    let expected: Vec<_> = cases
+        .iter()
+        .map(|(_, _, expected)| expected.to_string())
+        .collect();
+
+    assert_eq!(actual, expected);
 }
 
 #[test]

@@ -42,6 +42,27 @@ Set `AE_DISPLAY_REFRESH_RATE` before process startup to override the initial nom
 
 All imports use `(import "aedicule.v0" "NAME" (func ...))`.
 
+## Input events
+
+`AE_event(kind, code, a, b)` carries host input at an ordered fixed-step boundary. A host may omit an event kind it cannot observe, but it must not invent application semantics.
+
+| Kind | Event | `code`, `a`, `b` |
+| ---: | --- | --- |
+| 1 | Key down | `code` is a physical-key ID; `a = b = 0` |
+| 2 | Key up | Same key ID; `a = b = 0` |
+| 3 | Pointer move | `code = 0`; `a = x`, `b = y` logical pixels |
+| 4 | Pointer down | `code` is button ID; `a = x`, `b = y` logical pixels |
+| 5 | Pointer up | `code` is button ID; `a = x`, `b = y` logical pixels |
+| 6 | Viewport | `code = 0`; `a = width`, `b = height` logical pixels |
+| 7 | Menu action | `code` is the guest-declared action ID; `a = b = 0` |
+| 8 | Focus | `code = 1` when focused, `0` when unfocused; `a = b = 0` |
+| 9 | Display refresh | `code = numerator_hz`; `a = denominator`, `b = 0` |
+| 10 | Pointer scroll | `code` is unit ID; `a = horizontal delta`, `b = vertical delta` |
+
+Physical-key IDs are `1` left, `2` right, `3` up, `4` space, `5` P, `6` R, `7` F, `8` K, `9` B, `10` H, `11` Escape, and `12` F1. Pointer button IDs are `1` primary/left, `2` secondary/right, and `3` middle/wheel-click. Native canvas adapters emit down and up edges for all three IDs.
+
+Pointer-scroll unit IDs are `1` lines and `2` logical pixels. Positive `a` means leftward motion; positive `b` means upward motion. Hosts preserve both axes and omit zero-delta scroll events.
+
 ### `AE_title`
 
 ```wat

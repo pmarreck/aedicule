@@ -51,6 +51,7 @@ annotate=[
 	tests/gui_cli.rs = Native GUI runner help/about/error CLI contract tests without opening a window
 	tests/hot_reload.rs = Transactional candidate swap, compatible state transfer, schema restart, and rollback coverage
 	tests/launch.rs = Pure generic source, packaged-default, watch, seed, and revision-coalescing tests
+	tests/pointer_buttons.rs = Stable pointer-button, release-edge, and two-axis line/pixel scroll ABI plus native-adapter classifier tests.
 	tests/render_cli.rs = CLI coverage for frame differences, spaced paths, help/about, and invalid options.
 	tests/snapshot.rs = Neutral guest fixture proving generic render purity and snapshot restore/rejection semantics
 	tests/svg_export.rs = Pure generic SVG artifact coverage with a neutral stateful WAT fixture

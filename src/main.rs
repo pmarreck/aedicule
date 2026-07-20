@@ -10,7 +10,8 @@ use std::{
 use gpui::{
     AnyWindowHandle, App, AppContext as _, Bounds, Context, FocusHandle, Focusable, Hsla,
     InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent, KeyUpEvent, Menu, MenuItem,
-    ParentElement as _, PathBuilder, Render, SharedString, Styled as _, TextAlign, TextRun, Window,
+    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement as _, PathBuilder,
+    Render, ScrollDelta, ScrollWheelEvent, SharedString, Styled as _, TextAlign, TextRun, Window,
     WindowBounds, WindowOptions, actions, canvas, div, point, prelude::FluentBuilder as _, px,
     rgba, size,
 };
@@ -22,9 +23,10 @@ use gpui_component::{
 use gpui_wasm::{
     Affine, AudioEvent, DEFAULT_PLUGIN_ENV, DrawCommand, Event, FALLBACK_WAT, FileRevision,
     FrameOutput, Frontplane, HostEffect, Key, LaunchAction, Limits, Metadata, PathSegment,
-    PluginInit, PluginSource, RevisionTracker, SimulationCall, SimulationScheduler, StateTransfer,
-    SynthFilter, SynthVoice, SynthWaveform, display_refresh_rate_from_environment,
-    initialize_frontplane, prepare_reload, resolve_launch,
+    PluginInit, PluginSource, PointerButton, PointerScrollUnit, RevisionTracker, SimulationCall,
+    SimulationScheduler, StateTransfer, SynthFilter, SynthVoice, SynthWaveform, WatRejectionStage,
+    display_refresh_rate_from_environment, format_wat_rejection_diagnostic, initialize_frontplane,
+    prepare_reload, resolve_launch,
 };
 use rodio::{DeviceSinkBuilder, MixerDeviceSink, buffer::SamplesBuffer};
 use smol::Timer;
@@ -678,10 +680,19 @@ impl FrontplaneView {
 
     fn set_reload_error(&mut self, path: &Path, message: &str, detail: Option<&str>) {
         self.reload_notice = None;
-        self.reload_error = Some(match detail {
+        let rendered = match detail {
             Some(detail) => format!("{message}: {}: {detail}", path.display()),
             None => format!("{message}: {}", path.display()),
-        });
+        };
+        eprintln!(
+            "{}",
+            format_wat_rejection_diagnostic(
+                path,
+                WatRejectionStage::Reload,
+                detail.unwrap_or(message),
+            )
+        );
+        self.reload_error = Some(rendered);
     }
 
     /// Executes one pure scheduler plan, renders at most once, and drains
@@ -760,6 +771,62 @@ impl FrontplaneView {
         };
         self.queue_native_event(Event::KeyUp(key), cx);
     }
+
+    /// Forwards canvas-relative GPUI mouse motion through the scheduler so a
+    /// guest observes it before the next exact fixed-step boundary.
+    fn pointer_move(&mut self, event: &MouseMoveEvent, _: &mut Window, cx: &mut Context<Self>) {
+        self.queue_native_event(
+            Event::PointerMove {
+                x: f32::from(event.position.x),
+                y: f32::from(event.position.y),
+            },
+            cx,
+        );
+    }
+
+    /// Converts a GPUI press into a shared pointer edge before its next exact
+    /// simulation boundary, keeping native platform button names out of WAT.
+    fn pointer_down(
+        &mut self,
+        button: PointerButton,
+        event: &MouseDownEvent,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.queue_native_event(
+            button.down(f32::from(event.position.x), f32::from(event.position.y)),
+            cx,
+        );
+    }
+
+    /// Pairs a native pointer release with the same stable button ID so WAT
+    /// guests cannot retain a stuck fire or thrust state after a click ends.
+    fn pointer_up(
+        &mut self,
+        button: PointerButton,
+        event: &MouseUpEvent,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.queue_native_event(
+            button.up(f32::from(event.position.x), f32::from(event.position.y)),
+            cx,
+        );
+    }
+
+    /// Preserves GPUI's horizontal/vertical scroll axes and native unit kind,
+    /// then stamps the non-zero movement in the scheduler's input timeline.
+    fn pointer_scroll(&mut self, event: &ScrollWheelEvent, _: &mut Window, cx: &mut Context<Self>) {
+        let event = match event.delta {
+            ScrollDelta::Lines(delta) => PointerScrollUnit::Lines.event(delta.x, delta.y),
+            ScrollDelta::Pixels(delta) => {
+                PointerScrollUnit::LogicalPixels.event(f32::from(delta.x), f32::from(delta.y))
+            }
+        };
+        if let Some(event) = event {
+            self.queue_native_event(event, cx);
+        }
+    }
 }
 
 impl Focusable for FrontplaneView {
@@ -823,6 +890,62 @@ impl Render for FrontplaneView {
                     .absolute()
                     .inset_0()
                     .bg(rgba(frame.background))
+                    .on_mouse_move(cx.listener(Self::pointer_move))
+                    .on_scroll_wheel(cx.listener(Self::pointer_scroll))
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, event: &MouseDownEvent, window, cx| {
+                            this.pointer_down(PointerButton::Primary, event, window, cx);
+                        }),
+                    )
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(|this, event: &MouseUpEvent, window, cx| {
+                            this.pointer_up(PointerButton::Primary, event, window, cx);
+                        }),
+                    )
+                    .on_mouse_up_out(
+                        MouseButton::Left,
+                        cx.listener(|this, event: &MouseUpEvent, window, cx| {
+                            this.pointer_up(PointerButton::Primary, event, window, cx);
+                        }),
+                    )
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener(|this, event: &MouseDownEvent, window, cx| {
+                            this.pointer_down(PointerButton::Secondary, event, window, cx);
+                        }),
+                    )
+                    .on_mouse_up(
+                        MouseButton::Right,
+                        cx.listener(|this, event: &MouseUpEvent, window, cx| {
+                            this.pointer_up(PointerButton::Secondary, event, window, cx);
+                        }),
+                    )
+                    .on_mouse_up_out(
+                        MouseButton::Right,
+                        cx.listener(|this, event: &MouseUpEvent, window, cx| {
+                            this.pointer_up(PointerButton::Secondary, event, window, cx);
+                        }),
+                    )
+                    .on_mouse_down(
+                        MouseButton::Middle,
+                        cx.listener(|this, event: &MouseDownEvent, window, cx| {
+                            this.pointer_down(PointerButton::Middle, event, window, cx);
+                        }),
+                    )
+                    .on_mouse_up(
+                        MouseButton::Middle,
+                        cx.listener(|this, event: &MouseUpEvent, window, cx| {
+                            this.pointer_up(PointerButton::Middle, event, window, cx);
+                        }),
+                    )
+                    .on_mouse_up_out(
+                        MouseButton::Middle,
+                        cx.listener(|this, event: &MouseUpEvent, window, cx| {
+                            this.pointer_up(PointerButton::Middle, event, window, cx);
+                        }),
+                    )
                     .child(
                         canvas(
                             move |bounds, _, _| (bounds, frame),
@@ -1246,8 +1369,7 @@ fn startup(source: PluginSource, watch: bool, seed: Option<u64>) -> Result<Start
             let mut revisions = RevisionTracker::default();
             revisions.observe(&revision);
             let result = source_text(&path, &revision).and_then(|source| {
-                load_frontplane(&source, plugin_init)
-                    .map_err(|error| format!("{}: {}: {error}", EN.reload_failed, path.display()))
+                load_frontplane(&source, plugin_init).map_err(|error| error.to_string())
             });
             match result {
                 Ok((frontplane, frame)) => Startup {
@@ -1262,6 +1384,15 @@ fn startup(source: PluginSource, watch: bool, seed: Option<u64>) -> Result<Start
                     plugin_init,
                 },
                 Err(error) => {
+                    let reload_error = format!("{}: {}: {error}", EN.reload_failed, path.display());
+                    eprintln!(
+                        "{}",
+                        format_wat_rejection_diagnostic(
+                            &path,
+                            WatRejectionStage::InitialLoad,
+                            &error,
+                        )
+                    );
                     let (frontplane, frame) = load_fallback(plugin_init);
                     Startup {
                         frontplane,
@@ -1271,7 +1402,7 @@ fn startup(source: PluginSource, watch: bool, seed: Option<u64>) -> Result<Start
                             watch,
                             revisions,
                         }),
-                        reload_error: Some(error),
+                        reload_error: Some(reload_error),
                         plugin_init,
                     }
                 }

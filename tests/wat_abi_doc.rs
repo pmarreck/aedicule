@@ -20,4 +20,14 @@ fn checked_in_wat_abi_reference_is_the_generated_canonical_document() {
         checked_in.contains("60000/1001"),
         "generated ABI reference preserves the exact nominal-rate spelling"
     );
+    assert!(
+        checked_in.contains(
+            "Pointer button IDs are `1` primary/left, `2` secondary/right, and `3` middle/wheel-click."
+        ),
+        "generated ABI reference assigns all stable cross-platform pointer button IDs"
+    );
+    assert!(
+        checked_in.contains("| 10 | Pointer scroll |"),
+        "generated ABI reference documents two-axis pointer scrolling"
+    );
 }

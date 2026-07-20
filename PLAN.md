@@ -49,6 +49,13 @@
   optimized build passed.)
   - Curiosity poke: does this remain correct when a caller invokes a symlink to
     the launcher rather than the checked-out script directly?
+- [x] Standardize native pointer buttons and two-axis wheel motion, including
+  primary/secondary/middle down, up, and up-out edges; mirror initial/reload WAT
+  rejection diagnostics to stderr while retaining the fallback or previous
+  guest. (2026-07-20 15:07 EDT: full core suite, native GUI/unit/CLI tests,
+  optimized build, and warning-denied release compile passed.)
+  - Curiosity poke: should a future pointer-capture contract distinguish an
+    OS-cancelled gesture from an ordinary release without adding guest state?
 - [x] Complete the host half of the 120 Hz migration by wiring the exact
   rational accumulator into the live GPUI loop with bounded catch-up. Do not
   call the end-to-end migration complete until `vibesteroids_wat` proves equal
