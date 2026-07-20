@@ -2,9 +2,8 @@
 
 set -u
 
-source "$HOME/dotfiles/bin/src/capture.bash"
-
 root=$(cd "$(dirname "$0")/../.." && pwd -P)
+source "$root/tests/lib/capture.bash"
 tmp=$(mktemp -d "$TMPDIR/aedicule-launcher-cwd.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 foreign_dir="$tmp/adjacent application"

@@ -1,5 +1,8 @@
 # Plan
 
+- [x] Make the launcher CLI regression test self-contained instead of relying
+  on a developer's private `$HOME/dotfiles` checkout. (2026-07-20 15:58 EDT)
+
 - [x] Establish a bounded Wasmtime ABI and neutral WAT fixtures.
   (2026-07-16 EDT)
   - Curiosity poke: which capability first fails to generalize to a second,
