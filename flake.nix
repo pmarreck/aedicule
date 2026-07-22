@@ -478,6 +478,7 @@
 						cargoDeps = applicationCargoDeps;
 						doCheck = true;
 						nativeBuildInputs = [
+							pkgs.actionlint
 							pkgs.pkg-config
 							pkgs.cmake
 							pkgs.clang
@@ -494,7 +495,8 @@
 							patchShebangs tests/cli/development_dependencies tests/cli/repository_boundary \
 								tests/cli/document_packages tests/cli/demo_snapshots \
 								tests/cli/macos_reproducibility tests/cli/reproducible_releases \
-								tests/cli/web_i18n packaging/macos/canonicalize_uuid check_reproducible
+								tests/cli/web_i18n tests/cli/github_pages \
+								packaging/macos/canonicalize_uuid check_reproducible
 							cargo test --no-default-features --features native-runtime
 							cargo test --bin gpui-wasm
 							cargo rustc --release --bin gpui-wasm -- -D warnings
@@ -507,6 +509,7 @@
 							./tests/cli/macos_reproducibility
 							./tests/cli/reproducible_releases
 							./tests/cli/web_i18n
+							./tests/cli/github_pages
 							runHook postCheck
 						'';
 						installPhase = ''
@@ -537,6 +540,7 @@
 							mkdir -p $out
 							install -Dm644 ${./web/index.html} $out/index.html
 							install -Dm644 ${./web/bootstrap.js} $out/bootstrap.js
+							install -Dm644 ${./web/coi-serviceworker.js} $out/coi-serviceworker.js
 							install -Dm644 ${./packaging/web/manifest.webmanifest} $out/manifest.webmanifest
 							install -Dm644 ${./assets/icons/aedicule-app.png} $out/icon.png
 							cp bindgen/aedicule_web.js bindgen/aedicule_web_bg.wasm $out/
@@ -583,6 +587,7 @@
 							cp ${./packaging/web/index.html} $out/index.html
 							cp ${./packaging/web/launcher.mjs} $out/launcher.mjs
 							cp ${./packaging/web/launcher-i18n.mjs} $out/launcher-i18n.mjs
+							cp ${./web/coi-serviceworker.js} $out/coi-serviceworker.js
 							cp ${./packaging/web/manifest.webmanifest} $out/manifest.webmanifest
 							cp ${./assets/icons/aedicule-app.png} $out/icon.png
 							cp -R ${ulam}/. $out/ulam-flower/

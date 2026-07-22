@@ -9,7 +9,7 @@ expect_text() {
 	file=$1
 	text=$2
 	message=$3
-	if ! rg -F "$text" "$file" >/dev/null; then
+	if ! rg -F -- "$text" "$file" >/dev/null; then
 		printf '%s\n' "$message" >&2
 		failures=$((failures + 1))
 	fi
@@ -21,6 +21,12 @@ expect_text "$root/web/index.html" 'aria-live="polite"' \
 	'browser startup status does not announce progress or failure accessibly'
 expect_text "$root/web/bootstrap.js" 'crossOriginIsolated' \
 	'browser bootstrap does not preflight cross-origin isolation'
+expect_text "$root/web/bootstrap.js" 'await globalThis.__AEDICULE_ISOLATION_READY' \
+	'browser bootstrap can race the headerless-host isolation reload'
+expect_text "$root/web/coi-serviceworker.js" 'Cross-Origin-Embedder-Policy' \
+	'headerless static hosts cannot enable shared WebAssembly memory'
+expect_text "$root/web/coi-serviceworker.js" 'Cross-Origin-Opener-Policy' \
+	'headerless static hosts cannot isolate the browser browsing context'
 expect_text "$root/web/bootstrap.js" 'SharedArrayBuffer' \
 	'browser bootstrap does not preflight shared WebAssembly memory support'
 expect_text "$root/web/bootstrap.js" 'navigator.gpu.requestAdapter()' \
@@ -49,6 +55,10 @@ expect_text "$root/tests/integration/web_browser_startup" 'touchCancel' \
 	'headless browser probe does not exercise touch cancellation'
 expect_text "$root/tests/integration/web_browser_startup" 'type: "input-summary"' \
 	'headless browser probe does not compact its synthetic input result'
+expect_text "$root/tests/integration/web_browser_startup" '--static-root serves PATH without isolation headers' \
+	'headless browser probe cannot emulate GitHub Pages response headers'
+expect_text "$root/tests/integration/web_browser_startup" 'serviceWorkerControlled' \
+	'headless browser snapshot does not expose service-worker control'
 expect_text "$root/test" 'run_web_build() {' \
 	'full suite does not capture and classify expected browser compiler diagnostics'
 expect_text "$root/test" 'warning: unstable feature specified for `-Ctarget-feature`: `atomics`' \

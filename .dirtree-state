@@ -85,6 +85,7 @@ annotate=[
 	tests/cli/demo_snapshots = Verifies bundled demo bytes against immutable provenance hashes.
 	tests/cli/development_dependencies = Classifies the complete external executable set required by the pure test shell.
 	tests/cli/document_packages = Cross-platform application/document packaging contract and runtime-library regression checks.
+	tests/cli/github_pages = Structural gate for the Pages workflow, isolation assets, official deployment actions, and public demo link.
 	tests/cli/launcher_cwd = Regression test that proves run resolves the flake and Cargo manifest from its own directory while preserving caller CWD.
 	tests/cli/macos_reproducibility = Exercises Mach-O UUID canonicalization, malformed input, and LuaJIT-only build integration.
 	tests/cli/repository_boundary = Classifier preventing production application artifacts and behavior oracles from entering the generic repo
@@ -113,5 +114,6 @@ annotate=[
 	web/Caddyfile = Caddy development-server headers required by GPUI's shared-memory WebAssembly backend
 	web/bootstrap.js = Loads code.wat before starting the generated Aedicule WebAssembly module
 	web/cargo-config.toml = Scoped nightly Cargo flags required for GPUI's browser WebAssembly backend
+	web/coi-serviceworker.js = Same-origin service-worker adapter that supplies cross-origin-isolation headers on static hosts such as GitHub Pages.
 	web/index.html = Minimal full-canvas HTML shell for a generic Aedicule web bundle
 ]

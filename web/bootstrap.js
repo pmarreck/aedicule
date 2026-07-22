@@ -66,6 +66,7 @@ function canvasSnapshot() {
 }
 
 async function loadApplication() {
+	await globalThis.__AEDICULE_ISOLATION_READY;
 	reportStartupDiagnostic("bootstrap");
 	showStartupStatus("Checking browser capabilities…");
 	const capabilities = browserCapabilities();

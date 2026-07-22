@@ -3,8 +3,10 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { accessSync, constants, existsSync, mkdtempSync, readFileSync, rmSync, watch } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { delimiter, extname, join, resolve, sep } from "node:path";
 
 const EXPECTED_STAGES = [
 	"bootstrap",
@@ -18,9 +20,12 @@ const EXPECTED_STAGES = [
 ];
 
 const HELP = `usage: web_browser_startup [--chrome PATH] [--timeout-ms N] URL
+       web_browser_startup [--chrome PATH] [--timeout-ms N] --static-root PATH
 
 Launch a headless Chromium browser, stream Aedicule's structured startup
 timeline, and reject browser exceptions or a missing/1x1 GPUI canvas.
+
+--static-root serves PATH without isolation headers, matching GitHub Pages.
 
 Environment:
   AEDICULE_CHROME               Chromium-family executable (overridden by --chrome)
@@ -30,6 +35,7 @@ Environment:
 function parseArguments(arguments_) {
 	let chrome;
 	let timeoutMs = 15_000;
+	let staticRoot;
 	let url;
 	for (let index = 0; index < arguments_.length; index += 1) {
 		const argument = arguments_[index];
@@ -49,6 +55,10 @@ function parseArguments(arguments_) {
 			timeoutMs = Number(arguments_[index += 1]);
 			continue;
 		}
+		if (argument === "--static-root") {
+			staticRoot = arguments_[index += 1];
+			continue;
+		}
 		if (argument.startsWith("-")) {
 			throw new Error(`unknown option: ${argument}`);
 		}
@@ -60,10 +70,58 @@ function parseArguments(arguments_) {
 	if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {
 		throw new Error("--timeout-ms must be a positive integer");
 	}
-	if (url === undefined) {
-		throw new Error("URL is required");
+	if ((url === undefined) === (staticRoot === undefined)) {
+		throw new Error("exactly one URL or --static-root PATH is required");
 	}
-	return { chrome, timeoutMs, url: new URL(url).href };
+	return { chrome, staticRoot, timeoutMs, url: url === undefined ? undefined : new URL(url).href };
+}
+
+const contentTypes = Object.freeze({
+	".html": "text/html; charset=utf-8",
+	".js": "text/javascript; charset=utf-8",
+	".json": "application/json; charset=utf-8",
+	".mjs": "text/javascript; charset=utf-8",
+	".png": "image/png",
+	".wasm": "application/wasm",
+	".wat": "text/plain; charset=utf-8",
+});
+
+/**
+ * Serves a bundle with ordinary static-host headers so the browser probe
+ * independently verifies Aedicule's GitHub Pages isolation adapter.
+ */
+async function startStaticServer(root) {
+	const absoluteRoot = resolve(root);
+	const server = createServer(async (request, response) => {
+		try {
+			const url = new URL(request.url ?? "/", "http://127.0.0.1");
+			const relative = decodeURIComponent(url.pathname).replace(/^\/+/, "");
+			const path = resolve(absoluteRoot, relative.endsWith("/") || relative === "" ? `${relative}index.html` : relative);
+			if (path !== absoluteRoot && !path.startsWith(`${absoluteRoot}${sep}`)) {
+				response.writeHead(403).end();
+				return;
+			}
+			const body = await readFile(path);
+			response.writeHead(200, {
+				"Cache-Control": "no-store",
+				"Content-Type": contentTypes[extname(path)] ?? "application/octet-stream",
+			});
+			response.end(body);
+		} catch (error) {
+			const status = error?.code === "ENOENT" ? 404 : 500;
+			response.writeHead(status, { "Content-Type": "text/plain; charset=utf-8" });
+			response.end(status === 404 ? "Not found\n" : "Static server failure\n");
+		}
+	});
+	await new Promise((accept, reject) => {
+		server.once("error", reject);
+		server.listen(0, "127.0.0.1", accept);
+	});
+	const address = server.address();
+	return {
+		close: () => new Promise((accept, reject) => server.close(error => error ? reject(error) : accept())),
+		url: `http://127.0.0.1:${address.port}/`,
+	};
 }
 
 function executableOnPath(name) {
@@ -212,6 +270,8 @@ async function pageSnapshot(protocol) {
 	const evaluation = await protocol.send("Runtime.evaluate", {
 		expression: `(() => ({
 			readyState: document.readyState,
+			crossOriginIsolated: globalThis.crossOriginIsolated === true,
+			serviceWorkerControlled: navigator.serviceWorker?.controller !== null,
 			status: document.getElementById("aedicule-startup-status")?.textContent ?? null,
 			canvases: Array.from(document.querySelectorAll("canvas"), canvas => {
 				const bounds = canvas.getBoundingClientRect();
@@ -488,8 +548,21 @@ async function inspect(options) {
 	}
 }
 
+async function main(options) {
+	let staticServer;
+	try {
+		if (options.staticRoot !== undefined) {
+			staticServer = await startStaticServer(options.staticRoot);
+			options = { ...options, url: staticServer.url };
+		}
+		await inspect(options);
+	} finally {
+		if (staticServer !== undefined) await staticServer.close();
+	}
+}
+
 try {
-	await inspect(parseArguments(process.argv.slice(2)));
+	await main(parseArguments(process.argv.slice(2)));
 } catch (error) {
 	process.stderr.write(`web_browser_startup: ${error.message}\n`);
 	process.exitCode = 1;

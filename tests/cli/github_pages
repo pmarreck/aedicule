@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+
+set -u
+
+root=$(cd "$(dirname "$0")/../.." && pwd -P)
+failures=0
+
+require_file() {
+	local path=$1 description=$2
+	if [[ ! -s $path ]]; then
+		printf 'missing %s: %s\n' "$description" "$path" >&2
+		failures=$((failures + 1))
+	fi
+}
+
+require_text() {
+	local path=$1 text=$2 description=$3
+	if ! rg -F -- "$text" "$path" >/dev/null 2>&1; then
+		printf '%s: %s lacks %s\n' "$description" "$path" "$text" >&2
+		failures=$((failures + 1))
+	fi
+}
+
+workflow="$root/.github/workflows/ci.yml"
+require_file "$workflow" 'CI and GitHub Pages workflow'
+
+if [[ -s $workflow ]]; then
+	require_text "$workflow" 'branches: [yolo]' 'Pages workflow trigger'
+	require_text "$workflow" 'pages: write' 'Pages deployment permission'
+	require_text "$workflow" 'id-token: write' 'Pages identity permission'
+	require_text "$workflow" 'nix build .#delivery-web' 'canonical web delivery build'
+	require_text "$workflow" '--static-root pages-site/ulam-flower' 'headerless Pages browser gate'
+	require_text "$workflow" 'actions/configure-pages@v5' 'official Pages configuration action'
+	require_text "$workflow" 'actions/upload-pages-artifact@v4' 'official Pages upload action'
+	require_text "$workflow" 'actions/deploy-pages@v4' 'official Pages deployment action'
+	if ! actionlint "$workflow"; then
+		failures=$((failures + 1))
+	fi
+fi
+
+require_file "$root/web/coi-serviceworker.js" 'cross-origin-isolation service worker'
+require_text "$root/web/index.html" './coi-serviceworker.js' 'demo isolation bootstrap'
+require_text "$root/packaging/web/index.html" './coi-serviceworker.js' 'gallery isolation bootstrap'
+require_text "$root/README.md" 'https://pmarreck.github.io/aedicule/' 'public demo link'
+
+exit "$failures"

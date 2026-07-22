@@ -37,3 +37,39 @@ jobs:
 
       - name: Build complete release matrix
         run: nix build .#release-all --out-link result-all --print-build-logs
+
+      - name: Stage exact GitHub Pages delivery
+        run: |
+          nix build .#delivery-web --out-link result-web --print-build-logs
+          mkdir pages-site
+          cp -RL result-web/. pages-site/
+          install -Dm644 /dev/null pages-site/.nojekyll
+
+      - name: Prove headerless Pages browser startup
+        run: ./tests/integration/web_browser_startup --static-root pages-site/ulam-flower
+
+      - name: Configure GitHub Pages
+        if: github.event_name == 'push' && github.ref == 'refs/heads/yolo'
+        uses: actions/configure-pages@v5
+
+      - name: Upload GitHub Pages artifact
+        if: github.event_name == 'push' && github.ref == 'refs/heads/yolo'
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: pages-site
+
+  pages:
+    name: Deploy browser demos
+    if: github.event_name == 'push' && github.ref == 'refs/heads/yolo'
+    needs: nix
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

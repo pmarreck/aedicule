@@ -1,5 +1,20 @@
 # Plan
 
+- [ ] Publish the bundled browser demos as a concise, modern GitHub Pages site.
+  - [x] Add a deterministic Pages workflow that deploys the exact
+    `delivery-web` output from `yolo`.
+    (2026-07-22 11:30 EDT)
+  - [x] Preserve shared-Wasm-memory startup on Pages' headerless static host
+    through a same-origin service-worker isolation adapter.
+    (2026-07-22 11:30 EDT)
+  - [x] Prove a Pages-style headerless server reaches a cross-origin-isolated,
+    drawable WebGPU canvas in headless Chrome.
+    (2026-07-22 11:30 EDT: Ulam Flower and Vibesteroids both passed the full
+    synthetic mouse, keyboard, and multi-touch probe.)
+  - [ ] Ship and verify the public gallery, then link it from the README.
+  - Curiosity poke: does mobile Safari accept the service-worker-controlled
+    reload and expose both SharedArrayBuffer and a usable WebGPU adapter?
+
 - [ ] Ship Aedicule and the Ulam Flower/Vibesteroids demos as one coherent
   six-target delivery matrix.
   - [x] Make `./build` produce the optimized current-platform application and

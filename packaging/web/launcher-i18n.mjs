@@ -7,13 +7,15 @@ export const supportedLocales = Object.freeze([
 ]);
 
 export const english = Object.freeze({
-	title: "Aedicule demos",
-	intro: "Choose a portable WebAssembly Text application.",
+	title: "Aedicule",
+	intro: "Two tiny WAT worlds. One portable frontplane.",
 	ulamName: "Ulam Flower",
-	ulamDescription: "An exact-arithmetic recursive complex walk with guest-owned interactive controls.",
+	ulamDescription: "Exact arithmetic, recursive motion.",
 	vibesteroidsName: "Vibesteroids",
-	vibesteroidsDescription: "A deterministic vector-space arcade application with generated audio.",
-	open: "Open demo",
+	vibesteroidsDescription: "Vector arcade action with generated audio.",
+	open: "Launch",
+	downloads: "Download apps",
+	source: "Source",
 });
 
 const rtlLocales = new Set(["ar", "he", "fa", "ps", "ur"]);
