@@ -34,8 +34,9 @@
   - [x] Paint asset-independent high-contrast title-bar glyphs over GPUI
     Component's still-functional native control hit regions, preserving host
     pointer occlusion. (2026-07-21 22:31 EDT)
-  - [ ] Receive Peter's visual acceptance for sliders, playback buttons, and
+  - [x] Receive Peter's visual acceptance for sliders, playback buttons, and
     the title-bar glyph fallback in the final keyed-snapshot ABI.
+    (2026-07-21 22:47 EDT)
   - Curiosity poke: can future integer composition imports share one declarative
     fixed-point type description instead of proliferating suffix-specific docs?
 
