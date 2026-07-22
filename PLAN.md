@@ -15,8 +15,23 @@
     (2026-07-22 02:58 EDT)
   - [ ] Produce deterministic archives with manifests/checksums and publish
     them as GitHub Release assets.
+    - [x] Audit v0.1.0 with independent Nix rebuilds; remove compile-time
+      `ahash` seeds from Linux, canonicalize/sign the Mach-O UUID from content,
+      and strip nondeterministic COFF metadata from Windows.
+      (2026-07-22 08:57 EDT)
+    - [x] Add a fail-accumulating `./check_reproducible` release gate that
+      independently rebuilds the raw web and five native targets before any
+      tag is published. (2026-07-22 08:57 EDT)
+    - [x] Pass that gate on the complete v0.1.1 tree for web, macOS/ARM64,
+      Linux/ARM64, Windows/ARM64, Linux/x86_64, and Windows/x86_64.
+      (2026-07-22 09:24 EDT)
+    - [ ] Publish a corrective v0.1.1 release without erasing the defective
+      v0.1.0 audit trail.
   - [ ] Expand Mechatron Prime and GitHub Actions gates to falsify the complete
     target/archive matrix, then watch both after pushing.
+    - [x] Pass `./test`, the isolated Nix test derivation, `./build`,
+      `./build_all`, every emitted checksum, and independent realization of
+      all six raw delivery targets. (2026-07-22 10:03 EDT)
     - [x] Reproduce and fix clean-runner-only browser-test failures: remove the
       private capture-helper dependency, include the top-level runner in the
       sandbox source, and suppress first-fetch Nix progress before classifying

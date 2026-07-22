@@ -11,13 +11,31 @@
 
 	outputs = { self, nixpkgs, fenix }:
 		let
-			version = "0.1.0";
+			version = "0.1.1";
 			systems = [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" ];
 			forAllSystems = nixpkgs.lib.genAttrs systems;
 			pkgsFor = system: import nixpkgs {
 				inherit system;
 				config.allowUnsupportedSystem = true;
 			};
+			luajitWithPackagesFor = pkgs: pkgs.luajit.withPackages (ps: with ps; [
+				# Enable only modules a project tool actually imports. Common choices:
+				# alt-getopt
+				# basexx
+				# busted
+				# cjson
+				# lpeg
+				# lua_cliargs
+				# luabitop
+				# luacheck
+				# luafilesystem
+				# luasocket
+				# luasystem
+				# moonscript
+				# penlight
+				# sqlite
+				# tl
+			]);
 			webToolchainFor = system:
 				let
 					fenixPackages = fenix.packages.${system};
@@ -91,6 +109,8 @@
 				let
 					pkgs = pkgsFor system;
 					linux = pkgs.stdenv.isLinux;
+					luajitWithPackages = luajitWithPackagesFor pkgs;
+					libcrypto = "${pkgs.openssl.out}/lib/libcrypto${pkgs.stdenv.hostPlatform.extensions.sharedLibrary}";
 					frontplaneSource = builtins.path {
 						path = ./.;
 						name = "gpui-wasm-frontplane-source";
@@ -127,12 +147,14 @@
 								root = toString ./.;
 								relative = pkgs.lib.removePrefix root (toString path);
 							in relative == ""
+								|| relative == "/.github"
 								|| builtins.elem relative [
 									"/build.rs"
 									"/Cargo.toml"
 									"/Cargo.lock"
 									"/WAT_ABI.md"
 									"/build_all"
+									"/check_reproducible"
 									"/delivery-targets"
 									"/demos"
 									"/flake.lock"
@@ -145,6 +167,7 @@
 									"/tests"
 									"/web"
 								]
+								|| pkgs.lib.hasPrefix "/.github/" relative
 								|| pkgs.lib.hasPrefix "/assets/" relative
 								|| pkgs.lib.hasPrefix "/demos/" relative
 								|| pkgs.lib.hasPrefix "/packaging/" relative
@@ -156,7 +179,7 @@
 					applicationCargoDeps = pkgs.rustPlatform.fetchCargoVendor {
 						name = "aedicule-cargo-deps";
 						src = frontplaneSource;
-						hash = "sha256-S0IPNdxbda+/E2dYWlWMLMt4BGPOme2GB4gq9Upiy3I=";
+						hash = "sha256-iY/RKX2noJ3dddy4c8hB1kq2Nsa/8YDzSGpvlVSR0vo=";
 					};
 					gpuiWebFont = path: hash: pkgs.fetchurl {
 						url = "https://raw.githubusercontent.com/pmarreck/zed/7e34550622005f62cd337d465cb5fd25c2ce8bd7/assets/fonts/${path}";
@@ -239,6 +262,12 @@
 							preBuild = targetPkgs.lib.optionalString targetLlvmWindows ''
 								unset RC
 							'';
+							# MinGW's COFF symbol ordering varies between otherwise identical
+							# links. Removing the release symbol table also normalizes the PE
+							# checksum, yielding byte-reproducible Windows executables.
+							stripDebugFlags = if targetPkgs.stdenv.hostPlatform.isWindows
+								then [ "--strip-all" ]
+								else [ "-S" "-p" ];
 							buildInputs = targetPkgs.lib.optionals targetLinux
 								(linuxLibraries targetPkgs);
 						};
@@ -384,8 +413,12 @@
 							pkgs.cmake
 							pkgs.clang
 							pkgs.llvmPackages.libclang
+							luajitWithPackages
+							pkgs.openssl
+							pkgs.rcodesign
 						];
 						LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
+						AEDICULE_LIBCRYPTO = libcrypto;
 						SDKROOT = macosSdk;
 						MACOSX_DEPLOYMENT_TARGET = "11.0";
 						buildPhase = ''
@@ -394,6 +427,11 @@
 							export ZIG_GLOBAL_CACHE_DIR=$TMPDIR/zig-cache
 							cargo zigbuild --offline --release --target ${macosRustTarget} \
 								--bin gpui-wasm
+							binary=target/${macosRustTarget}/release/gpui-wasm
+							luajit ${./packaging/macos/canonicalize_uuid} "$binary"
+							rcodesign sign --binary-identifier com.pmarreck.aedicule \
+								"$binary" "$binary.signed"
+							mv "$binary.signed" "$binary"
 							runHook postBuild
 						'';
 						installPhase = ''
@@ -439,12 +477,24 @@
 						src = testSource;
 						cargoDeps = applicationCargoDeps;
 						doCheck = true;
-						nativeBuildInputs = with pkgs; [ pkg-config cmake clang nix nodejs ripgrep ];
+						nativeBuildInputs = [
+							pkgs.pkg-config
+							pkgs.cmake
+							pkgs.clang
+							pkgs.nix
+							pkgs.nodejs
+							pkgs.ripgrep
+							luajitWithPackages
+							pkgs.openssl
+						];
+						AEDICULE_LIBCRYPTO = libcrypto;
 						buildInputs = pkgs.lib.optionals linux (linuxLibraries pkgs);
 						checkPhase = ''
 							runHook preCheck
 							patchShebangs tests/cli/development_dependencies tests/cli/repository_boundary \
-								tests/cli/document_packages tests/cli/demo_snapshots tests/cli/web_i18n
+								tests/cli/document_packages tests/cli/demo_snapshots \
+								tests/cli/macos_reproducibility tests/cli/reproducible_releases \
+								tests/cli/web_i18n packaging/macos/canonicalize_uuid check_reproducible
 							cargo test --no-default-features --features native-runtime
 							cargo test --bin gpui-wasm
 							cargo rustc --release --bin gpui-wasm -- -D warnings
@@ -454,6 +504,8 @@
 							./tests/cli/repository_boundary
 							./tests/cli/document_packages
 							./tests/cli/demo_snapshots
+							./tests/cli/macos_reproducibility
+							./tests/cli/reproducible_releases
 							./tests/cli/web_i18n
 							runHook postCheck
 						'';
@@ -593,6 +645,7 @@
 				let
 					pkgs = pkgsFor system;
 					webToolchain = webToolchainFor system;
+					luajitWithPackages = luajitWithPackagesFor pkgs;
 				in {
 					default = pkgs.mkShell {
 						packages = with pkgs; [
@@ -608,10 +661,13 @@
 							nix
 							nodejs
 							ripgrep
+							luajitWithPackages
+							openssl
 						]
 							++ pkgs.lib.optionals pkgs.stdenv.isLinux (linuxLibraries pkgs);
 						LD_LIBRARY_PATH = pkgs.lib.optionalString pkgs.stdenv.isLinux
 							(pkgs.lib.makeLibraryPath (linuxLibraries pkgs));
+						AEDICULE_LIBCRYPTO = "${pkgs.openssl.out}/lib/libcrypto${pkgs.stdenv.hostPlatform.extensions.sharedLibrary}";
 					};
 					web = pkgs.mkShell {
 						packages = [ webToolchain ];

@@ -16,7 +16,7 @@ jobs:
   archives:
     name: Build and publish six targets
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 360
 
     steps:
       - name: Check out source
@@ -29,6 +29,9 @@ jobs:
 
       - name: Build deterministic release archives
         run: nix build .#release-all --out-link result-all --print-build-logs
+
+      - name: Independently rebuild all six delivery targets
+        run: ./check_reproducible
 
       - name: Verify release checksums
         run: cd result-all && sha256sum --check SHA256SUMS

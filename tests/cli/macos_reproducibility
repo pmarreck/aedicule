@@ -1,0 +1,140 @@
+#!/usr/bin/env bash
+
+set -u
+
+root=$(cd "$(dirname "$0")/../.." && pwd -P)
+canonicalizer="$root/packaging/macos/canonicalize_uuid"
+work="$TMPDIR/aedicule-macho-uuid-$$"
+failures=0
+
+source "$root/tests/lib/capture.bash"
+
+mkdir -p "$work"
+trap 'rm -rf "$work"' EXIT
+
+make_fixture() {
+	path=$1
+	uuid_hex=$2
+	signature_byte=$3
+	code_byte=$4
+	AEDICULE_TEST_PATH=$path AEDICULE_TEST_UUID=$uuid_hex \
+		AEDICULE_TEST_SIGNATURE=$signature_byte AEDICULE_TEST_CODE=$code_byte \
+		luajit -e '
+		local path = assert(os.getenv("AEDICULE_TEST_PATH"))
+		local uuid_hex = assert(os.getenv("AEDICULE_TEST_UUID"))
+		local signature_byte = assert(os.getenv("AEDICULE_TEST_SIGNATURE"))
+		local code_byte = assert(os.getenv("AEDICULE_TEST_CODE"))
+		local function u32(value)
+			return string.char(
+				value % 256,
+				math.floor(value / 256) % 256,
+				math.floor(value / 65536) % 256,
+				math.floor(value / 16777216) % 256)
+		end
+		local uuid = uuid_hex:gsub("..", function(byte)
+			return string.char(tonumber(byte, 16))
+		end)
+		local header = u32(0xfeedfacf) .. u32(0x0100000c) .. u32(0) .. u32(2)
+			.. u32(2) .. u32(40) .. u32(0) .. u32(0)
+		local commands = u32(0x1b) .. u32(24) .. uuid
+			.. u32(0x1d) .. u32(16) .. u32(76) .. u32(16)
+		local file = assert(io.open(path, "wb"))
+		assert(file:write(header, commands, code_byte:rep(4), signature_byte:rep(16)))
+		assert(file:close())
+	'
+}
+
+uuid_hex() {
+	AEDICULE_TEST_PATH=$1 luajit -e '
+		local file = assert(io.open(os.getenv("AEDICULE_TEST_PATH"), "rb"))
+		assert(file:seek("set", 40))
+		local uuid = assert(file:read(16))
+		assert(#uuid == 16)
+		io.write((uuid:gsub(".", function(byte)
+			return string.format("%02x", byte:byte())
+		end)))
+	'
+}
+
+if [[ ! -x $canonicalizer ]]; then
+	printf 'Mach-O UUID canonicalizer is missing or not executable\n' >&2
+	exit 1
+fi
+interpreter=$(head -1 "$canonicalizer")
+interpreter_path=${interpreter#\#!}
+interpreter_path=${interpreter_path%%[[:space:]]*}
+if [[ $interpreter != '#!/usr/bin/env luajit' && ${interpreter_path##*/} != luajit ]]; then
+	printf 'Mach-O UUID canonicalizer must use LuaJIT; found %q\n' \
+		"$interpreter" >&2
+	failures=$((failures + 1))
+fi
+if rg -i 'perl|python' "$canonicalizer" >/dev/null; then
+	printf 'Mach-O UUID canonicalizer introduced another scripting runtime\n' >&2
+	failures=$((failures + 1))
+fi
+if ! rg -F 'pkgs.luajit.withPackages' "$root/flake.nix" >/dev/null; then
+	printf 'flake does not provide the project-scoped LuaJIT module environment\n' >&2
+	failures=$((failures + 1))
+fi
+if rg -F 'pkgs.perl' "$root/flake.nix" >/dev/null; then
+	printf 'flake still introduces Perl for the macOS maintenance tool\n' >&2
+	failures=$((failures + 1))
+fi
+
+make_fixture "$work/a" 00112233445536778899aabbccddeeff A C
+make_fixture "$work/b" ffeeddccbbaa39887766554433221100 B C
+make_fixture "$work/changed-code" 00112233445536778899aabbccddeeff A D
+
+for fixture in a b changed-code; do
+	out= err= rc=0
+	capture "$canonicalizer" "$work/$fixture"
+	if (( rc != 0 )) || [[ -n $out || -n $err ]]; then
+		printf 'canonicalizer failed clean-output contract for %s: rc=%s out=%q err=%q\n' \
+			"$fixture" "$rc" "$out" "$err" >&2
+		failures=$((failures + 1))
+	fi
+done
+
+uuid_a=$(uuid_hex "$work/a")
+uuid_b=$(uuid_hex "$work/b")
+uuid_changed=$(uuid_hex "$work/changed-code")
+
+if [[ $uuid_a != "$uuid_b" ]]; then
+	printf 'UUID depends on the prior random UUID or code signature\n' >&2
+	failures=$((failures + 1))
+fi
+if [[ $uuid_a == 00000000000000000000000000000000 ]]; then
+	printf 'canonical UUID must identify content rather than use all zeroes\n' >&2
+	failures=$((failures + 1))
+fi
+if [[ ${uuid_a:12:1} != 3 ]] || [[ ! ${uuid_a:16:1} =~ [89ab] ]]; then
+	printf 'canonical UUID does not have RFC 4122 version/variant bits: %s\n' "$uuid_a" >&2
+	failures=$((failures + 1))
+fi
+if [[ $uuid_a == "$uuid_changed" ]]; then
+	printf 'canonical UUID did not change when executable content changed\n' >&2
+	failures=$((failures + 1))
+fi
+
+AEDICULE_TEST_PATH="$work/a" luajit -e '
+	local file = assert(io.open(os.getenv("AEDICULE_TEST_PATH"), "rb"))
+	assert(file:seek("set", 76))
+	local signature = assert(file:read(16))
+	os.exit(signature == string.rep("A", 16) and 0 or 1)
+'
+status=$?
+if (( status != 0 )); then
+	printf 'canonicalizer modified the old signature before the signing step\n' >&2
+	failures=$((failures + 1))
+fi
+
+printf 'not-a-mach-o' >"$work/malformed"
+out= err= rc=0
+capture "$canonicalizer" "$work/malformed"
+if (( rc == 0 )) || [[ -n $out ]] || [[ $err != *'unsupported or truncated Mach-O'* ]]; then
+	printf 'malformed Mach-O rejection was not explicit and quiet: rc=%s out=%q err=%q\n' \
+		"$rc" "$out" "$err" >&2
+	failures=$((failures + 1))
+fi
+
+exit "$failures"

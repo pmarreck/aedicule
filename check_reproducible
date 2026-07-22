@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+
+set -u
+
+root=$(cd "$(dirname "$0")" && pwd -P)
+cd "$root" || exit 1
+
+targets=(
+	webRuntime
+	frontplane-macos-aarch64
+	frontplane-linux-aarch64
+	frontplane-windows-aarch64
+	frontplane-linux-x86_64
+	frontplane-windows-x86_64
+)
+failures=0
+
+system=$(nix eval --impure --raw --expr builtins.currentSystem)
+status=$?
+if (( status != 0 )); then
+	printf 'could not resolve the current Nix system\n' >&2
+	exit 1
+fi
+
+for target in "${targets[@]}"; do
+	printf 'independent reproducibility check: %s\n' "$target"
+	nix build ".#$target" --no-link
+	status=$?
+	if (( status != 0 )); then
+		printf '%s failed its initial build\n' "$target" >&2
+		failures=$((failures + 1))
+		continue
+	fi
+
+	drv=$(nix eval --raw ".#packages.$system.$target.drvPath")
+	status=$?
+	if (( status != 0 )); then
+		printf 'could not resolve the derivation for %s\n' "$target" >&2
+		failures=$((failures + 1))
+		continue
+	fi
+
+	nix-store --realise --check -K "$drv"
+	status=$?
+	if (( status != 0 )); then
+		printf '%s was not byte-reproducible\n' "$target" >&2
+		failures=$((failures + 1))
+	fi
+done
+
+if (( failures != 0 )); then
+	printf '%d of %d delivery targets failed reproducibility checks\n' \
+		"$failures" "${#targets[@]}" >&2
+fi
+
+if (( failures > 255 )); then
+	exit 255
+fi
+exit "$failures"

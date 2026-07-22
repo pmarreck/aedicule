@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+
+set -u
+
+root=$(cd "$(dirname "$0")/../.." && pwd -P)
+work="$TMPDIR/aedicule-reproducible-releases-$$"
+fake_bin="$work/bin"
+log="$work/invocations"
+stdout="$work/stdout"
+stderr="$work/stderr"
+failures=0
+
+mkdir -p "$fake_bin"
+trap 'rm -rf -- "$work"' EXIT
+
+printf '#!%s\n' "$BASH" >"$fake_bin/nix"
+cat >>"$fake_bin/nix" <<'FAKE_NIX'
+printf 'nix' >>"$AEDICULE_REPRO_LOG"
+for argument in "$@"; do
+	printf '\t%s' "$argument" >>"$AEDICULE_REPRO_LOG"
+done
+printf '\n' >>"$AEDICULE_REPRO_LOG"
+
+if [[ $1 == eval && ${2:-} == --impure ]]; then
+	printf 'x86_64-linux'
+	exit 0
+fi
+
+if [[ $1 == eval ]]; then
+	reference=${!#}
+	without_drv=${reference%.drvPath}
+	target=${without_drv##*.}
+	printf '/nix/store/test-%s.drv' "$target"
+fi
+FAKE_NIX
+
+printf '#!%s\n' "$BASH" >"$fake_bin/nix-store"
+cat >>"$fake_bin/nix-store" <<'FAKE_NIX_STORE'
+printf 'nix-store' >>"$AEDICULE_REPRO_LOG"
+for argument in "$@"; do
+	printf '\t%s' "$argument" >>"$AEDICULE_REPRO_LOG"
+done
+printf '\n' >>"$AEDICULE_REPRO_LOG"
+
+if [[ -n ${AEDICULE_REPRO_FAIL_TARGET:-} && ${!#} == *"$AEDICULE_REPRO_FAIL_TARGET"* ]]; then
+	exit 104
+fi
+FAKE_NIX_STORE
+chmod +x "$fake_bin/nix" "$fake_bin/nix-store"
+
+targets=(
+	webRuntime
+	frontplane-macos-aarch64
+	frontplane-linux-aarch64
+	frontplane-windows-aarch64
+	frontplane-linux-x86_64
+	frontplane-windows-x86_64
+)
+
+expected=$'nix\teval\t--impure\t--raw\t--expr\tbuiltins.currentSystem\n'
+for target in "${targets[@]}"; do
+	expected+=$'nix\tbuild\t.#'"$target"$'\t--no-link\n'
+	expected+=$'nix\teval\t--raw\t.#packages.x86_64-linux.'"$target"$'.drvPath\n'
+	expected+=$'nix-store\t--realise\t--check\t-K\t/nix/store/test-'"$target"$'.drv\n'
+done
+expected=${expected%$'\n'}
+
+if [[ ! -x "$root/check_reproducible" ]]; then
+	printf 'check_reproducible is missing or not executable\n' >&2
+	failures=$((failures + 1))
+else
+	: >"$log"
+	PATH="$fake_bin:$PATH" AEDICULE_REPRO_LOG="$log" \
+		"$root/check_reproducible" >"$stdout" 2>"$stderr"
+	status=$?
+	if (( status != 0 )); then
+		printf 'check_reproducible rejected six successful independent rebuilds\n' >&2
+		failures=$((failures + 1))
+	elif [[ $(<"$log") != "$expected" ]]; then
+		printf 'check_reproducible did not classify the exact six-target operation set\n' >&2
+		failures=$((failures + 1))
+	fi
+
+	: >"$log"
+	PATH="$fake_bin:$PATH" AEDICULE_REPRO_LOG="$log" \
+		AEDICULE_REPRO_FAIL_TARGET=frontplane-windows-aarch64 \
+		"$root/check_reproducible" >"$stdout" 2>"$stderr"
+	status=$?
+	if (( status == 0 )); then
+		printf 'check_reproducible accepted a mismatched independent rebuild\n' >&2
+		failures=$((failures + 1))
+	elif [[ $(<"$log") != "$expected" ]]; then
+		printf 'check_reproducible stopped before checking the complete target set\n' >&2
+		failures=$((failures + 1))
+	fi
+fi
+
+if ! rg -F './check_reproducible' "$root/.github/workflows/release.yml" >/dev/null; then
+	printf 'the release workflow does not enforce reproducibility before publishing\n' >&2
+	failures=$((failures + 1))
+fi
+
+exit "$failures"

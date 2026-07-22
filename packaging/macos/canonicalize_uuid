@@ -1,0 +1,170 @@
+#!/usr/bin/env luajit
+
+local ffi = require("ffi")
+
+local program = arg[0] or "canonicalize_uuid"
+
+local function die(message)
+	io.stderr:write(program, ": ", message, "\n")
+	os.exit(1)
+end
+
+local function reject(reason)
+	die("unsupported or truncated Mach-O: " .. reason)
+end
+
+local function read_u32(data, offset)
+	local a, b, c, d = data:byte(offset + 1, offset + 4)
+	if not d then
+		reject("incomplete 32-bit value")
+	end
+	return a + b * 256 + c * 65536 + d * 16777216
+end
+
+local function replace(data, offset, size, replacement)
+	return data:sub(1, offset) .. replacement .. data:sub(offset + size + 1)
+end
+
+if #arg ~= 1 then
+	die("usage: " .. program .. " MACH_O_BINARY")
+end
+
+local path = arg[1]
+local input, open_error = io.open(path, "rb")
+if not input then
+	die(path .. ": " .. open_error)
+end
+local data = input:read("*a")
+if not data then
+	input:close()
+	die(path .. ": could not read input")
+end
+local closed, close_error = input:close()
+if not closed then
+	die(path .. ": " .. close_error)
+end
+
+if #data < 32 then
+	reject("missing 64-bit header")
+end
+if read_u32(data, 0) ~= 0xfeedfacf then
+	reject("expected a little-endian 64-bit image")
+end
+
+local command_count = read_u32(data, 16)
+local command_bytes = read_u32(data, 20)
+local command_end = 32 + command_bytes
+if command_end > #data then
+	reject("load commands exceed the file")
+end
+
+local uuid_offset
+local signature_offset
+local signature_size
+local offset = 32
+
+for _ = 1, command_count do
+	if offset + 8 > command_end then
+		reject("incomplete load-command header")
+	end
+	local command = read_u32(data, offset)
+	local size = read_u32(data, offset + 4)
+	if size < 8 then
+		reject("invalid load-command size")
+	end
+	if offset + size > command_end then
+		reject("load command exceeds declared area")
+	end
+
+	if command == 0x1b then -- LC_UUID
+		if uuid_offset then
+			reject("multiple LC_UUID commands")
+		end
+		if size < 24 then
+			reject("short LC_UUID command")
+		end
+		uuid_offset = offset + 8
+	elseif command == 0x1d then -- LC_CODE_SIGNATURE
+		if signature_offset then
+			reject("multiple LC_CODE_SIGNATURE commands")
+		end
+		if size < 16 then
+			reject("short LC_CODE_SIGNATURE command")
+		end
+		signature_offset = read_u32(data, offset + 8)
+		signature_size = read_u32(data, offset + 12)
+	end
+
+	offset = offset + size
+end
+
+if offset ~= command_end then
+	reject("load-command count and size disagree")
+end
+if not uuid_offset then
+	reject("missing LC_UUID command")
+end
+if not signature_offset then
+	reject("missing LC_CODE_SIGNATURE command")
+end
+if signature_size == 0 then
+	reject("empty code signature")
+end
+if signature_offset + signature_size > #data then
+	reject("code signature exceeds the file")
+end
+
+-- Zig's random UUID contaminates its ad-hoc signature. Neutralize both fields
+-- before hashing so the replacement UUID identifies only stable binary content.
+local normalized = replace(data, uuid_offset, 16, string.rep("\0", 16))
+normalized = replace(
+	normalized,
+	signature_offset,
+	signature_size,
+	string.rep("\0", signature_size)
+)
+
+ffi.cdef([[
+	unsigned char *SHA256(
+		const unsigned char *data,
+		size_t length,
+		unsigned char *digest
+	);
+]])
+
+local crypto_path = os.getenv("AEDICULE_LIBCRYPTO") or "crypto"
+local loaded, crypto = pcall(ffi.load, crypto_path)
+if not loaded then
+	die("could not load libcrypto from " .. crypto_path .. ": " .. tostring(crypto))
+end
+
+local source = ffi.new("unsigned char[?]", #normalized)
+ffi.copy(source, normalized, #normalized)
+local digest = ffi.new("unsigned char[32]")
+if crypto.SHA256(source, #normalized, digest) == nil then
+	die("libcrypto SHA256 failed")
+end
+local uuid = ffi.string(digest, 16)
+
+-- Match the RFC 4122 shape used by Mach-O content UUIDs: version 3, variant 1.
+uuid = replace(uuid, 6, 1, string.char(uuid:byte(7) % 16 + 0x30))
+uuid = replace(uuid, 8, 1, string.char(uuid:byte(9) % 64 + 0x80))
+
+local output, output_error = io.open(path, "r+b")
+if not output then
+	die(path .. ": " .. output_error)
+end
+local position, seek_error = output:seek("set", uuid_offset)
+if not position then
+	output:close()
+	die(path .. ": seek: " .. seek_error)
+end
+local written, write_error = output:write(uuid)
+if not written then
+	output:close()
+	die(path .. ": write: " .. write_error)
+end
+local output_closed, output_close_error = output:close()
+if not output_closed then
+	die(path .. ": " .. output_close_error)
+end
