@@ -1,4 +1,4 @@
-use gpui_wasm::{Frontplane, Limits, SynthFilter, SynthVoice, SynthWaveform};
+use aedicule::{Frontplane, Limits, SynthFilter, SynthVoice, SynthWaveform};
 
 const DECLARED_SYNTH_WAT: &str = r#"
 (module

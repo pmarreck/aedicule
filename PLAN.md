@@ -29,7 +29,7 @@
     discovery without host-specific paths.
     (2026-07-22 13:57 EDT)
   - [x] Preserve the documented downstream tool surface by packaging both
-    `gpui-wasm` and `gpui-wasm-render` in the native `frontplane` flake output.
+    `aedicule` and `aedicule-render` in the native `frontplane` flake output.
     (2026-07-22 15:33 EDT; caught by Vibesteroids' pinned runtime gate)
   - [x] Make the headless renderer resolve bare WAT, directory, and `.aed`
     inputs through the same bounded virtual application root and asset catalog.
@@ -206,7 +206,7 @@
   - Curiosity poke: can future integer composition imports share one declarative
     fixed-point type description instead of proliferating suffix-specific docs?
 
-- [ ] Make state-dependent frames reproducible through `gpui-wasm-render` by
+- [ ] Make state-dependent frames reproducible through `aedicule-render` by
   accepting deterministic ordered event injection before the final render.
   - [x] Clarify in the generated ABI that draw IDs are unique across primitive
     kinds for one frame and reusable after the next frame begins.
@@ -425,7 +425,8 @@
   test of the generic ABI: [`ulam-flower-wat`](../ulam-flower-wat/) drives
   exact ticks plus pointer/viewport events through only `AE_*` imports.
   Its headless integration test passed. (2026-07-19 18:29 EDT)
-- [ ] Decide and test the pre-v1 migration from provisional `gpui-wasm` binary
-  names to Mecha Aedicule names.
-  - Curiosity poke: can aliases provide a deprecation path without making
-    downstream wrappers ambiguous?
+- [x] Hard-cut the provisional executable, Cargo crate, environment, source,
+  Nix, documentation, and test names to canonical `aedicule` and
+  `aedicule-render`, with a repository-wide classifier preventing legacy names
+  or aliases from returning. (2026-07-22 18:24 EDT: full test suite, optimized
+  native build, and all six checksummed delivery archives passed.)

@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use gpui_wasm::{
+use aedicule::{
     Affine, DrawCommand, Frontplane, FrontplaneError, ImageFormat, Limits, PathSegment, Point,
     Rect, WatRejectionStage, format_wat_rejection_diagnostic,
 };

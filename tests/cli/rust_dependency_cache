@@ -21,7 +21,7 @@ if ! nix eval --raw "$root#$artifact" >/dev/null 2>&1; then
 	exit 1
 fi
 
-if ! rg -F 'cargoBuildSourceName = "gpui-wasm-build-source";' "$root/flake.nix" >/dev/null; then
+if ! rg -F 'cargoBuildSourceName = "aedicule-build-source";' "$root/flake.nix" >/dev/null; then
 	printf 'flake does not declare one stable Cargo build-source name\n' >&2
 	failures=$((failures + 1))
 fi

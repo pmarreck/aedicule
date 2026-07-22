@@ -1,4 +1,4 @@
-use gpui_wasm::wav::{AUDIO_FIXED_SCALE, WavError, WavLimits, decode_wav_pcm};
+use aedicule::wav::{AUDIO_FIXED_SCALE, WavError, WavLimits, decode_wav_pcm};
 
 const MONO_PCM16: &[u8] = &[
     b'R', b'I', b'F', b'F', 42, 0, 0, 0, b'W', b'A', b'V', b'E', b'f', b'm', b't', b' ', 16, 0, 0,

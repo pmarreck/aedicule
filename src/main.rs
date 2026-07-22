@@ -11,6 +11,17 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+use aedicule::{
+    AudioEvent, ControlLabelPlacement, ControlPhase, DEFAULT_PLUGIN_ENV, Event, FALLBACK_WAT,
+    FileRevision, FrameOutput, Frontplane, GEIST_MONO_REGULAR, HostEffect, Key, LaunchAction,
+    Limits, Metadata, PluginInit, PluginSource, PointerButton, PointerScrollUnit, Rect,
+    RevisionTracker, SampleAsset, SampleAudioEvent, SimulationCall, SimulationScheduler,
+    SliderControl, StateTransfer, SynthFilter, SynthVoice, SynthWaveform, WatRejectionStage,
+    WebServer, depackage_application, discover_web_runtime, display_refresh_rate_from_environment,
+    file_url_to_path, format_wat_rejection_diagnostic, initialize_frontplane, package_application,
+    prepare_reload_with_assets, read_application_assets, read_application_file, resolve_launch,
+    run_application_tests,
+};
 use gpui::{
     AnyWindowHandle, App, AppContext as _, Context, Entity, FocusHandle, Focusable,
     InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent, KeyUpEvent, Menu, MenuItem,
@@ -24,21 +35,10 @@ use gpui_component::{
     h_flex,
     slider::{Slider, SliderEvent, SliderState},
 };
-use gpui_wasm::{
-    AudioEvent, ControlLabelPlacement, ControlPhase, DEFAULT_PLUGIN_ENV, Event, FALLBACK_WAT,
-    FileRevision, FrameOutput, Frontplane, GEIST_MONO_REGULAR, HostEffect, Key, LaunchAction,
-    Limits, Metadata, PluginInit, PluginSource, PointerButton, PointerScrollUnit, Rect,
-    RevisionTracker, SampleAsset, SampleAudioEvent, SimulationCall, SimulationScheduler,
-    SliderControl, StateTransfer, SynthFilter, SynthVoice, SynthWaveform, WatRejectionStage,
-    WebServer, depackage_application, discover_web_runtime, display_refresh_rate_from_environment,
-    file_url_to_path, format_wat_rejection_diagnostic, initialize_frontplane, package_application,
-    prepare_reload_with_assets, read_application_assets, read_application_file, resolve_launch,
-    run_application_tests,
-};
 use rodio::{DeviceSinkBuilder, MixerDeviceSink, Source as _, buffer::SamplesBuffer};
 use smol::Timer;
 
-actions!(gpui_wasm, [NewApplication, ShowHelp, ReloadPlugin, Quit]);
+actions!(aedicule, [NewApplication, ShowHelp, ReloadPlugin, Quit]);
 
 const LOGICAL_WIDTH: f32 = 1024.0;
 const LOGICAL_HEIGHT: f32 = 768.0;
@@ -98,11 +98,11 @@ const EN: Strings = Strings {
 Run a capability-bounded WAT application in the native GPUI frontplane.
 
 Usage:
-  gpui-wasm [OPTIONS] [PLUGIN.wat|APPLICATION_DIRECTORY|APPLICATION.aed]
-  gpui-wasm --package DIRECTORY [OUTPUT.aed]
-  gpui-wasm --depackage APPLICATION.aed [OUTPUT_DIRECTORY]
-  gpui-wasm --test [--seed N] SOURCE
-  gpui-wasm --web SOURCE [--bind ADDRESS] [--port PORT]
+  aedicule [OPTIONS] [PLUGIN.wat|APPLICATION_DIRECTORY|APPLICATION.aed]
+  aedicule --package DIRECTORY [OUTPUT.aed]
+  aedicule --depackage APPLICATION.aed [OUTPUT_DIRECTORY]
+  aedicule --test [--seed N] SOURCE
+  aedicule --web SOURCE [--bind ADDRESS] [--port PORT]
 
 Options:
   --watch       Reload after content changes; defaults to ./code.wat
@@ -124,7 +124,7 @@ rate such as 60000/1001; canonical 59.94, 29.97, 23.976, and 119.88 are also
 accepted.
 ",
     about: "generic native GPUI frontplane for capability-bounded WAT applications",
-    cli_error: "gpui-wasm",
+    cli_error: "aedicule",
     test_seed: "test seed",
     test_pass: "PASS",
     tests_passed: "passed",
@@ -1307,7 +1307,7 @@ impl Render for FrontplaneView {
                         canvas(
                             move |bounds, _, _| (bounds, frame),
                             move |_, (bounds, frame), window, cx| {
-                                gpui_wasm::gpui_canvas::paint_frame(&frame, bounds, window, cx)
+                                aedicule::gpui_canvas::paint_frame(&frame, bounds, window, cx)
                             },
                         )
                         .size_full(),
@@ -1455,7 +1455,7 @@ fn load_fallback(plugin_init: PluginInit) -> (Frontplane, FrameOutput) {
 fn load_frontplane(
     source: &str,
     plugin_init: PluginInit,
-) -> Result<(Frontplane, FrameOutput), gpui_wasm::FrontplaneError> {
+) -> Result<(Frontplane, FrameOutput), aedicule::FrontplaneError> {
     initialize_loaded_frontplane(
         Frontplane::from_wat(source, Limits::default())?,
         plugin_init,
@@ -1466,9 +1466,9 @@ fn load_application_frontplane(
     source: &str,
     application: &PluginSource,
     plugin_init: PluginInit,
-) -> Result<(Frontplane, FrameOutput), gpui_wasm::FrontplaneError> {
+) -> Result<(Frontplane, FrameOutput), aedicule::FrontplaneError> {
     let assets =
-        read_application_assets(application).map_err(gpui_wasm::FrontplaneError::Application)?;
+        read_application_assets(application).map_err(aedicule::FrontplaneError::Application)?;
     initialize_loaded_frontplane(
         Frontplane::from_wat_with_assets(source, Limits::default(), assets)?,
         plugin_init,
@@ -1478,7 +1478,7 @@ fn load_application_frontplane(
 fn initialize_loaded_frontplane(
     mut frontplane: Frontplane,
     plugin_init: PluginInit,
-) -> Result<(Frontplane, FrameOutput), gpui_wasm::FrontplaneError> {
+) -> Result<(Frontplane, FrameOutput), aedicule::FrontplaneError> {
     initialize_frontplane(&mut frontplane, plugin_init)?;
     let frame = frontplane.render()?;
     frontplane.drain_audio();
@@ -1578,7 +1578,7 @@ fn plugin_revision_path(source: &PluginSource) -> Option<PathBuf> {
     match source {
         PluginSource::Embedded => None,
         PluginSource::File(path) | PluginSource::Archive(path) => Some(path.clone()),
-        PluginSource::Directory(root) => Some(root.join(gpui_wasm::DEFAULT_PLUGIN_FILE)),
+        PluginSource::Directory(root) => Some(root.join(aedicule::DEFAULT_PLUGIN_FILE)),
     }
 }
 
@@ -1598,7 +1598,7 @@ fn application_source_text(
         )),
         FileRevision::Content(bytes) => Ok(match application {
             PluginSource::Archive(_) => {
-                read_application_file(application, gpui_wasm::DEFAULT_PLUGIN_FILE)?
+                read_application_file(application, aedicule::DEFAULT_PLUGIN_FILE)?
             }
             _ => bytes.clone(),
         }),
@@ -1701,7 +1701,7 @@ fn main() -> ExitCode {
     match action {
         LaunchAction::Help => print!("{}", EN.help),
         LaunchAction::About => println!(
-            "gpui-wasm {} — {} for {} {}",
+            "aedicule {} — {} for {} {}",
             env!("CARGO_PKG_VERSION"),
             EN.about,
             env::consts::OS,
@@ -1775,15 +1775,15 @@ mod tests {
         menu_action_label, render_sample_for_host, render_synth_program_fixed,
         standard_menu_entries, title_bar_control_glyph_overlay, title_bar_control_glyphs,
     };
+    use aedicule::{
+        Event, Key, MenuItem as PluginMenuItem, Metadata, SampleAsset, SynthFilter, SynthVoice,
+        SynthWaveform, gpui_canvas::viewport_transform,
+    };
     use gpui::{
         Bounds, Context, InteractiveElement as _, IntoElement, MouseButton, ParentElement as _,
         Render, Styled as _, TestApp, Window, div, point, px, size,
     };
     use gpui_component::TitleBar;
-    use gpui_wasm::{
-        Event, Key, MenuItem as PluginMenuItem, Metadata, SampleAsset, SynthFilter, SynthVoice,
-        SynthWaveform, gpui_canvas::viewport_transform,
-    };
     use rodio::Source as _;
 
     #[derive(Default)]
@@ -1793,7 +1793,7 @@ mod tests {
     }
 
     struct HostControlHitProbe {
-        bounds: gpui_wasm::Rect,
+        bounds: aedicule::Rect,
         guest_pointer_downs: usize,
         host_pointer_downs: usize,
     }
@@ -1801,7 +1801,7 @@ mod tests {
     impl Default for HostControlHitProbe {
         fn default() -> Self {
             Self {
-                bounds: gpui_wasm::Rect {
+                bounds: aedicule::Rect {
                     x: 100.0,
                     y: 100.0,
                     width: 200.0,
@@ -1914,7 +1914,7 @@ mod tests {
     fn guest_positioned_control_surface_can_span_the_full_viewport_width() {
         let mut app = TestApp::new();
         let mut window = app.open_window(|_, _| HostControlHitProbe {
-            bounds: gpui_wasm::Rect {
+            bounds: aedicule::Rect {
                 x: 12.0,
                 y: 100.0,
                 width: 776.0,
@@ -1970,7 +1970,7 @@ mod tests {
 
         assert_eq!(
             viewport_transform(bounds),
-            gpui_wasm::Affine {
+            aedicule::Affine {
                 m11: 1.0,
                 m12: 0.0,
                 m21: 0.0,
@@ -2053,7 +2053,7 @@ mod tests {
         let sample = SampleAsset {
             id: 77,
             path: "assets/audio/sample.flac".to_owned(),
-            clip: gpui_wasm::wav::WavClip {
+            clip: aedicule::wav::WavClip {
                 channels: 2,
                 sample_rate: 8_000,
                 frames: 2,

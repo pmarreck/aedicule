@@ -5,7 +5,7 @@ tags: [long, headless, simulations, divide, wasmtime, wat, wasm, webassembly, wo
 ---
 The richer Vibesteroids WAT plugin proved that a semantically reasonable
 headless request can exceed the per-call Wasmtime fuel budget even when each
-individual game tick is well bounded. The `gpui-wasm-render --ticks 300` path
+individual game tick is well bounded. The `aedicule-render --ticks 300` path
 failed after gameplay complexity increased because it forwarded too many ticks
 through one guest call.
 

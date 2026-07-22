@@ -18,8 +18,9 @@ This boundary has two practical consequences:
    derivation; and
 2. generic host code cannot quietly absorb one application's business logic.
 
-The provisional package and executable names remain `gpui-wasm`; renaming the
-public CLI is a separate pre-v1 compatibility decision.
+The Rust package and canonical executables are named `aedicule` and
+`aedicule-render`. The proof-of-concept names were removed in a pre-release hard
+cutover, including environment variables and downstream wrapper contracts.
 
 ## 2. Proof-of-concept success criteria
 

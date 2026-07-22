@@ -1,4 +1,4 @@
-use gpui_wasm::{WAT_ABI_IMPORTS, wat_abi_markdown};
+use aedicule::{WAT_ABI_IMPORTS, wat_abi_markdown};
 
 #[test]
 fn checked_in_wat_abi_reference_is_the_generated_canonical_document() {

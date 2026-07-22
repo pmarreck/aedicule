@@ -1,5 +1,5 @@
 [package]
-name = "gpui-wasm"
+name = "aedicule"
 version = "0.1.1"
 edition = "2024"
 authors = ["Peter Marreck"]
@@ -11,7 +11,7 @@ readme = "README.md"
 keywords = ["gpui", "wasm", "wat", "wasmtime", "hot-reload"]
 categories = ["gui", "game-development", "development-tools"]
 publish = false
-default-run = "gpui-wasm"
+default-run = "aedicule"
 
 [build-dependencies]
 embed-resource = "3.0.11"
@@ -72,13 +72,13 @@ gpui = { git = "https://github.com/zed-industries/zed", rev = "1d217ee39d381ac10
 wasmprinter = "0.251.0"
 
 [[bin]]
-name = "gpui-wasm"
+name = "aedicule"
 path = "src/main.rs"
 required-features = ["gui"]
 
 [[bin]]
-name = "gpui-wasm-render"
-path = "src/bin/gpui-wasm-render.rs"
+name = "aedicule-render"
+path = "src/bin/aedicule-render.rs"
 
 [[bin]]
 name = "aedicule-web"

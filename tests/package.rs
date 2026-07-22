@@ -1,13 +1,13 @@
 use std::{fs, path::PathBuf};
 
+use aedicule::{
+    AED_MIME_TYPE, PluginSource, depackage_application, package_application,
+    read_application_assets, read_application_file,
+};
 use async_zip::{
     Compression, ZipEntryBuilder, base::read::mem::ZipFileReader, base::write::ZipFileWriter,
 };
 use futures_lite::{future::block_on, io::Cursor};
-use gpui_wasm::{
-    AED_MIME_TYPE, PluginSource, depackage_application, package_application,
-    read_application_assets, read_application_file,
-};
 
 fn temporary_directory(label: &str) -> PathBuf {
     let path =

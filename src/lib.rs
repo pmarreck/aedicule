@@ -62,7 +62,7 @@ pub use wat_abi::{WAT_ABI_IMPORTS, WatAbiImport, wat_abi_markdown};
 pub const ABI_MAJOR: i32 = wat_abi::ABI_MAJOR;
 pub const ABI_MINOR: i32 = wat_abi::ABI_MINOR;
 pub const DEFAULT_PLUGIN_FILE: &str = "code.wat";
-pub const DEFAULT_PLUGIN_ENV: &str = "GPUI_WASM_DEFAULT_PLUGIN";
+pub const DEFAULT_PLUGIN_ENV: &str = "AEDICULE_DEFAULT_APPLICATION";
 /// Overrides the host's nominal initial display timing with an exact rate.
 pub const DISPLAY_REFRESH_RATE_ENV: &str = "AE_DISPLAY_REFRESH_RATE";
 pub const FALLBACK_WAT: &str = include_str!("fallback.wat");

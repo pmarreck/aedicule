@@ -168,12 +168,13 @@ optimized build grants its one Nix derivation all detected CPU threads;
 The package contains:
 
 ```console
-result/bin/gpui-wasm
-result/bin/gpui-wasm-render
+result/bin/aedicule
+result/bin/aedicule-render
 ```
 
-The provisional binary names remain `gpui-wasm` to avoid mixing repository
-separation with a public CLI migration. They may change before ABI v1.
+The canonical executables are `aedicule` and `aedicule-render`. The earlier
+proof-of-concept names were removed before the first supported public release;
+there are no ambiguous legacy aliases.
 
 An application directory resolves to `code.wat`. `--seed N` provides a
 deterministic unsigned 64-bit seed. Watching follows the path rather than an
@@ -232,9 +233,9 @@ also accepts `-` or `@stdin` as asset-free WAT input and `-`, `@stdout`, or
 `@stderr` as output:
 
 ```console
-result/bin/gpui-wasm-render path/to/code.wat --ticks 300 -o frame.svg
-result/bin/gpui-wasm-render path/to/application --ticks 300 -o frame.svg
-result/bin/gpui-wasm-render application.aed --ticks 300 -o frame.svg
+result/bin/aedicule-render path/to/code.wat --ticks 300 -o frame.svg
+result/bin/aedicule-render path/to/application --ticks 300 -o frame.svg
+result/bin/aedicule-render application.aed --ticks 300 -o frame.svg
 ```
 
 This gives humans, CI systems, and review agents an exact inspectable artifact
@@ -242,7 +243,7 @@ without desktop access. It complements rather than replaces native-window
 inspection, which independently covers layout, focus, compositor, and platform
 adapter behavior.
 
-`gpui-wasm-render` is also the canonical non-GUI WAT validation executable:
+`aedicule-render` is also the canonical non-GUI WAT validation executable:
 it performs the same bounded compile, configure, initialize, display-event,
 and render lifecycle as the frontplanes before writing SVG. A separate
 `--validate` mode would duplicate that contract and is intentionally deferred.
@@ -293,7 +294,7 @@ Known limits:
 | `src/lib.rs` | GPUI-independent Wasmtime runtime, bounded ABI, virtual assets, snapshots, reload, audio metadata, and SVG core |
 | `src/flac.rs` | Bounded lossless FLAC admission into canonical fixed-point PCM |
 | `src/main.rs` | Native GPUI adapter, input, menus, synthesized/sample audio, scheduling, and live reload |
-| `src/bin/gpui-wasm-render.rs` | Deterministic headless SVG adapter |
+| `src/bin/aedicule-render.rs` | Deterministic headless SVG adapter |
 | `src/wat_abi.rs` | Declarative source for the generated WAT ABI reference |
 | `assets/fonts/` | Pinned Geist Mono Regular payload, OFL-1.1 license, and provenance |
 | `VIEW_PROTOCOL.md` | Proposed general semantic UI and application-capability architecture |

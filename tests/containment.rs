@@ -1,4 +1,4 @@
-use gpui_wasm::{Frontplane, FrontplaneError, Limits, Metadata};
+use aedicule::{Frontplane, FrontplaneError, Limits, Metadata};
 
 fn wat_module(body: &str) -> String {
     format!(

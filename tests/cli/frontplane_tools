@@ -14,7 +14,7 @@ if (( status != 0 )); then
 fi
 
 failures=0
-for tool in gpui-wasm gpui-wasm-render; do
+for tool in aedicule aedicule-render; do
 	if [[ ! -x "$output/bin/$tool" ]]; then
 		printf 'native frontplane package lacks executable: %s\n' "$tool" >&2
 		failures=$((failures + 1))

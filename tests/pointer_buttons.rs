@@ -1,4 +1,4 @@
-use gpui_wasm::{DrawCommand, Event, Frontplane, Limits, PointerButton, PointerScrollUnit};
+use aedicule::{DrawCommand, Event, Frontplane, Limits, PointerButton, PointerScrollUnit};
 
 const SECONDARY_BUTTON_WAT: &str = r#"
     (module

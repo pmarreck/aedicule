@@ -1,4 +1,4 @@
-use gpui_wasm::{Frontplane, Limits};
+use aedicule::{Frontplane, Limits};
 
 const STATEFUL_FIXTURE: &str = r#"(module
 	(import "aedicule.v0" "AE_frame_begin"

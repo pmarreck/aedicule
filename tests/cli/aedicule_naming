@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+set -u
+
+root=$(cd "$(dirname "$0")/../.." && pwd -P)
+failures=0
+legacy_hyphen='gpui''-wasm'
+legacy_snake='gpui''_wasm'
+legacy_upper='GPUI''_WASM'
+
+require_text() {
+	local path=$1 text=$2 description=$3
+	if ! rg -F -- "$text" "$root/$path" >/dev/null 2>&1; then
+		printf '%s lacks %s\n' "$description" "$text" >&2
+		failures=$((failures + 1))
+	fi
+}
+
+require_text Cargo.toml 'name = "aedicule"' 'Cargo package/bin declarations'
+require_text Cargo.toml 'name = "aedicule-render"' 'headless Cargo bin declaration'
+require_text Cargo.toml 'path = "src/bin/aedicule-render.rs"' 'headless Cargo source path'
+require_text flake.nix '"--bin" "aedicule"' 'Nix native build'
+require_text flake.nix 'aedicule-render' 'Nix tool delivery'
+require_text run '--bin aedicule' 'development launcher'
+
+if [[ ! -f $root/src/bin/aedicule-render.rs ]]; then
+	printf 'canonical src/bin/aedicule-render.rs is missing\n' >&2
+	failures=$((failures + 1))
+fi
+if [[ -e $root/src/bin/${legacy_hyphen}-render.rs ]]; then
+	printf 'legacy headless source path still exists\n' >&2
+	failures=$((failures + 1))
+fi
+
+mapfile -t tracked < <(rg --files "$root" \
+	-g '!target/**' -g '!inbox/**' -g '!AGENTS.md' -g '!*.aed')
+for token in "$legacy_hyphen" "$legacy_snake" "$legacy_upper"; do
+	matches=$(rg -n --fixed-strings -- "$token" "${tracked[@]}" 2>/dev/null)
+	if [[ -n $matches ]]; then
+		printf 'legacy Aedicule name remains:\n%s\n' "$matches" >&2
+		failures=$((failures + 1))
+	fi
+done
+
+exit "$failures"

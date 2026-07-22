@@ -12,8 +12,8 @@ and relinks the large GPUI Rust derivation.
 
 Keep `packages.frontplane` sourced from an explicit allowlist containing the
 Rust manifests, `src/`, and pinned native dependencies; package mutable WAT
-under `share/gpui-wasm/plugins/`; and compose them with tiny launcher wrappers
-that set `GPUI_WASM_DEFAULT_PLUGIN`. A structural test must inspect the native
+under `share/aedicule/plugins/`; and compose them with tiny launcher wrappers
+that set `AEDICULE_DEFAULT_APPLICATION`. A structural test must inspect the native
 source derivation and reject the application WAT. This protects the boundary
 more reliably than timing a build or trusting a source comment.
 

@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, fs};
 
-use gpui_wasm::{
+use aedicule::{
     ApplicationAssets, FlacError, Frontplane, Limits, PluginInit, PluginSource, decode_flac,
     initialize_frontplane, package_application, prepare_reload_with_assets, wav::WavLimits,
 };
@@ -67,7 +67,7 @@ fn flac_assets_are_declared_once_and_played_as_transactional_one_way_events() {
     frontplane.tick(1).unwrap();
     assert_eq!(
         frontplane.drain_sample_audio(),
-        vec![gpui_wasm::SampleAudioEvent {
+        vec![aedicule::SampleAudioEvent {
             id: 77,
             volume: 0.5,
             pitch: 1.25,

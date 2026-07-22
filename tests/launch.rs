@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use gpui_wasm::{
+use aedicule::{
     FALLBACK_WAT, FileRevision, Frontplane, LaunchAction, Limits, PluginSource, RevisionTracker,
     WatRejectionStage, file_url_to_path, format_wat_rejection_diagnostic,
     resolve_launch as resolve_launch_with_default,
@@ -22,8 +22,7 @@ fn arguments<'a>(values: &'a [&'a str]) -> impl Iterator<Item = OsString> + 'a {
 }
 
 fn temporary_directory(label: &str) -> PathBuf {
-    let path =
-        std::env::temp_dir().join(format!("gpui-wasm-launch-{}-{label}", std::process::id()));
+    let path = std::env::temp_dir().join(format!("aedicule-launch-{}-{label}", std::process::id()));
     if path.exists() {
         fs::remove_dir_all(&path).unwrap();
     }

@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use gpui_wasm::{
+use aedicule::{
     Event, FixedStepClock, Frontplane, Key, Limits, MAX_SIMULATION_HZ, PluginInit, SimulationCall,
     SimulationScheduler, TickRate, initialize_frontplane, parse_display_refresh_rate,
     prepare_reload,

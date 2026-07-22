@@ -1,4 +1,4 @@
-use gpui_wasm::{
+use aedicule::{
     ButtonPlacement, ControlLabelPlacement, ControlPanel, ControlPhase, DrawCommand, Event,
     Frontplane, Key, Limits, PathSegment, Point, Rect, SliderControl, SliderPlacement, UiSnapshot,
     sin_cos_turn_q30,

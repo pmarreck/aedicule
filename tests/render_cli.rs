@@ -1,6 +1,6 @@
 use std::{fs, path::PathBuf, process::Command};
 
-use gpui_wasm::{DISPLAY_REFRESH_RATE_ENV, package_application};
+use aedicule::{DISPLAY_REFRESH_RATE_ENV, package_application};
 
 const SILENT_FLAC: &[u8] = &[
     102, 76, 97, 67, 0, 0, 0, 34, 16, 0, 16, 0, 0, 0, 15, 0, 0, 15, 1, 244, 2, 240, 0, 0, 0, 8,
@@ -15,9 +15,9 @@ fn animated_wat() -> PathBuf {
 }
 
 fn render(arguments: &[&str]) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_gpui-wasm-render"))
+    Command::new(env!("CARGO_BIN_EXE_aedicule-render"))
         .env("MUTE_DEBUG_STATUS", "1")
-        .env("GPUI_WASM_DEFAULT_PLUGIN", animated_wat())
+        .env("AEDICULE_DEFAULT_APPLICATION", animated_wat())
         .args(arguments)
         .output()
         .expect("render CLI should execute")
@@ -50,9 +50,9 @@ fn default_plugin_environment_selects_runtime_data_instead_of_compiled_applicati
     )
     .unwrap();
 
-    let result = Command::new(env!("CARGO_BIN_EXE_gpui-wasm-render"))
+    let result = Command::new(env!("CARGO_BIN_EXE_aedicule-render"))
         .env("MUTE_DEBUG_STATUS", "1")
-        .env("GPUI_WASM_DEFAULT_PLUGIN", &plugin)
+        .env("AEDICULE_DEFAULT_APPLICATION", &plugin)
         .output()
         .unwrap();
 
@@ -189,9 +189,9 @@ fn cli_reports_help_about_and_invalid_arguments_cleanly() {
 
 #[test]
 fn invalid_display_refresh_environment_override_fails_before_guest_execution() {
-    let result = Command::new(env!("CARGO_BIN_EXE_gpui-wasm-render"))
+    let result = Command::new(env!("CARGO_BIN_EXE_aedicule-render"))
         .env("MUTE_DEBUG_STATUS", "1")
-        .env("GPUI_WASM_DEFAULT_PLUGIN", animated_wat())
+        .env("AEDICULE_DEFAULT_APPLICATION", animated_wat())
         .env(DISPLAY_REFRESH_RATE_ENV, "59.")
         .output()
         .expect("render CLI should execute");
@@ -246,9 +246,9 @@ fn display_refresh_environment_override_reaches_the_guest_lifecycle_event() {
     )
     .unwrap();
 
-    let result = Command::new(env!("CARGO_BIN_EXE_gpui-wasm-render"))
+    let result = Command::new(env!("CARGO_BIN_EXE_aedicule-render"))
         .env("MUTE_DEBUG_STATUS", "1")
-        .env("GPUI_WASM_DEFAULT_PLUGIN", &plugin)
+        .env("AEDICULE_DEFAULT_APPLICATION", &plugin)
         .env(DISPLAY_REFRESH_RATE_ENV, "59.94")
         .output()
         .expect("render CLI should execute");
@@ -300,7 +300,7 @@ fn headless_controls_are_ordered_after_init_and_before_ticks() {
     )
     .unwrap();
 
-    let result = Command::new(env!("CARGO_BIN_EXE_gpui-wasm-render"))
+    let result = Command::new(env!("CARGO_BIN_EXE_aedicule-render"))
         .env("MUTE_DEBUG_STATUS", "1")
         .args([
             plugin.to_str().unwrap(),
@@ -323,7 +323,7 @@ fn headless_controls_are_ordered_after_init_and_before_ticks() {
     );
 
     for invalid in ["9=2400", "7=3603", "7=2401"] {
-        let result = Command::new(env!("CARGO_BIN_EXE_gpui-wasm-render"))
+        let result = Command::new(env!("CARGO_BIN_EXE_aedicule-render"))
             .env("MUTE_DEBUG_STATUS", "1")
             .args([plugin.to_str().unwrap(), "--control", invalid])
             .output()

@@ -8,10 +8,10 @@ use std::{
     process::{Command, Stdio},
 };
 
-use gpui_wasm::{DISPLAY_REFRESH_RATE_ENV, package_application};
+use aedicule::{DISPLAY_REFRESH_RATE_ENV, package_application};
 
 fn run(arguments: &[&str]) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_gpui-wasm"))
+    Command::new(env!("CARGO_BIN_EXE_aedicule"))
         .env("MUTE_DEBUG_STATUS", "1")
         .args(arguments)
         .output()
@@ -157,7 +157,7 @@ fn native_cli_serves_an_aed_through_the_bundled_web_runtime() {
     let archive = temporary.join("web application.aed");
     package_application(&application, &archive).unwrap();
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_gpui-wasm"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_aedicule"))
         .env("MUTE_DEBUG_STATUS", "1")
         .env("AEDICULE_WEB_RUNTIME", &runtime)
         .args(["--web", "--port", "0", archive.to_str().unwrap()])

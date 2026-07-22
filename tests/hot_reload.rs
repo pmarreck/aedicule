@@ -1,4 +1,4 @@
-use gpui_wasm::{Frontplane, Limits, PluginInit, StateTransfer, prepare_reload};
+use aedicule::{Frontplane, Limits, PluginInit, StateTransfer, prepare_reload};
 
 fn stateful_wat(delta: i32, schema: u32, state_length: u32, render_status: i32) -> String {
     format!(

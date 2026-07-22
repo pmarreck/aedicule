@@ -5,7 +5,7 @@ use std::{
     process::ExitCode,
 };
 
-use gpui_wasm::{
+use aedicule::{
     ControlPhase, DEFAULT_PLUGIN_ENV, Event, FALLBACK_WAT, Frontplane, Limits, PluginInit,
     PluginSource, display_refresh_rate_from_environment, initialize_frontplane, render_svg,
 };
@@ -19,7 +19,7 @@ const HELP: &str = "\
 Render a deterministic WAT application frame without opening a window.
 
 Usage:
-  gpui-wasm-render [PLUGIN.wat|APPLICATION_DIRECTORY|APPLICATION.aed|-|@stdin] [options]
+  aedicule-render [PLUGIN.wat|APPLICATION_DIRECTORY|APPLICATION.aed|-|@stdin] [options]
 
 Options:
   --ticks N          Advance N fixed simulation ticks before rendering
@@ -85,7 +85,7 @@ fn main() -> ExitCode {
     let action = match parse_arguments(env::args().skip(1)) {
         Ok(action) => action,
         Err(error) => {
-            eprintln!("gpui-wasm-render: {error}");
+            eprintln!("aedicule-render: {error}");
             return ExitCode::from(2);
         }
     };
@@ -96,7 +96,7 @@ fn main() -> ExitCode {
         }
         Action::About => {
             println!(
-                "gpui-wasm-render {} — deterministic WAT frame renderer for {} {}",
+                "aedicule-render {} — deterministic WAT frame renderer for {} {}",
                 env!("CARGO_PKG_VERSION"),
                 env::consts::OS,
                 env::consts::ARCH,
@@ -106,7 +106,7 @@ fn main() -> ExitCode {
         Action::Render(options) => match run(options) {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) => {
-                eprintln!("gpui-wasm-render: {error}");
+                eprintln!("aedicule-render: {error}");
                 ExitCode::FAILURE
             }
         },

@@ -112,7 +112,7 @@
 					linux = pkgs.stdenv.isLinux;
 					luajitWithPackages = luajitWithPackagesFor pkgs;
 					libcrypto = "${pkgs.openssl.out}/lib/libcrypto${pkgs.stdenv.hostPlatform.extensions.sharedLibrary}";
-					cargoBuildSourceName = "gpui-wasm-build-source";
+					cargoBuildSourceName = "aedicule-build-source";
 					frontplaneSource = builtins.path {
 						path = ./.;
 						name = cargoBuildSourceName;
@@ -199,10 +199,10 @@
 					applicationCargoDeps = pkgs.rustPlatform.fetchCargoVendor {
 						name = "aedicule-cargo-deps";
 						src = cargoDependencySource;
-						hash = "sha256-Q8ruCyX5lQTlpWMyHBnu0Y5mDzBILwBjl3mzbwFZiVE=";
+						hash = "sha256-KQT25+rOcHOF4PcFRBGjxjwpMLWMXM3MwozT+XlYh/c=";
 					};
 					nativeCommonArgs = {
-						pname = "gpui-wasm";
+						pname = "aedicule";
 						inherit version;
 						src = frontplaneSource;
 						dummySrc = cargoDependencySource;
@@ -211,7 +211,7 @@
 						# makes this dependency derivation stable across Rust-only edits.
 						cargoVendorDir = null;
 						cargoDeps = applicationCargoDeps;
-						cargoExtraArgs = "--bin gpui-wasm --bin gpui-wasm-render";
+						cargoExtraArgs = "--bin aedicule --bin aedicule-render";
 						strictDeps = true;
 						nativeBuildInputs = with pkgs; [
 							rustPlatform.cargoSetupHook
@@ -227,7 +227,7 @@
 						# dependencies are a smaller delta compiled by the test derivation.
 						doCheck = false;
 						buildPhaseCargoCommand =
-							"cargoWithProfile build --bin gpui-wasm --bin gpui-wasm-render";
+							"cargoWithProfile build --bin aedicule --bin aedicule-render";
 						}
 					);
 					gpuiWebFont = path: hash: pkgs.fetchurl {
@@ -292,14 +292,14 @@
 							targetLlvmWindows = targetPkgs.stdenv.hostPlatform.isWindows
 								&& (targetPkgs.stdenv.hostPlatform.useLLVM or false);
 							targetRustTarget = targetPkgs.stdenv.hostPlatform.rust.cargoShortTarget;
-							binaryName = "gpui-wasm${targetPkgs.stdenv.hostPlatform.extensions.executable}";
+							binaryName = "aedicule${targetPkgs.stdenv.hostPlatform.extensions.executable}";
 						in targetPkgs.rustPlatform.buildRustPackage {
 							pname = "aedicule-${targetName}";
 							inherit version;
 							src = frontplaneSource;
 							cargoDeps = applicationCargoDeps;
-							cargoBuildFlags = [ "--bin" "gpui-wasm" ];
-							cargoInstallFlags = [ "--bin" "gpui-wasm" ];
+							cargoBuildFlags = [ "--bin" "aedicule" ];
+							cargoInstallFlags = [ "--bin" "aedicule" ];
 							doCheck = false;
 							strictDeps = true;
 							nativeBuildInputs = with targetPkgs.buildPackages; [
@@ -368,7 +368,7 @@
 							cp -LR ${targetPkgs.alsa-lib}/share/alsa $out/share/
 							cp -LR ${targetPkgs.xkeyboard_config}/share/X11/. $out/share/X11/
 							cp -LR ${targetPkgs.libx11}/share/X11/locale $out/share/X11/
-							install -Dm755 ${raw}/bin/gpui-wasm $out/libexec/aedicule
+							install -Dm755 ${raw}/bin/aedicule $out/libexec/aedicule
 							chmod -R u+w $out/lib $out/libexec
 							install -Dm755 ${./packaging/linux/aedicule-launcher.in} $out/bin/aedicule
 							substituteInPlace $out/bin/aedicule \
@@ -408,7 +408,7 @@
 						pkgs.runCommand "aedicule-delivery-${targetName}" {} ''
 							mkdir -p $out/Demos $out/Tools $out/Web
 							cp -R ${self.packages.${system}.webRuntime}/. $out/Web/
-							cp ${raw}/bin/gpui-wasm.exe $out/Aedicule.exe
+							cp ${raw}/bin/aedicule.exe $out/Aedicule.exe
 							while IFS= read -r -d $'\0' runtimeDll; do
 								cp -L "$runtimeDll" $out/
 							done < <(find ${raw}/bin -maxdepth 1 \
@@ -431,7 +431,7 @@
 							app=$out/Aedicule.app
 							mkdir -p $app/Contents/MacOS $app/Contents/Resources/Demos $app/Contents/Resources/Web icon-work/app icon-work/document
 							cp -R ${self.packages.${system}.webRuntime}/. $app/Contents/Resources/Web/
-							cp ${raw}/bin/gpui-wasm $app/Contents/MacOS/aedicule
+							cp ${raw}/bin/aedicule $app/Contents/MacOS/aedicule
 							chmod +x $app/Contents/MacOS/aedicule
 							for size in 16 32 48 128 256 512 1024; do
 								magick ${./assets/icons/aedicule-app.png} -resize "''${size}x''${size}" \
@@ -500,8 +500,8 @@
 							export CARGO_ZIGBUILD_CACHE_DIR=$TMPDIR/cargo-zigbuild
 							export ZIG_GLOBAL_CACHE_DIR=$TMPDIR/zig-cache
 							cargo zigbuild --offline --release --target ${macosRustTarget} \
-								--bin gpui-wasm
-							binary=target/${macosRustTarget}/release/gpui-wasm
+								--bin aedicule
+							binary=target/${macosRustTarget}/release/aedicule
 							luajit ${./packaging/macos/canonicalize_uuid} "$binary"
 							rcodesign sign --binary-identifier com.pmarreck.aedicule \
 								"$binary" "$binary.signed"
@@ -509,8 +509,8 @@
 							runHook postBuild
 						'';
 						installPhase = ''
-							install -Dm755 target/${macosRustTarget}/release/gpui-wasm \
-								$out/bin/gpui-wasm
+							install -Dm755 target/${macosRustTarget}/release/aedicule \
+								$out/bin/aedicule
 						'';
 					};
 					rawLinuxAarch64 = mkRawFrontplane "linux-aarch64" linuxAarch64Pkgs;
@@ -537,14 +537,14 @@
 						nativeBuildInputs = nativeCommonArgs.nativeBuildInputs
 							++ pkgs.lib.optionals linux [ pkgs.makeWrapper ];
 						postFixup = pkgs.lib.optionalString linux ''
-							wrapProgram $out/bin/gpui-wasm \
+							wrapProgram $out/bin/aedicule \
 								--prefix LD_LIBRARY_PATH : ${pkgs.lib.makeLibraryPath (linuxLibraries pkgs)} \
 								--set AEDICULE_WEB_RUNTIME ${self.packages.${system}.webRuntime}
 							'';
-						meta.mainProgram = "gpui-wasm";
+						meta.mainProgram = "aedicule";
 					});
 					test = nativeCrane.buildPackage (nativeCommonArgs // {
-						pname = "gpui-wasm-tests";
+						pname = "aedicule-tests";
 						src = testSource;
 						cargoArtifacts = nativeCargoArtifacts;
 						doCheck = true;
@@ -564,6 +564,7 @@
 						checkPhase = ''
 							runHook preCheck
 							patchShebangs tests/cli/development_dependencies tests/cli/repository_boundary \
+								tests/cli/aedicule_naming \
 								tests/cli/document_packages tests/cli/demo_snapshots \
 								tests/cli/macos_reproducibility tests/cli/reproducible_releases \
 								tests/cli/web_i18n tests/cli/github_pages \
@@ -571,12 +572,13 @@
 								tests/cli/native_parallelism \
 								packaging/macos/canonicalize_uuid check_reproducible
 							cargo test --no-default-features --features native-runtime
-							cargo test --bin gpui-wasm
-							cargo rustc --release --bin gpui-wasm -- -D warnings
+							cargo test --bin aedicule
+							cargo rustc --release --bin aedicule -- -D warnings
 							cargo test --test gui_cli
 							cargo check
 							./tests/cli/development_dependencies
 							./tests/cli/repository_boundary
+							./tests/cli/aedicule_naming
 							./tests/cli/document_packages
 							./tests/cli/demo_snapshots
 							./tests/cli/macos_reproducibility

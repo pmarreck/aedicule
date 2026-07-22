@@ -2,7 +2,7 @@
 
 use std::{fs, path::PathBuf};
 
-use gpui_wasm::{PluginSource, package_application, run_application_tests};
+use aedicule::{PluginSource, package_application, run_application_tests};
 
 fn temporary_directory(label: &str) -> PathBuf {
     let path = std::env::temp_dir().join(format!(

@@ -6,8 +6,8 @@ root=$(cd "$(dirname "$0")/../.." && pwd -P)
 temporary=$(mktemp -d "$TMPDIR/aedicule-native-parallelism.XXXXXX")
 trap 'rm -rf "$temporary"' EXIT
 mkdir -p "$temporary/bin" "$temporary/output/bin"
-touch "$temporary/output/bin/gpui-wasm" "$temporary/output/bin/gpui-wasm-render"
-chmod +x "$temporary/output/bin/gpui-wasm" "$temporary/output/bin/gpui-wasm-render"
+touch "$temporary/output/bin/aedicule" "$temporary/output/bin/aedicule-render"
+chmod +x "$temporary/output/bin/aedicule" "$temporary/output/bin/aedicule-render"
 
 cat >"$temporary/bin/nix" <<'FAKE_NIX'
 #!/bin/sh

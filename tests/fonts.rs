@@ -1,4 +1,4 @@
-use gpui_wasm::{
+use aedicule::{
     DrawCommand, Frontplane, GEIST_MONO_FAMILY, GEIST_MONO_REGULAR, Limits, TextFont, render_svg,
 };
 
@@ -53,7 +53,7 @@ const INTEGER_FONT_WAT: &str = r#"(module
 	(func (export "AE_state_len") (result i32) i32.const 0)
 	(func (export "AE_state_schema") (result i32) i32.const 1))"#;
 
-fn render(source: &str) -> Result<gpui_wasm::FrameOutput, gpui_wasm::FrontplaneError> {
+fn render(source: &str) -> Result<aedicule::FrameOutput, aedicule::FrontplaneError> {
     let mut frontplane = Frontplane::from_wat(source, Limits::default())?;
     frontplane.configure()?;
     frontplane.init(7, 320.0, 240.0)?;

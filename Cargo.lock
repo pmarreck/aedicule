@@ -126,6 +126,34 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
+name = "aedicule"
+version = "0.1.1"
+dependencies = [
+ "ahash",
+ "anyhow",
+ "async_zip",
+ "claxon",
+ "embed-resource",
+ "futures-lite 2.6.1",
+ "gpui",
+ "gpui-component",
+ "gpui-component-assets",
+ "gpui_platform",
+ "js-sys",
+ "rodio",
+ "smol",
+ "thiserror 2.0.18",
+ "unicode-normalization",
+ "wasm-bindgen",
+ "wasmi",
+ "wasmprinter",
+ "wasmtime",
+ "wasmtime-wast",
+ "wat",
+ "web-time",
+]
+
+[[package]]
 name = "aes"
 version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2808,34 +2836,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "gpui-wasm"
-version = "0.1.1"
-dependencies = [
- "ahash",
- "anyhow",
- "async_zip",
- "claxon",
- "embed-resource",
- "futures-lite 2.6.1",
- "gpui",
- "gpui-component",
- "gpui-component-assets",
- "gpui_platform",
- "js-sys",
- "rodio",
- "smol",
- "thiserror 2.0.18",
- "unicode-normalization",
- "wasm-bindgen",
- "wasmi",
- "wasmprinter",
- "wasmtime",
- "wasmtime-wast",
- "wat",
- "web-time",
 ]
 
 [[package]]

@@ -45,6 +45,8 @@ expected=(
 	--manifest-path
 	"$root/Cargo.toml"
 	--release
+	--bin
+	aedicule
 	--
 	--watch
 	"$foreign_dir/code.wat"

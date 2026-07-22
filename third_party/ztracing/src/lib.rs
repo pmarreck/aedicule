@@ -6,7 +6,7 @@
 
 #[cfg(ztracing)]
 compile_error!(
-	"real Zed tracing is deliberately unsupported by gpui-wasm's Apache compatibility layer"
+	"real Zed tracing is deliberately unsupported by aedicule's Apache compatibility layer"
 );
 
 pub use ztracing_macro::instrument;

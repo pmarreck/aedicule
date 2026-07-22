@@ -4,17 +4,17 @@
 use std::{borrow::Cow, cell::OnceCell};
 
 #[cfg_attr(not(target_family = "wasm"), allow(unused_imports))]
+use aedicule::{
+    Event, GEIST_MONO_REGULAR, PluginInit, PointerButton, PointerScrollUnit,
+    gpui_canvas::paint_frame,
+    web::{BROWSER_WAT_GLOBAL, BrowserRuntime, required_browser_wat},
+};
+#[cfg_attr(not(target_family = "wasm"), allow(unused_imports))]
 use gpui::{
     App, AppContext as _, Bounds, Context, InteractiveElement as _, IntoElement, MouseButton,
     MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement as _, Render, ScrollDelta,
     ScrollWheelEvent, Styled as _, Window, WindowBounds, WindowOptions, canvas, div,
     prelude::FluentBuilder as _, px, rgba, size,
-};
-#[cfg_attr(not(target_family = "wasm"), allow(unused_imports))]
-use gpui_wasm::{
-    Event, GEIST_MONO_REGULAR, PluginInit, PointerButton, PointerScrollUnit,
-    gpui_canvas::paint_frame,
-    web::{BROWSER_WAT_GLOBAL, BrowserRuntime, required_browser_wat},
 };
 #[cfg(target_family = "wasm")]
 use wasm_bindgen::JsValue;
