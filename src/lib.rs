@@ -909,6 +909,7 @@ pub struct UiSnapshot {
     pub revision: u32,
     pub control_panels: Vec<ControlPanel>,
     pub sliders: Vec<SliderPlacement>,
+    pub buttons: Vec<ButtonPlacement>,
 }
 
 /// Places one host-native control surface in the guest-authored UI snapshot;
@@ -948,6 +949,17 @@ pub struct SliderPlacement {
     pub value: i32,
     pub bounds: Rect,
     pub label_placement: ControlLabelPlacement,
+}
+
+/// Places a guest-keyed native button whose label and action identity come
+/// from one configure-time action declaration.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ButtonPlacement {
+    pub id: u32,
+    pub panel_id: u32,
+    pub action_id: u32,
+    pub bounds: Rect,
+    pub selected: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -1612,6 +1624,8 @@ struct UiBuilder {
     control_panel_ids: HashSet<u32>,
     sliders: Vec<SliderPlacement>,
     slider_ids: HashSet<u32>,
+    buttons: Vec<ButtonPlacement>,
+    button_ids: HashSet<u32>,
 }
 
 struct PathBuilder {
@@ -2574,6 +2588,50 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
     linker
         .func_wrap(
             WAT_IMPORT_MODULE,
+            "AE_button_place_q16",
+            |mut caller: Caller<'_, HostState>,
+             id: i32,
+             panel_id: i32,
+             action_id: i32,
+             x: i32,
+             y: i32,
+             width: i32,
+             height: i32,
+             flags: i32| {
+                let max_abs = caller.data().limits.max_coordinate_abs;
+                let Some(bounds) = q16_rect(x, y, width, height, max_abs) else {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::InvalidNumber("AE_button_place_q16"), -5);
+                };
+                if flags & !1 != 0 {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::InvalidNumber("AE_button_place_q16"), -5);
+                }
+                let action_id = action_id as u32;
+                if !caller.data().menu_ids.contains(&action_id) {
+                    return caller.data_mut().reject(
+                        PendingError::InvalidFrame("button placement uses undeclared action"),
+                        -8,
+                    );
+                }
+                push_button_placement(
+                    caller.data_mut(),
+                    ButtonPlacement {
+                        id: id as u32,
+                        panel_id: panel_id as u32,
+                        action_id,
+                        bounds,
+                        selected: flags & 1 != 0,
+                    },
+                )
+            },
+        )
+        .map_err(runtime_error)?;
+    linker
+        .func_wrap(
+            WAT_IMPORT_MODULE,
             "AE_menu_item",
             |mut caller: Caller<'_, HostState>,
              id: i32,
@@ -3520,6 +3578,38 @@ fn push_slider_placement(state: &mut HostState, slider: SliderPlacement) -> i32 
     0
 }
 
+/// Adds one declared action button to the current UI document while keeping
+/// panel ownership and stable widget identity guest-authored and validated.
+fn push_button_placement(state: &mut HostState, button: ButtonPlacement) -> i32 {
+    let max_controls = state.limits.max_controls;
+    let Some(ui) = state.ui.as_mut() else {
+        return state.reject(
+            PendingError::InvalidFrame("button placement outside UI snapshot"),
+            -6,
+        );
+    };
+    if !ui.control_panel_ids.contains(&button.panel_id) {
+        return state.reject(
+            PendingError::InvalidFrame("button placement uses unknown control panel"),
+            -8,
+        );
+    }
+    if ui.buttons.len() >= max_controls {
+        return state.reject(
+            PendingError::Budget("AE_button_place_q16", "button placement"),
+            -2,
+        );
+    }
+    if !ui.button_ids.insert(button.id) {
+        return state.reject(
+            PendingError::DuplicateId("AE_button_place_q16", button.id),
+            -7,
+        );
+    }
+    ui.buttons.push(button);
+    0
+}
+
 fn push_unkeyed(state: &mut HostState, command: DrawCommand, operation: &'static str) -> i32 {
     let max_commands = state.limits.max_commands;
     let Some(frame) = state.frame.as_mut() else {
@@ -3649,6 +3739,8 @@ fn begin_ui(state: &mut HostState, revision: u32) -> i32 {
         control_panel_ids: HashSet::new(),
         sliders: Vec::new(),
         slider_ids: HashSet::new(),
+        buttons: Vec::new(),
+        button_ids: HashSet::new(),
     });
     0
 }
@@ -3667,6 +3759,7 @@ fn end_ui(state: &mut HostState) -> i32 {
         revision: ui.revision,
         control_panels: ui.control_panels,
         sliders: ui.sliders,
+        buttons: ui.buttons,
     });
     0
 }

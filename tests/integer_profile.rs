@@ -1,16 +1,19 @@
 use gpui_wasm::{
-    ControlLabelPlacement, ControlPanel, ControlPhase, DrawCommand, Event, Frontplane, Key, Limits,
-    PathSegment, Point, Rect, SliderControl, SliderPlacement, UiSnapshot, sin_cos_turn_q30,
+    ButtonPlacement, ControlLabelPlacement, ControlPanel, ControlPhase, DrawCommand, Event,
+    Frontplane, Key, Limits, PathSegment, Point, Rect, SliderControl, SliderPlacement, UiSnapshot,
+    sin_cos_turn_q30,
 };
 
 const INTEGER_LIFECYCLE_WAT: &str = r#"(module
 	(import "aedicule.v0" "AE_frame_begin_rgba" (func $frame_begin_rgba (param i32) (result i32)))
 	(import "aedicule.v0" "AE_frame_end" (func $frame_end (result i32)))
+	(import "aedicule.v0" "AE_menu_item" (func $menu_item (param i32 i32 i32 i32 i32) (result i32)))
 	(import "aedicule.v0" "AE_slider_i32" (func $slider_i32 (param i32 i32 i32 i32 i32 i32 i32) (result i32)))
 	(import "aedicule.v0" "AE_ui_begin" (func $ui_begin (param i32) (result i32)))
 	(import "aedicule.v0" "AE_ui_end" (func $ui_end (result i32)))
 	(import "aedicule.v0" "AE_control_panel_q16" (func $control_panel_q16 (param i32 i32 i32 i32 i32 i32 i32) (result i32)))
 	(import "aedicule.v0" "AE_slider_place_q16" (func $slider_place_q16 (param i32 i32 i32 i32 i32 i32 i32 i32 i32) (result i32)))
+	(import "aedicule.v0" "AE_button_place_q16" (func $button_place_q16 (param i32 i32 i32 i32 i32 i32 i32 i32) (result i32)))
 	(import "aedicule.v0" "AE_path_begin" (func $path_begin (param i32) (result i32)))
 	(import "aedicule.v0" "AE_path_move_q16" (func $path_move_q16 (param i32 i32) (result i32)))
 	(import "aedicule.v0" "AE_path_line_q16" (func $path_line_q16 (param i32 i32) (result i32)))
@@ -18,6 +21,7 @@ const INTEGER_LIFECYCLE_WAT: &str = r#"(module
 	(import "aedicule.v0" "AE_sin_cos_turn" (func $sin_cos_turn (param i32) (result i32 i32)))
 	(memory (export "memory") 1)
 	(data (i32.const 0) "Iterations")
+	(data (i32.const 16) "Play/Pause")
 	(global $ui_revision (mut i32) (i32.const 1))
 	(global $sent_ui_revision (mut i32) (i32.const 0))
 	(global $invalid_ui (mut i32) (i32.const 0))
@@ -31,7 +35,14 @@ const INTEGER_LIFECYCLE_WAT: &str = r#"(module
 		i32.const 3600
 		i32.const 3
 		i32.const 1050
-		call $slider_i32)
+		call $slider_i32
+		drop
+		i32.const 42
+		i32.const 16
+		i32.const 10
+		i32.const 0
+		i32.const 0
+		call $menu_item)
 	(func (export "AE_init_i32") (param i32 i32) (param $width i32) (param $height i32) (result i32)
 		i32.const 64 local.get $width i32.store
 		i32.const 68 local.get $height i32.store
@@ -80,6 +91,18 @@ const INTEGER_LIFECYCLE_WAT: &str = r#"(module
 			i32.const 63963136 i32.const 2621440
 			i32.const 1 i32.const 0
 			call $slider_place_q16
+			local.get $ui_status i32.or local.set $ui_status
+			i32.const 9 i32.const 5
+			global.get $invalid_ui
+			if (result i32)
+				i32.const 43
+			else
+				i32.const 42
+			end
+			i32.const 1572864 i32.const 41943040
+			i32.const 10485760 i32.const 2621440
+			i32.const 1
+			call $button_place_q16
 			local.get $ui_status i32.or local.set $ui_status
 			call $ui_end
 			local.get $ui_status i32.or local.tee $ui_status
@@ -201,6 +224,18 @@ fn integer_lifecycle_omits_legacy_float_exports_and_receives_q16_viewports() {
                 },
                 label_placement: ControlLabelPlacement::Above,
             }],
+            buttons: vec![ButtonPlacement {
+                id: 9,
+                panel_id: 5,
+                action_id: 42,
+                bounds: Rect {
+                    x: 24.0,
+                    y: 640.0,
+                    width: 160.0,
+                    height: 40.0,
+                },
+                selected: true,
+            }],
         })
     );
     assert_eq!(
@@ -232,6 +267,51 @@ fn invalid_ui_snapshot_preserves_the_last_accepted_revision() {
 
     assert_eq!(frontplane.ui_snapshot(), Some(&accepted));
     assert_eq!(frame.background, 0x123456ff);
+}
+
+#[test]
+fn invalid_button_snapshot_preserves_the_last_accepted_revision() {
+    let button_only_failure = INTEGER_LIFECYCLE_WAT.replace(
+        "global.get $invalid_ui\n\t\t\tif (result i32)\n\t\t\t\ti32.const 2401\n\t\t\telse\n\t\t\t\ti32.const 72 i32.load\n\t\t\tend",
+        "i32.const 72 i32.load",
+    );
+    let mut frontplane = Frontplane::from_wat(&button_only_failure, Limits::default()).unwrap();
+    frontplane.configure().unwrap();
+    frontplane.init(7, 1024.0, 768.0).unwrap();
+    frontplane.render().unwrap();
+    let accepted = frontplane.ui_snapshot().cloned().unwrap();
+
+    frontplane.event(Event::KeyDown(Key::ArrowLeft)).unwrap();
+    assert!(frontplane.render().is_err());
+
+    assert_eq!(frontplane.ui_snapshot(), Some(&accepted));
+}
+
+#[test]
+fn invalid_button_references_flags_and_keys_are_rejected() {
+    let action_expression = "global.get $invalid_ui\n\t\t\tif (result i32)\n\t\t\t\ti32.const 43\n\t\t\telse\n\t\t\t\ti32.const 42\n\t\t\tend";
+    let button_call = "i32.const 9 i32.const 5\n\t\t\tglobal.get $invalid_ui\n\t\t\tif (result i32)\n\t\t\t\ti32.const 43\n\t\t\telse\n\t\t\t\ti32.const 42\n\t\t\tend\n\t\t\ti32.const 1572864 i32.const 41943040\n\t\t\ti32.const 10485760 i32.const 2621440\n\t\t\ti32.const 1\n\t\t\tcall $button_place_q16\n\t\t\tlocal.get $ui_status i32.or local.set $ui_status";
+    let mutants = [
+        INTEGER_LIFECYCLE_WAT.replacen(action_expression, "i32.const 99", 1),
+        INTEGER_LIFECYCLE_WAT.replacen(
+            "i32.const 9 i32.const 5\n\t\t\tglobal.get $invalid_ui",
+            "i32.const 9 i32.const 99\n\t\t\tglobal.get $invalid_ui",
+            1,
+        ),
+        INTEGER_LIFECYCLE_WAT.replacen(
+            "i32.const 1\n\t\t\tcall $button_place_q16",
+            "i32.const 2\n\t\t\tcall $button_place_q16",
+            1,
+        ),
+        INTEGER_LIFECYCLE_WAT.replacen(button_call, &format!("{button_call}\n{button_call}"), 1),
+    ];
+
+    for mutant in mutants {
+        let mut frontplane = Frontplane::from_wat(&mutant, Limits::default()).unwrap();
+        frontplane.configure().unwrap();
+        frontplane.init(7, 1024.0, 768.0).unwrap();
+        assert!(frontplane.render().is_err());
+    }
 }
 
 #[test]

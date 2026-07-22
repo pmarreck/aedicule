@@ -65,13 +65,13 @@ Pointer-scroll unit IDs are `1` lines and `2` logical pixels. Positive `a` means
 
 ## Integer controls and declarative native UI
 
-`AE_slider_i32` declares only a slider's stable ID, accessible label, and exact integer lattice during `AE_configure`; it does **not** create a persistent host-owned widget. A guest that declares any slider must export `(func (export "AE_control_event") (param id i32) (param value i32) (param phase i32) (result i32))`. Values are validated against the declared inclusive minimum, maximum, and exact step lattice before delivery. Phase `1` is a continuous change and phase `2` is the committed release edge. Native delivery is ordered through the simulation scheduler.
+`AE_slider_i32` declares only a slider's stable ID, accessible label, and exact integer lattice during `AE_configure`; it does **not** create a persistent host-owned widget. A guest that declares any slider must export `(func (export "AE_control_event") (param id i32) (param value i32) (param phase i32) (result i32))`. Values are validated against the declared inclusive minimum, maximum, and exact step lattice before delivery. Phase `1` is a continuous change and phase `2` is the committed release edge. Native delivery is ordered through the simulation scheduler. Non-separator `AE_menu_item` declarations also define reusable action IDs and accessible labels for native buttons; a button click delivers the existing ordered kind-`7` action event.
 
 Native UI follows a local LiveView model. The guest is authoritative for the desired keyed tree and submits a complete snapshot during `AE_render` only when that UI changes: `AE_ui_begin(revision)`, zero or more widget declarations, then `AE_ui_end()`. The revision is an opaque 32-bit bit pattern and must differ from the last accepted revision. An unchanged UI is omitted while ordinary `AE_frame_*` canvas rendering continues. A completed snapshot is published only when the entire surrounding `AE_render` call also returns a valid canvas frame; any rejected import, trap, missing `AE_ui_end`, or incomplete frame preserves the previously accepted snapshot. A snapshot may intentionally be empty, which removes every native widget.
 
-Inside the UI transaction, emit each `AE_control_panel_q16` before any `AE_slider_place_q16` that references it. Geometry is absolute viewport-relative signed Q16.16. Panel and slider stable IDs are independently unique within one snapshot. A slider placement must name a configure-time declaration and carry a value on that declaration's exact lattice. The guest-provided value is authoritative; Aedicule may retain a GPUI entity only for focus, hover, drag, and accessibility mechanics, then reconciles it by stable ID when a new revision is accepted. Omitting an ID from the next snapshot removes it. Label placement `0` hides the visual label/value and `1` places it above a full-width track. Version 0 requires all UI flags to be zero.
+Inside the UI transaction, emit each `AE_control_panel_q16` before any slider or button that references it. Geometry is absolute viewport-relative signed Q16.16. Panel, slider, and button stable IDs are independently unique within one snapshot. A slider placement must name a configure-time declaration and carry a value on that declaration's exact lattice. The guest-provided value is authoritative; Aedicule may retain a GPUI entity only for focus, hover, drag, and accessibility mechanics, then reconciles it by stable ID when a new revision is accepted. Omitting an ID from the next snapshot removes it. Slider label placement `0` hides the visual label/value and `1` places it above a full-width track; slider and panel flags remain zero. A button placement must reference a declared action. Button flag bit `0` selects the platform-native highlighted state; every other bit is reserved and must be zero.
 
-After accepting a control event, a guest that wants the changed value displayed must update its model and submit a new UI revision. If it does not, Aedicule reconciles the transient host interaction back to the last accepted guest value. Headless `gpui-wasm-render --control ID=VALUE` arguments are repeatable, preserve argument order, use phase `2`, and execute after initialization but before requested ticks and rendering.
+After accepting a control or action event, a guest that wants the changed value or selected state displayed must update its model and submit a new UI revision. If it does not, Aedicule reconciles transient slider interaction back to the last accepted guest value and retains the last accepted button state. Headless `gpui-wasm-render --control ID=VALUE` arguments are repeatable, preserve argument order, use phase `2`, and execute after initialization but before requested ticks and rendering.
 
 ### `AE_title`
 
@@ -128,6 +128,14 @@ Places a guest-sized native-control panel in the current UI snapshot using Q16.1
 ```
 
 Places a declared native integer slider in the current UI snapshot; the guest-provided value and Q16.16 bounds remain authoritative.
+
+### `AE_button_place_q16`
+
+```wat
+(func $AE_button_place_q16 (param id i32) (param panel_id i32) (param action_id i32) (param x_q16 i32) (param y_q16 i32) (param width_q16 i32) (param height_q16 i32) (param flags i32) (result i32))
+```
+
+Places a declared action as a keyed native button; flag bit 0 is the guest-authored selected state and all other bits are reserved.
 
 ### `AE_sin_cos_turn`
 

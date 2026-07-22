@@ -27,7 +27,15 @@
     (2026-07-21 21:16 EDT)
   - [x] Receive the revised real-guest green proof for the final keyed-snapshot
     ABI. (2026-07-21 21:20 EDT)
-  - [ ] Receive Peter's visual drag acceptance for the final keyed-snapshot ABI.
+  - [x] Add guest-authored keyed native buttons that reference declared action
+    IDs, use exact Q16.16 bounds, expose a selected state, and deliver the
+    existing ordered kind-7 event without embedding playback semantics.
+    (2026-07-21 22:31 EDT)
+  - [x] Paint asset-independent high-contrast title-bar glyphs over GPUI
+    Component's still-functional native control hit regions, preserving host
+    pointer occlusion. (2026-07-21 22:31 EDT)
+  - [ ] Receive Peter's visual acceptance for sliders, playback buttons, and
+    the title-bar glyph fallback in the final keyed-snapshot ABI.
   - Curiosity poke: can future integer composition imports share one declarative
     fixed-point type description instead of proliferating suffix-specific docs?
 

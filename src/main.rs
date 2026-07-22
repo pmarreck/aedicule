@@ -15,7 +15,7 @@ use gpui::{
     actions, canvas, div, prelude::FluentBuilder as _, px, rgba, size,
 };
 use gpui_component::{
-    ActiveTheme as _, Root, Theme, ThemeMode, TitleBar,
+    ActiveTheme as _, Root, Selectable as _, Theme, ThemeMode, TitleBar,
     button::{Button, ButtonVariants as _},
     h_flex,
     slider::{Slider, SliderEvent, SliderState},
@@ -35,6 +35,8 @@ actions!(gpui_wasm, [NewApplication, ShowHelp, ReloadPlugin, Quit]);
 
 const LOGICAL_WIDTH: f32 = 1024.0;
 const LOGICAL_HEIGHT: f32 = 768.0;
+const HOST_TITLE_BAR_HEIGHT: f32 = 34.0;
+const TITLE_BAR_GLYPH_RGBA: u32 = 0xf6f7f9ff;
 const WATCH_INTERVAL: Duration = Duration::from_millis(250);
 const MAX_TICKS_PER_WAKE: u32 = 8;
 const DEFAULT_PLUGIN_INIT: PluginInit = PluginInit::new(0x5eed_cafe, LOGICAL_WIDTH, LOGICAL_HEIGHT);
@@ -131,6 +133,22 @@ fn standard_menu_entries(metadata: &Metadata) -> Vec<StandardMenuEntry> {
             }
         })
         .collect()
+}
+
+/// Resolves a generic guest action to its configure-time accessible label so
+/// native widgets never invent or duplicate application text.
+fn menu_action_label(metadata: &Metadata, action_id: u32) -> Option<&str> {
+    metadata
+        .menu_items
+        .iter()
+        .find(|item| item.id == Some(action_id))
+        .map(|item| item.label.as_str())
+}
+
+/// Maps a native guest-authored button click onto the same ordered action
+/// event used by menus, preserving one application-independent input path.
+fn menu_action_event(action_id: u32) -> Event {
+    Event::MenuAction(action_id)
 }
 
 fn native_menus(metadata: &Metadata, can_reload: bool) -> Vec<Menu> {
@@ -920,6 +938,40 @@ fn host_title_bar_layer() -> gpui::Div {
     div().absolute().top_0().left_0().right_0().occlude()
 }
 
+/// Supplies an asset-independent fallback for GPUI Component's invisible
+/// title-bar SVGs while its underlying native control hit regions stay active.
+fn title_bar_control_glyphs(maximized: bool) -> [&'static str; 3] {
+    ["−", if maximized { "❐" } else { "□" }, "×"]
+}
+
+/// Paints non-interactive high-contrast glyphs over the adapter's existing
+/// minimize/maximize/close controls without taking over their event handling.
+fn title_bar_control_glyph_overlay(maximized: bool) -> gpui::Div {
+    if cfg!(target_os = "macos") || cfg!(target_family = "wasm") {
+        return div();
+    }
+    h_flex()
+        .absolute()
+        .top_0()
+        .right_0()
+        .h(px(HOST_TITLE_BAR_HEIGHT))
+        .text_color(rgba(TITLE_BAR_GLYPH_RGBA))
+        .children(
+            title_bar_control_glyphs(maximized)
+                .into_iter()
+                .map(|glyph| {
+                    div()
+                        .flex()
+                        .h_full()
+                        .w(px(HOST_TITLE_BAR_HEIGHT))
+                        .items_center()
+                        .justify_center()
+                        .text_lg()
+                        .child(glyph)
+                }),
+        )
+}
+
 /// Claims pointer ownership for host-provided guest controls so manipulating a
 /// slider cannot simultaneously enqueue a pointer edge on the WAT canvas.
 fn host_control_layer() -> gpui::Div {
@@ -1010,6 +1062,27 @@ impl Render for FrontplaneView {
                     .child(content),
             );
         }
+        let button_layers = ui
+            .iter()
+            .flat_map(|snapshot| snapshot.buttons.iter())
+            .map(|placement| {
+                let action_id = placement.action_id;
+                let label = menu_action_label(self.frontplane.metadata(), action_id)
+                    .expect("validated button action remains declared")
+                    .to_owned();
+                let button = Button::new(("native-button-control", placement.id as usize))
+                    .label(label)
+                    .selected(placement.selected)
+                    .w_full()
+                    .h_full()
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.queue_native_event(menu_action_event(action_id), cx)
+                    }));
+                guest_positioned_control_layer(placement.bounds)
+                    .id(("native-button", placement.id as usize))
+                    .child(button)
+            })
+            .collect::<Vec<_>>();
         let can_reload = self.source.is_some();
         let source_status = match &self.source {
             Some(source) if source.watch => {
@@ -1143,60 +1216,71 @@ impl Render for FrontplaneView {
             )
             .children(control_panels)
             .children(slider_layers)
+            .children(button_layers)
             .child(
-                host_title_bar_layer().child(
-                    TitleBar::new().child(
-                        h_flex()
-                            .w_full()
-                            .pr_3()
-                            .gap_2()
-                            .justify_between()
-                            .child(title)
-                            .child(
-                                h_flex()
-                                    .gap_2()
-                                    .when(can_reload, |this| {
-                                        this.child(
-                                            Button::new("reload-plugin").label(EN.reload).on_click(
+                host_title_bar_layer()
+                    .child(
+                        TitleBar::new().child(
+                            h_flex()
+                                .w_full()
+                                .pr_3()
+                                .gap_2()
+                                .justify_between()
+                                .child(title)
+                                .child(
+                                    h_flex()
+                                        .gap_2()
+                                        .when(can_reload, |this| {
+                                            this.child(
+                                                Button::new("reload-plugin")
+                                                    .label(EN.reload)
+                                                    .on_click(cx.listener(
+                                                        |this, _, window, cx| {
+                                                            this.reload_plugin(
+                                                                &ReloadPlugin,
+                                                                window,
+                                                                cx,
+                                                            )
+                                                        },
+                                                    )),
+                                            )
+                                        })
+                                        .when_some(new_label, |this, label| {
+                                            this.child(
+                                                Button::new("new-game")
+                                                    .primary()
+                                                    .label(label)
+                                                    .on_click(cx.listener(
+                                                        |this, _, window, cx| {
+                                                            this.new_application(
+                                                                &NewApplication,
+                                                                window,
+                                                                cx,
+                                                            )
+                                                        },
+                                                    )),
+                                            )
+                                        })
+                                        .when_some(help_label, |this, label| {
+                                            this.child(
+                                                Button::new("help-controls").label(label).on_click(
+                                                    cx.listener(|this, _, window, cx| {
+                                                        this.show_help(&ShowHelp, window, cx)
+                                                    }),
+                                                ),
+                                            )
+                                        })
+                                        .when_some(quit_label, |this, label| {
+                                            this.child(Button::new("quit").label(label).on_click(
                                                 cx.listener(|this, _, window, cx| {
-                                                    this.reload_plugin(&ReloadPlugin, window, cx)
+                                                    this.quit(&Quit, window, cx)
                                                 }),
-                                            ),
-                                        )
-                                    })
-                                    .when_some(new_label, |this, label| {
-                                        this.child(
-                                            Button::new("new-game")
-                                                .primary()
-                                                .label(label)
-                                                .on_click(cx.listener(|this, _, window, cx| {
-                                                    this.new_application(
-                                                        &NewApplication,
-                                                        window,
-                                                        cx,
-                                                    )
-                                                })),
-                                        )
-                                    })
-                                    .when_some(help_label, |this, label| {
-                                        this.child(
-                                            Button::new("help-controls").label(label).on_click(
-                                                cx.listener(|this, _, window, cx| {
-                                                    this.show_help(&ShowHelp, window, cx)
-                                                }),
-                                            ),
-                                        )
-                                    })
-                                    .when_some(quit_label, |this, label| {
-                                        this.child(Button::new("quit").label(label).on_click(
-                                            cx.listener(|this, _, window, cx| {
-                                                this.quit(&Quit, window, cx)
-                                            }),
-                                        ))
-                                    }),
-                            ),
-                    ),
-                ),
+                                            ))
+                                        }),
+                                ),
+                        ),
+                    )
+                    .child(title_bar_control_glyph_overlay(window.is_maximized())),
             )
             .child(
                 h_flex()
@@ -1433,9 +1517,10 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::{
-        DECIMAL_SCALE, StandardMenuEntry, ViewportTracker, fixed_sine,
-        guest_positioned_control_layer, host_title_bar_layer, map_key, render_synth_program_fixed,
-        standard_menu_entries,
+        DECIMAL_SCALE, StandardMenuEntry, TITLE_BAR_GLYPH_RGBA, ViewportTracker, fixed_sine,
+        guest_positioned_control_layer, host_title_bar_layer, map_key, menu_action_event,
+        menu_action_label, render_synth_program_fixed, standard_menu_entries,
+        title_bar_control_glyph_overlay, title_bar_control_glyphs,
     };
     use gpui::{
         Bounds, Context, InteractiveElement as _, IntoElement, MouseButton, ParentElement as _,
@@ -1443,7 +1528,7 @@ mod tests {
     };
     use gpui_component::TitleBar;
     use gpui_wasm::{
-        Key, MenuItem as PluginMenuItem, Metadata, SynthFilter, SynthVoice, SynthWaveform,
+        Event, Key, MenuItem as PluginMenuItem, Metadata, SynthFilter, SynthVoice, SynthWaveform,
         gpui_canvas::viewport_transform,
     };
 
@@ -1499,12 +1584,14 @@ mod tests {
                     MouseButton::Left,
                     cx.listener(|this, _, _, _| this.guest_pointer_downs += 1),
                 ))
-                .child(host_title_bar_layer().child(TitleBar::new().child(
-                    div().size_full().on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(|this, _, _, _| this.host_pointer_downs += 1),
-                    ),
-                )))
+                .child(
+                    host_title_bar_layer()
+                        .child(TitleBar::new().child(div().size_full().on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(|this, _, _, _| this.host_pointer_downs += 1),
+                        )))
+                        .child(title_bar_control_glyph_overlay(false)),
+                )
         }
     }
 
@@ -1529,6 +1616,13 @@ mod tests {
     }
 
     #[test]
+    fn title_bar_control_fallback_has_opaque_distinct_glyphs() {
+        assert_eq!(title_bar_control_glyphs(false), ["−", "□", "×"]);
+        assert_eq!(title_bar_control_glyphs(true), ["−", "❐", "×"]);
+        assert_eq!(TITLE_BAR_GLYPH_RGBA & 0xff, 0xff);
+    }
+
+    #[test]
     fn host_control_surface_occludes_guest_pointer_edges() {
         let mut app = TestApp::new();
         let mut window = app.open_window(|_, _| HostControlHitProbe::default());
@@ -1545,6 +1639,21 @@ mod tests {
             assert_eq!(probe.host_pointer_downs, 1);
             assert_eq!(probe.guest_pointer_downs, 1);
         });
+    }
+
+    #[test]
+    fn arbitrary_declared_actions_supply_native_button_labels_and_events() {
+        let metadata = Metadata {
+            menu_items: vec![
+                PluginMenuItem::separator(),
+                PluginMenuItem::action(42, "Play/Pause", None),
+            ],
+            ..Metadata::default()
+        };
+
+        assert_eq!(menu_action_label(&metadata, 42), Some("Play/Pause"));
+        assert_eq!(menu_action_label(&metadata, 99), None);
+        assert_eq!(menu_action_event(42), Event::MenuAction(42));
     }
 
     #[test]
