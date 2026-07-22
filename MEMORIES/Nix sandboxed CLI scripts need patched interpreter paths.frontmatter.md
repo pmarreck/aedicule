@@ -1,3 +1,8 @@
+---
+description: "Nix sandboxed CLI scripts need patched interpreter paths."
+datetime: 2026-07-17T18:41:42-04:00 # America/New_York (EDT)
+tags: [nix, nixos, flakes, sandboxed, cli, scripts, patched, interpreter, paths]
+---
 Portable project scripts may deliberately use `#!/usr/bin/env bash`, but a
 pure Nix build sandbox does not provide `/usr/bin/env`. A derivation that runs
 those scripts must call `patchShebangs` on its copied test files before

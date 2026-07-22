@@ -1,3 +1,8 @@
+---
+description: "Display rate overrides must parse decimals lexically and aliases explicitly."
+datetime: 2026-07-17T15:52:03-04:00 # America/New_York (EDT)
+tags: [display, gui, graphics, rate, overrides, parse, decimals, lexically, aliases, explicitly]
+---
 Display refresh overrides are human configuration but become deterministic host
 input. Parse decimal strings into integer numerator/denominator pairs without
 floating point, then normalize by greatest common divisor. Map only explicitly

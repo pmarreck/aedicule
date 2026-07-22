@@ -1,7 +1,138 @@
 # Plan
 
+- [ ] Add a zero-float WAT profile with exact integer host controls,
+  deterministic trig, and Q16.16 vector paths for Ulam/Uzumaki-class clients.
+  - [x] Accept paired `AE_init_i32` / `AE_event_i32` lifecycle exports and
+    packed-RGBA frame begin without any guest float types or opcodes.
+    (2026-07-21 18:58 EDT)
+  - [x] Declare bounded exact integer slider lattices and deliver ordered
+    change/release values through `AE_control_event`. (2026-07-21 19:03 EDT)
+  - [x] Accept Q16.16 move/line/path-end geometry with zero paint disabling
+    fill or stroke. (2026-07-21 19:08 EDT)
+  - [x] Supply bit-reproducible binary-turn Q1.30 sine/cosine through an
+    integer CORDIC implementation. (2026-07-21 19:13 EDT)
+  - [x] Independently exercise the real headless renderer from
+    `ulam-flower-wat` at controls 0/1050/2400/3600, varied viewports, known-bad
+    oracle mutations, and a tick-invariance check. (2026-07-21 19:52 EDT)
+  - [x] Replace the host-owned slider layout/value prototype with atomic
+    guest-authored `AE_control_panel_q16` and `AE_slider_place_q16` frame
+    commands; retain GPUI entities only for native interaction mechanics.
+    (2026-07-21 20:34 EDT)
+  - [x] Hard-cut the provisional per-frame native controls to a LiveView-style
+    `AE_ui_begin(revision)` / declarations / `AE_ui_end()` snapshot: keyed,
+    guest-authoritative, host-reconciled, and rollback-safe.
+    (2026-07-21 21:11 EDT)
+  - [x] Render accepted UI snapshots in the native GPUI host, run all Aedicule
+    gates, and send the tested exact contract to `ulam-flower-wat`.
+    (2026-07-21 21:16 EDT)
+  - [x] Receive the revised real-guest green proof for the final keyed-snapshot
+    ABI. (2026-07-21 21:20 EDT)
+  - [ ] Receive Peter's visual drag acceptance for the final keyed-snapshot ABI.
+  - Curiosity poke: can future integer composition imports share one declarative
+    fixed-point type description instead of proliferating suffix-specific docs?
+
+- [ ] Make state-dependent frames reproducible through `gpui-wasm-render` by
+  accepting deterministic ordered event injection before the final render.
+  - [x] Clarify in the generated ABI that draw IDs are unique across primitive
+    kinds for one frame and reusable after the next frame begins.
+    (2026-07-21 19:08 EDT)
+  - [ ] Test cross-primitive duplicate rejection and next-frame ID reuse.
+  - [ ] Add repeatable `--event KIND,CODE,A,B` arguments in command-line order
+    after initialization and before ticks/render. Keep kind/code as stable ABI
+    integers, parse coordinate/delta fields as logical-pixel decimals, and let
+    the host's selected-profile adapter perform legacy-float or Q16.16 conversion.
+  - [ ] Prove a menu event reaches a state-dependent frame through the real
+    renderer and that rejected events produce stable stderr diagnostics.
+  - Curiosity poke: reserve symbolic event aliases for a later additive CLI
+    layer rather than making the first machine-facing contract ambiguous.
+
 - [x] Make the launcher CLI regression test self-contained instead of relying
   on a developer's private `$HOME/dotfiles` checkout. (2026-07-20 15:58 EDT)
+
+- [ ] Add web as a first-class Aedicule delivery target: a generic static-site
+  bundle that runs the same `aedicule.v0` WAT application through upstream
+  GPUI's browser platform, without a JavaScript game fork.
+  - Curiosity poke: can the browser guest adapter preserve the native ABI's
+    bounded lifecycle and deterministic command-frame semantics despite losing
+    Wasmtime's native fuel and interruption facilities?
+  - [ ] Prove GPUI-web compilation and a browser guest/frame vertical slice.
+  - [x] Prove the portable browser runtime with synthetic pointer and keyboard
+    edges plus exact scheduled WAT updates, without GUI sleeps. (2026-07-19
+    18:39 EDT)
+  - [x] Package a self-contained site plus a local headers-correct dev server.
+    (2026-07-21 21:13 EDT)
+  - [x] Verify the optimized browser bundle and its 11 MiB raw-Wasm budget in
+    the pure Nix delivery test: 10,118,213-byte raw Wasm. (2026-07-21 21:13 EDT)
+  - [x] Refresh the Nix Cargo vendor hash after the browser clock dependency,
+    then build, bind, optimize, and header-probe a 10,096,747-byte local Wasm
+    bundle containing Vibesteroids as external WAT. (2026-07-20 14:27 EDT)
+  - [ ] Receive Peter's visual browser playtest result for that bundle.
+  - [x] Replace blank browser startup failures with an accessible loading/error
+    surface and capability diagnostics. (2026-07-20 19:32 EDT)
+    - Curiosity poke: WebGPU exposure alone does not prove that the browser can
+      grant a usable adapter, especially on mobile Safari.
+  - [x] Emit a structured browser-console timeline for successful and failed
+    startup stages without logging guest source or other application data.
+    (2026-07-20 20:14 EDT)
+  - [ ] Retain GPUI's application handle for the browser document lifetime,
+    then make the headless Chrome/CDP startup probe pass with a nontrivial
+    canvas and no dropped wasm-bindgen callbacks.
+    - Curiosity poke: can we carry upstream GPUI commit `74798c68` as a
+      one-commit fork from our existing pin instead of importing 452 unrelated
+      Zed commits?
+  - [x] Make the headless browser probe synthesize movement, all three pointer
+    button pairs, two-axis wheel motion, and a key pair; compact the default
+    response and gate the wordy per-event stream behind
+    `AEDICULE_BROWSER_TRACE_EVENTS=1`. (2026-07-20 20:30 EDT)
+    - Curiosity poke: browser keyboard delivery currently reaches the DOM but
+      still needs a focusable GPUI web element and shared key mapping before it
+      can claim WAT delivery parity with native.
+  - [ ] Preserve identity-bearing multi-touch from browser Pointer Events to
+    WAT clients: event kinds 11/12/13/14 are start/move/end/cancel,
+    `code = pointerId`, and `a,b = logical x,y`.
+    - [x] Prove at the live Chrome/DOM layer that two contacts move
+      independently, end separately, and a third contact cancels while three
+      opaque IDs remain distinct. (2026-07-20 21:18 EDT)
+    - [ ] Prove those same phases and identities reach `AE_event` through core
+      WAT tests and the rebuilt browser runtime.
+    - [ ] Prevent GPUI Web's current mouse-compatibility conversion from
+      duplicating each touch as primary-button input.
+    - Curiosity poke: Chrome remapped the probe's requested touch IDs 41/42/43
+      to pointer IDs 2/3/4; clients must treat IDs as opaque, page-local
+      correlation tokens and never persist or interpret their numeric values.
+  - [ ] Add an independently runnable downstream Vibesteroids web smoke proof.
+
+- [ ] Standardize cross-platform pointer buttons and two-axis wheel motion for
+  WAT clients without exposing platform-specific mouse representations.
+  - [x] Map primary/left to ID 1 and secondary/right to ID 2, deliver down/up
+    through `AE_event`, and regenerate the checked ABI reference. Portable
+    `AE_event` and documentation tests passed. (2026-07-20 11:58 EDT)
+  - [x] Map middle/wheel-click to button ID 3 and add kind 10 scroll events
+    preserving horizontal/vertical deltas plus their line/logical-pixel unit;
+    omit zero-motion phases. Both runtime suites and the native optimized GUI
+    build passed. (2026-07-20 13:01 EDT)
+  - [x] Send release edges inside and outside the canvas for every mapped
+    button, preventing held input from sticking after a drag leaves the app.
+    (2026-07-20 12:00 EDT)
+  - [x] Verify the WebAssembly GPUI adapter in its `nix develop .#web` host
+    toolchain build. (2026-07-20 13:06 EDT)
+  - [x] Run the separately deferred pure Nix GUI/browser derivation gate after
+    the local Nix-store work. (2026-07-21 21:16 EDT)
+  - Curiosity poke: should a future pointer-capture contract distinguish an
+    OS-cancelled gesture from an ordinary release without adding guest state?
+
+- [x] Restore the desktop host title bar's input priority over the full-window
+  guest pointer plane: Reload, New Game, Help, Quit, and platform window
+  controls must not enqueue guest pointer edges, while clicks below the host
+  title bar still do.
+  - [x] Reproduce the overlap with a headless GPUI hit-routing regression.
+  - [x] Occlude the guest hitbox behind the host title-bar layer without
+    replacing `TitleBar`'s existing platform drag/control behavior.
+  - [x] Run the focused regression, full suite, and optimized desktop build
+    after Peter resumes builds following the Nix-store migration.
+    (2026-07-21 21:16 EDT; native mouse savepoint `a10241d`)
+  - Curiosity poke: should the noninteractive bottom status strip intentionally
+    pass pointer input through to the guest, or claim its own native hitbox?
 
 - [x] Establish a bounded Wasmtime ABI and neutral WAT fixtures.
   (2026-07-16 EDT)
@@ -11,6 +142,15 @@
   audio, deterministic SVG, and transactional live reload. (2026-07-16 EDT)
   - Curiosity poke: can candidate compilation leave the UI thread without
     introducing an ordering race at swap time?
+- [ ] Mirror initial and watched WAT rejections to stderr with a stable
+  diagnostic contract while preserving the active guest transactionally.
+  - [x] Add the pure `AEDICULE_WAT_REJECTED` formatter and route native
+    initial/reload rejections through it; document the renderer as canonical
+    validation and deny launcher warnings in the Nix test target.
+    (2026-07-20 10:06 EDT)
+  - [ ] Run the native pure-Nix verification after the deferred Nix-store work.
+  - Curiosity poke: can the pure formatter prove source, full error, and
+    survivor status without a GUI timing test?
 - [x] Prove exact rational tick accumulation, bounded catch-up, deterministic
   snapshots, hostile-input containment, and state-preserving reload. (2026-07-17 EDT)
   - Curiosity poke: should a production policy add Wasmtime epochs as a second
@@ -52,13 +192,6 @@
   optimized build passed.)
   - Curiosity poke: does this remain correct when a caller invokes a symlink to
     the launcher rather than the checked-out script directly?
-- [x] Standardize native pointer buttons and two-axis wheel motion, including
-  primary/secondary/middle down, up, and up-out edges; mirror initial/reload WAT
-  rejection diagnostics to stderr while retaining the fallback or previous
-  guest. (2026-07-20 15:07 EDT: full core suite, native GUI/unit/CLI tests,
-  optimized build, and warning-denied release compile passed.)
-  - Curiosity poke: should a future pointer-capture contract distinguish an
-    OS-cancelled gesture from an ordinary release without adding guest state?
 - [x] Complete the host half of the 120 Hz migration by wiring the exact
   rational accumulator into the live GPUI loop with bounded catch-up. Do not
   call the end-to-end migration complete until `vibesteroids_wat` proves equal
@@ -92,21 +225,28 @@
 - [ ] Define a bounded application-asset package and Rust reader, reconciling
   the `blar`/`mini_blar` wire-format versions before choosing a canonical
   profile for independently versioned WAT applications.
+  - [x] Inspect the live reference sources: `blar` and `mini_blar` share the
+    flat `MBAR\\x02` profile, while the published BLAR archive spec has drifted.
+    Record the strict uncompressed Aedicule proposal in
+    `ASSET_PACKAGE_PROPOSAL.md`. (2026-07-19 18:29 EDT)
   - Curiosity poke: can indexed uncompressed entries remain zero-copy while
     compressed entries enforce strict decoded-size and checksum limits?
 - [ ] Add guest-controlled digitized-audio playback from packaged assets, with
-  PCM/WAV as the baseline and feature-gated MP3 and Ogg/Vorbis decoding.
+  FLAC as the delivered-media baseline and bounded raw PCM/WAV fallback.
+  Ogg and MP3 are deferred pending `blar` design work.
+  - [x] Decode bounded RIFF/WAVE integer PCM into device-independent fixed
+    samples; malformed, unsupported, contradictory, and over-budget inputs
+    have distinct tests. (2026-07-19 18:38 EDT)
   - Curiosity poke: can long tracks stream under a bounded decode-memory budget
     without making audio-device timing observable by the deterministic guest?
 - [ ] Load bounded texture assets from the same package into the existing
   content-hashed image-resource cache.
   - Curiosity poke: which decoded-pixel, dimension, and archive-entry limits
     prevent a small compressed asset from becoming an allocation bomb?
-- [ ] Add a second, unrelated WAT application as the strongest falsification
-  test of the generic ABI.
-  - Curiosity poke: would a small editor expose retained widgets, text input,
-    focus, accessibility, and persistence gaps more efficiently than another
-    canvas application?
+- [x] Add a second, unrelated WAT application as the strongest falsification
+  test of the generic ABI: [`ulam-flower-wat`](../ulam-flower-wat/) drives
+  exact ticks plus pointer/viewport events through only `AE_*` imports.
+  Its headless integration test passed. (2026-07-19 18:29 EDT)
 - [ ] Decide and test the pre-v1 migration from provisional `gpui-wasm` binary
   names to Mecha Aedicule names.
   - Curiosity poke: can aliases provide a deprecation path without making

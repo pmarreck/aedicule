@@ -102,6 +102,7 @@ fn cli_reports_help_about_and_invalid_arguments_cleanly() {
 
     assert!(help.status.success());
     assert!(String::from_utf8_lossy(&help.stdout).contains("--output"));
+    assert!(String::from_utf8_lossy(&help.stdout).contains("--control"));
     assert!(
         String::from_utf8_lossy(&help.stdout).contains(DISPLAY_REFRESH_RATE_ENV),
         "headless help documents the display-refresh override"
@@ -185,5 +186,82 @@ fn display_refresh_environment_override_reaches_the_guest_lifecycle_event() {
             .unwrap()
             .contains("fill=\"#00ff00\"")
     );
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn headless_controls_are_ordered_after_init_and_before_ticks() {
+    let directory =
+        std::env::temp_dir().join(format!("aedicule headless controls {}", std::process::id()));
+    fs::create_dir_all(&directory).unwrap();
+    let plugin = directory.join("integer-control.wat");
+    fs::write(
+        &plugin,
+        r#"(module
+            (import "aedicule.v0" "AE_slider_i32" (func $slider (param i32 i32 i32 i32 i32 i32 i32) (result i32)))
+            (import "aedicule.v0" "AE_frame_begin_rgba" (func $begin (param i32) (result i32)))
+            (import "aedicule.v0" "AE_frame_end" (func $end (result i32)))
+            (memory (export "memory") 1)
+            (data (i32.const 0) "N")
+            (global $value (mut i32) i32.const 0)
+            (func (export "AE_abi_major") (result i32) i32.const 0)
+            (func (export "AE_abi_minor") (result i32) i32.const 1)
+            (func (export "AE_configure") (result i32)
+                i32.const 7 i32.const 0 i32.const 1
+                i32.const 0 i32.const 3600 i32.const 3 i32.const 1050
+                call $slider)
+            (func (export "AE_init_i32") (param i32 i32 i32 i32) (result i32)
+                i32.const 1050 global.set $value i32.const 0)
+            (func (export "AE_event_i32") (param i32 i32 i32 i32) (result i32) i32.const 0)
+            (func (export "AE_control_event") (param i32) (param $value i32) (param i32) (result i32)
+                local.get $value global.set $value i32.const 0)
+            (func (export "AE_tick") (param $ticks i32) (result i32)
+                global.get $value local.get $ticks i32.add global.set $value i32.const 0)
+            (func (export "AE_render") (result i32)
+                global.get $value i32.const 2401 i32.eq
+                if (result i32) i32.const 0x00ff00ff else i32.const 0xff0000ff end
+                call $begin drop call $end drop i32.const 0)
+            (func (export "AE_state_ptr") (result i32) i32.const 0)
+            (func (export "AE_state_len") (result i32) i32.const 0)
+            (func (export "AE_state_schema") (result i32) i32.const 1))"#,
+    )
+    .unwrap();
+
+    let result = Command::new(env!("CARGO_BIN_EXE_gpui-wasm-render"))
+        .env("MUTE_DEBUG_STATUS", "1")
+        .args([
+            plugin.to_str().unwrap(),
+            "--control",
+            "7=1050",
+            "--control",
+            "7=2400",
+            "--ticks",
+            "1",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(result.status.success(), "{:?}", result.stderr);
+    assert!(result.stderr.is_empty(), "{:?}", result.stderr);
+    assert!(
+        String::from_utf8(result.stdout)
+            .unwrap()
+            .contains("fill=\"#00ff00\"")
+    );
+
+    for invalid in ["9=2400", "7=3603", "7=2401"] {
+        let result = Command::new(env!("CARGO_BIN_EXE_gpui-wasm-render"))
+            .env("MUTE_DEBUG_STATUS", "1")
+            .args([plugin.to_str().unwrap(), "--control", invalid])
+            .output()
+            .unwrap();
+        assert_eq!(result.status.code(), Some(1), "control {invalid}");
+        assert!(result.stdout.is_empty(), "control {invalid}");
+        assert!(
+            String::from_utf8_lossy(&result.stderr).contains("AE_control_event"),
+            "control {invalid}: {:?}",
+            result.stderr
+        );
+    }
     fs::remove_dir_all(directory).unwrap();
 }

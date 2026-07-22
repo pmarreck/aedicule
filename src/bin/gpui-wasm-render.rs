@@ -5,7 +5,7 @@ use std::{
 };
 
 use gpui_wasm::{
-    DEFAULT_PLUGIN_ENV, FALLBACK_WAT, Frontplane, Limits, PluginInit,
+    ControlPhase, DEFAULT_PLUGIN_ENV, Event, FALLBACK_WAT, Frontplane, Limits, PluginInit,
     display_refresh_rate_from_environment, initialize_frontplane, render_svg,
 };
 
@@ -22,6 +22,7 @@ Usage:
 
 Options:
   --ticks N          Advance N fixed simulation ticks before rendering
+  --control ID=VALUE Apply an exact declared integer control; repeatable
   --seed N           Initialize the plugin with deterministic seed N
   --width N          Logical viewport width (default: 1024)
   --height N         Logical viewport height (default: 768)
@@ -41,6 +42,13 @@ struct RenderOptions {
     seed: u64,
     width: f32,
     height: f32,
+    controls: Vec<ControlArgument>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ControlArgument {
+    id: u32,
+    value: i32,
 }
 
 impl Default for RenderOptions {
@@ -52,6 +60,7 @@ impl Default for RenderOptions {
             seed: DEFAULT_SEED,
             width: DEFAULT_WIDTH,
             height: DEFAULT_HEIGHT,
+            controls: Vec::new(),
         }
     }
 }
@@ -113,6 +122,10 @@ fn parse_arguments(arguments: impl Iterator<Item = String>) -> Result<Action, St
                     .parse()
                     .map_err(|_| format!("invalid --ticks value: {value}"))?;
             }
+            "--control" => {
+                let value = next_value(&mut arguments, "--control")?;
+                options.controls.push(parse_control(&value)?);
+            }
             "--seed" => {
                 let value = next_value(&mut arguments, "--seed")?;
                 options.seed = value
@@ -162,6 +175,25 @@ fn positive_number(option: &str, value: &str) -> Result<f32, String> {
     }
 }
 
+fn parse_control(value: &str) -> Result<ControlArgument, String> {
+    let (id, value_number) = value
+        .split_once('=')
+        .ok_or_else(|| format!("invalid --control value: {value}; expected ID=VALUE"))?;
+    if id.is_empty() || value_number.is_empty() || value_number.contains('=') {
+        return Err(format!(
+            "invalid --control value: {value}; expected ID=VALUE"
+        ));
+    }
+    Ok(ControlArgument {
+        id: id
+            .parse()
+            .map_err(|_| format!("invalid --control ID: {id}"))?,
+        value: value_number
+            .parse()
+            .map_err(|_| format!("invalid --control VALUE: {value_number}"))?,
+    })
+}
+
 fn set_plugin(options: &mut RenderOptions, path: String) -> Result<(), String> {
     if options.plugin.is_some() {
         return Err("only one plugin input may be specified".into());
@@ -184,6 +216,16 @@ fn run(options: RenderOptions) -> Result<(), String> {
     let max_ticks_per_call = u64::from(limits.max_ticks_per_call);
     let mut frontplane = Frontplane::from_wat(&wat, limits).map_err(|error| error.to_string())?;
     initialize_frontplane(&mut frontplane, plugin_init).map_err(|error| error.to_string())?;
+
+    for control in options.controls {
+        frontplane
+            .event(Event::Control {
+                id: control.id,
+                value: control.value,
+                phase: ControlPhase::Release,
+            })
+            .map_err(|error| error.to_string())?;
+    }
 
     let mut remaining = options.ticks;
     while remaining > 0 {

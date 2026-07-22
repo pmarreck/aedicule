@@ -84,6 +84,12 @@ length. Reload compiles, initializes, restores when compatible, and renders a
 candidate in isolation. Only a completely valid candidate replaces the active
 module; otherwise the last working application continues.
 
+On an initial external-source failure or a watched candidate rejection, the
+native launcher also writes one stable stderr line:
+`AEDICULE_WAT_REJECTED: <initial-load|reload>: <source path>: <complete error>:
+<embedded fallback|previous plugin> remains active`. The existing recoverable
+GUI message remains visible; the terminal line is for launchers, CI, and logs.
+
 See [WAT_ABI.md](WAT_ABI.md) for the generated client ABI reference and
 [SPEC.md](SPEC.md) for the threat model.
 
@@ -167,6 +173,11 @@ This gives humans, CI systems, and review agents an exact inspectable artifact
 without desktop access. It complements rather than replaces native-window
 inspection, which independently covers layout, focus, compositor, and platform
 adapter behavior.
+
+`gpui-wasm-render` is also the canonical non-GUI WAT validation executable:
+it performs the same bounded compile, configure, initialize, display-event,
+and render lifecycle as the frontplanes before writing SVG. A separate
+`--validate` mode would duplicate that contract and is intentionally deferred.
 
 ## Status
 

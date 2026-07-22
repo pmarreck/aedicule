@@ -1,3 +1,8 @@
+---
+description: "Guest declared audio can remain application agnostic and decimal fixed through the PCM boundary."
+datetime: 2026-07-16T20:43:38-04:00 # America/New_York (EDT)
+tags: [guest, declared, audio, remain, application, agnostic, decimal, fixed, pcm, boundary]
+---
 The generic frontplane must not map application-owned audio program IDs to
 host-known sound names. Let WAT declare bounded voices by waveform, schedule,
 frequency/gain envelopes, filter sweep, and cooldown, then group them by the

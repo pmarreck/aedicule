@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+
+set -u
+
+source "$HOME/dotfiles/bin/src/capture.bash"
+
+root=$(cd "$(dirname "$0")/../.." && pwd -P)
+out_link="$TMPDIR/aedicule-web-delivery-result"
+rm -f "$out_link"
+trap 'rm -f "$out_link"' EXIT
+
+out=
+err=
+rc=0
+capture nix build --out-link "$out_link" "$root#webFallback"
+
+failures=0
+if (( rc != 0 )); then
+	printf 'web fallback delivery build failed:\n%s\n' "$err" >&2
+	failures=$((failures + 1))
+else
+	for asset in index.html bootstrap.js aedicule_web.js aedicule_web_bg.wasm code.wat; do
+		if [[ ! -s "$out_link/$asset" ]]; then
+			printf 'web fallback delivery is missing non-empty %s\n' "$asset" >&2
+			failures=$((failures + 1))
+		fi
+	done
+	if ! rg -F 'fetch("./code.wat"' "$out_link/bootstrap.js" >/dev/null; then
+		printf 'web fallback delivery bootstrap does not load external code.wat\n' >&2
+		failures=$((failures + 1))
+	fi
+	wasm_bytes=$(stat -c '%s' "$out_link/aedicule_web_bg.wasm")
+	max_wasm_bytes=$((11 * 1024 * 1024))
+	if (( wasm_bytes > max_wasm_bytes )); then
+		printf 'web fallback Wasm is %d bytes; delivery budget is %d bytes\n' \
+			"$wasm_bytes" "$max_wasm_bytes" >&2
+		failures=$((failures + 1))
+	fi
+fi
+
+exit "$failures"

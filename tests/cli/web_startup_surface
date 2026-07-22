@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+
+set -u
+
+root=$(cd "$(dirname "$0")/../.." && pwd -P)
+failures=0
+
+expect_text() {
+	file=$1
+	text=$2
+	message=$3
+	if ! rg -F "$text" "$file" >/dev/null; then
+		printf '%s\n' "$message" >&2
+		failures=$((failures + 1))
+	fi
+}
+
+expect_text "$root/web/index.html" 'id="aedicule-startup-status"' \
+	'browser page has no visible startup status surface'
+expect_text "$root/web/index.html" 'aria-live="polite"' \
+	'browser startup status does not announce progress or failure accessibly'
+expect_text "$root/web/bootstrap.js" 'crossOriginIsolated' \
+	'browser bootstrap does not preflight cross-origin isolation'
+expect_text "$root/web/bootstrap.js" 'SharedArrayBuffer' \
+	'browser bootstrap does not preflight shared WebAssembly memory support'
+expect_text "$root/web/bootstrap.js" 'navigator.gpu.requestAdapter()' \
+	'browser bootstrap does not preflight an available WebGPU adapter'
+expect_text "$root/web/bootstrap.js" 'console.info("[Aedicule startup]", stage, JSON.stringify(detail))' \
+	'browser bootstrap does not report successful startup stages to the console'
+expect_text "$root/web/bootstrap.js" 'console.error("[Aedicule startup] failed",' \
+	'browser bootstrap does not report startup failures to the console'
+expect_text "$root/web/bootstrap.js" 'loadApplication().catch(reportStartupFailure)' \
+	'browser bootstrap can still reject into an invisible blank page'
+expect_text "$root/src/bin/aedicule-web.rs" 'gpui_platform::single_threaded_web().run_embedded' \
+	'browser entrypoint does not use GPUI embedded-run lifetime ownership'
+expect_text "$root/src/bin/aedicule-web.rs" 'retain_browser_application(application)' \
+	'browser entrypoint drops its strong GPUI application handle'
+expect_text "$root/web/Caddyfile" '{$AEDICULE_WEB_LISTEN::8080}' \
+	'browser delivery server cannot select a non-default loopback listener'
+expect_text "$root/web/Caddyfile" 'Cache-Control "no-store"' \
+	'browser development server can reuse stale runtime assets'
+expect_text "$root/tests/integration/web_browser_startup" 'AEDICULE_BROWSER_TRACE_EVENTS' \
+	'headless browser input detail has no opt-in environment gate'
+expect_text "$root/tests/integration/web_browser_startup" 'Input.dispatchMouseEvent' \
+	'headless browser probe does not synthesize pointer input through Chrome'
+expect_text "$root/tests/integration/web_browser_startup" 'Input.dispatchTouchEvent' \
+	'headless browser probe does not synthesize multi-touch input through Chrome'
+expect_text "$root/tests/integration/web_browser_startup" 'touchCancel' \
+	'headless browser probe does not exercise touch cancellation'
+expect_text "$root/tests/integration/web_browser_startup" 'type: "input-summary"' \
+	'headless browser probe does not compact its synthetic input result'
+
+exit "$failures"

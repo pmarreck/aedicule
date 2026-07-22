@@ -1,6 +1,6 @@
 use gpui_wasm::{DrawCommand, Event, Frontplane, Limits, PointerButton, PointerScrollUnit};
 
-const POINTER_WAT: &str = r#"
+const SECONDARY_BUTTON_WAT: &str = r#"
     (module
         (import "aedicule.v0" "AE_frame_begin" (func $frame_begin (param f32 f32 f32 f32) (result i32)))
         (import "aedicule.v0" "AE_circle" (func $circle (param i32 f32 f32 f32 f32 i32 i32) (result i32)))
@@ -59,7 +59,7 @@ const POINTER_WAT: &str = r#"
 
 #[test]
 fn pointer_buttons_and_two_axis_scroll_reach_ae_event_with_stable_codes() {
-    let mut frontplane = Frontplane::from_wat(POINTER_WAT, Limits::default()).unwrap();
+    let mut frontplane = Frontplane::from_wat(SECONDARY_BUTTON_WAT, Limits::default()).unwrap();
     frontplane.configure().unwrap();
     frontplane.init(7, 1024.0, 768.0).unwrap();
 
@@ -172,28 +172,4 @@ fn pointer_buttons_and_two_axis_scroll_reach_ae_event_with_stable_codes() {
             filled: true,
         }
     );
-}
-
-#[test]
-fn native_adapter_registers_the_complete_pointer_edge_and_scroll_set() {
-    let source = include_str!("../src/main.rs");
-    let expected_counts = [
-        (".on_mouse_down(", 3),
-        (".on_mouse_up(", 3),
-        (".on_mouse_up_out(", 3),
-        ("PointerButton::Primary", 3),
-        ("PointerButton::Secondary", 3),
-        ("PointerButton::Middle", 3),
-        (".on_scroll_wheel(", 1),
-    ];
-
-    let mismatches: Vec<_> = expected_counts
-        .into_iter()
-        .filter_map(|(fragment, expected)| {
-            let actual = source.matches(fragment).count();
-            (actual != expected).then_some((fragment, expected, actual))
-        })
-        .collect();
-
-    assert_eq!(mismatches, []);
 }

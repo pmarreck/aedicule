@@ -1,0 +1,9 @@
+{$AEDICULE_WEB_LISTEN::8080} {
+	root * {env.AEDICULE_WEB_ROOT}
+	header {
+		Cross-Origin-Embedder-Policy "require-corp"
+		Cross-Origin-Opener-Policy "same-origin"
+		Cache-Control "no-store"
+	}
+	file_server
+}

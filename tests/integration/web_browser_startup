@@ -1,0 +1,496 @@
+#!/usr/bin/env node
+
+import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
+import { accessSync, constants, existsSync, mkdtempSync, readFileSync, rmSync, watch } from "node:fs";
+import { tmpdir } from "node:os";
+import { delimiter, join } from "node:path";
+
+const EXPECTED_STAGES = [
+	"bootstrap",
+	"capabilities",
+	"webgpu-adapter",
+	"wat-fetched",
+	"wasm-initializing",
+	"wasm-initialized",
+	"first-animation-frame",
+	"settled",
+];
+
+const HELP = `usage: web_browser_startup [--chrome PATH] [--timeout-ms N] URL
+
+Launch a headless Chromium browser, stream Aedicule's structured startup
+timeline, and reject browser exceptions or a missing/1x1 GPUI canvas.
+
+Environment:
+  AEDICULE_CHROME               Chromium-family executable (overridden by --chrome)
+  AEDICULE_BROWSER_TRACE_EVENTS Set to 1 for each injected/observed input event
+`;
+
+function parseArguments(arguments_) {
+	let chrome;
+	let timeoutMs = 15_000;
+	let url;
+	for (let index = 0; index < arguments_.length; index += 1) {
+		const argument = arguments_[index];
+		if (argument === "-h" || argument === "--help") {
+			process.stdout.write(HELP);
+			process.exit(0);
+		}
+		if (argument === "--about") {
+			process.stdout.write("Aedicule headless browser startup diagnostic 0.1.0\n");
+			process.exit(0);
+		}
+		if (argument === "--chrome") {
+			chrome = arguments_[index += 1];
+			continue;
+		}
+		if (argument === "--timeout-ms") {
+			timeoutMs = Number(arguments_[index += 1]);
+			continue;
+		}
+		if (argument.startsWith("-")) {
+			throw new Error(`unknown option: ${argument}`);
+		}
+		if (url !== undefined) {
+			throw new Error("exactly one URL is required");
+		}
+		url = argument;
+	}
+	if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {
+		throw new Error("--timeout-ms must be a positive integer");
+	}
+	if (url === undefined) {
+		throw new Error("URL is required");
+	}
+	return { chrome, timeoutMs, url: new URL(url).href };
+}
+
+function executableOnPath(name) {
+	for (const directory of (process.env.PATH ?? "").split(delimiter)) {
+		const candidate = join(directory, name);
+		try {
+			accessSync(candidate, constants.X_OK);
+			return candidate;
+		} catch {
+			// Try the next PATH entry.
+		}
+	}
+	return undefined;
+}
+
+function resolveChrome(explicit) {
+	const candidates = [
+		explicit,
+		process.env.AEDICULE_CHROME,
+		executableOnPath("chromium"),
+		executableOnPath("chromium-browser"),
+		executableOnPath("google-chrome"),
+		"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+	];
+	const chrome = candidates.find(candidate => candidate && existsSync(candidate));
+	if (chrome === undefined) {
+		throw new Error("no Chromium executable found; set AEDICULE_CHROME or use --chrome");
+	}
+	return chrome;
+}
+
+function withTimeout(promise, timeoutMs, description) {
+	return new Promise((resolve, reject) => {
+		const timer = setTimeout(() => reject(new Error(`timed out waiting for ${description}`)), timeoutMs);
+		promise.then(
+			value => {
+				clearTimeout(timer);
+				resolve(value);
+			},
+			error => {
+				clearTimeout(timer);
+				reject(error);
+			},
+		);
+	});
+}
+
+async function waitForFile(path, timeoutMs) {
+	if (existsSync(path)) return;
+	await withTimeout(new Promise((resolve, reject) => {
+		const watcher = watch(join(path, ".."), (event, filename) => {
+			if (filename === "DevToolsActivePort" && existsSync(path)) {
+				watcher.close();
+				resolve();
+			}
+		});
+		watcher.on("error", reject);
+		if (existsSync(path)) {
+			watcher.close();
+			resolve();
+		}
+	}), timeoutMs, "Chrome's DevTools endpoint");
+}
+
+async function connect(url, timeoutMs) {
+	return withTimeout(new Promise((resolve, reject) => {
+		const socket = new WebSocket(url);
+		socket.addEventListener("open", () => resolve(socket), { once: true });
+		socket.addEventListener("error", () => reject(new Error("Chrome DevTools WebSocket failed")), { once: true });
+	}), timeoutMs, "Chrome's DevTools WebSocket");
+}
+
+function remoteValue(argument) {
+	if (Object.hasOwn(argument, "value")) return argument.value;
+	return argument.unserializableValue ?? argument.description ?? argument.type;
+}
+
+function createProtocol(socket) {
+	let nextId = 1;
+	const pending = new Map();
+	const listeners = new Set();
+	socket.addEventListener("message", event => {
+		const message = JSON.parse(event.data);
+		if (message.id !== undefined) {
+			const operation = pending.get(message.id);
+			pending.delete(message.id);
+			if (message.error) operation.reject(new Error(message.error.message));
+			else operation.resolve(message.result);
+			return;
+		}
+		for (const listener of listeners) listener(message);
+	});
+	return {
+		onEvent(listener) {
+			listeners.add(listener);
+			return () => listeners.delete(listener);
+		},
+		send(method, params = {}) {
+			const id = nextId++;
+			return new Promise((resolve, reject) => {
+				pending.set(id, { resolve, reject });
+				socket.send(JSON.stringify({ id, method, params }));
+			});
+		},
+	};
+}
+
+function inputObserverSource(verboseEvents) {
+	return `(() => {
+		globalThis.__AEDICULE_TRACE_EVENTS = ${verboseEvents};
+		const probe = { counts: {}, events: [] };
+		globalThis.__AEDICULE_INPUT_PROBE = probe;
+		for (const type of [
+			"mousemove", "mousedown", "mouseup", "wheel", "keydown", "keyup",
+			"pointerdown", "pointermove", "pointerup", "pointercancel",
+			"touchstart", "touchmove", "touchend", "touchcancel",
+		]) {
+			addEventListener(type, event => {
+				probe.counts[type] = (probe.counts[type] ?? 0) + 1;
+				const detail = {
+					type,
+					x: event.clientX ?? null,
+					y: event.clientY ?? null,
+					button: event.button ?? null,
+					buttons: event.buttons ?? null,
+					deltaX: event.deltaX ?? null,
+					deltaY: event.deltaY ?? null,
+					code: event.code ?? null,
+					key: event.key ?? null,
+					pointerId: event.pointerId ?? null,
+					pointerType: event.pointerType ?? null,
+					isPrimary: event.isPrimary ?? null,
+					touches: event.touches?.length ?? null,
+					changedTouches: event.changedTouches?.length ?? null,
+				};
+				probe.events.push(detail);
+				if (globalThis.__AEDICULE_TRACE_EVENTS) {
+					console.info("[Aedicule input]", "dom", JSON.stringify(detail));
+				}
+			}, true);
+		}
+	})()`;
+}
+
+async function pageSnapshot(protocol) {
+	const evaluation = await protocol.send("Runtime.evaluate", {
+		expression: `(() => ({
+			readyState: document.readyState,
+			status: document.getElementById("aedicule-startup-status")?.textContent ?? null,
+			canvases: Array.from(document.querySelectorAll("canvas"), canvas => {
+				const bounds = canvas.getBoundingClientRect();
+				return { bufferWidth: canvas.width, bufferHeight: canvas.height,
+					cssWidth: bounds.width, cssHeight: bounds.height };
+			}),
+		}))()`,
+		returnByValue: true,
+	});
+	return evaluation.result.value;
+}
+
+async function screenshotDigest(protocol) {
+	const screenshot = await protocol.send("Page.captureScreenshot", {
+		format: "png",
+		fromSurface: true,
+	});
+	return createHash("sha256").update(screenshot.data, "base64").digest("hex");
+}
+
+async function synthesizeInput(protocol, snapshot, verboseEvents) {
+	const canvas = snapshot.canvases[0];
+	if (canvas === undefined) {
+		return { dispatched: 0, observed: {}, visualChanged: false };
+	}
+	const x = Math.max(1, Math.floor(canvas.cssWidth / 2));
+	const y = Math.max(1, Math.floor(canvas.cssHeight / 2));
+	const events = [
+		["pointer-move", "Input.dispatchMouseEvent", { type: "mouseMoved", x, y, button: "none", buttons: 0 }],
+		["primary-down", "Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", buttons: 1, clickCount: 1 }],
+		["primary-up", "Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", buttons: 0, clickCount: 1 }],
+		["middle-down", "Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "middle", buttons: 4, clickCount: 1 }],
+		["middle-up", "Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "middle", buttons: 0, clickCount: 1 }],
+		["secondary-down", "Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "right", buttons: 2, clickCount: 1 }],
+		["secondary-up", "Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "right", buttons: 0, clickCount: 1 }],
+		["two-axis-wheel", "Input.dispatchMouseEvent", { type: "mouseWheel", x, y, deltaX: 12.5, deltaY: -24.5 }],
+		["arrow-left-down", "Input.dispatchKeyEvent", { type: "rawKeyDown", code: "ArrowLeft", key: "ArrowLeft", windowsVirtualKeyCode: 37, nativeVirtualKeyCode: 37 }],
+		["arrow-left-up", "Input.dispatchKeyEvent", { type: "keyUp", code: "ArrowLeft", key: "ArrowLeft", windowsVirtualKeyCode: 37, nativeVirtualKeyCode: 37 }],
+	];
+	const touchPoint = (id, pointX, pointY) => ({
+		id,
+		x: pointX,
+		y: pointY,
+		radiusX: 8,
+		radiusY: 8,
+		force: 1,
+	});
+	const leftX = Math.max(1, Math.floor(canvas.cssWidth * 0.25));
+	const rightX = Math.max(1, Math.floor(canvas.cssWidth * 0.75));
+	const startY = Math.max(81, Math.floor(canvas.cssHeight * 0.5));
+	const touchEvents = [
+		["two-finger-start", "Input.dispatchTouchEvent", {
+			type: "touchStart",
+			touchPoints: [touchPoint(41, leftX, startY), touchPoint(42, rightX, startY)],
+		}],
+		["left-up-right-down", "Input.dispatchTouchEvent", {
+			type: "touchMove",
+			touchPoints: [touchPoint(41, leftX, startY - 80), touchPoint(42, rightX, startY + 80)],
+		}],
+		["two-finger-end", "Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] }],
+		["cancelled-contact-start", "Input.dispatchTouchEvent", {
+			type: "touchStart",
+			touchPoints: [touchPoint(43, x, y)],
+		}],
+		["cancelled-contact-end", "Input.dispatchTouchEvent", { type: "touchCancel", touchPoints: [] }],
+	];
+
+	const before = await screenshotDigest(protocol);
+	await protocol.send("Runtime.evaluate", {
+		expression: `document.body.tabIndex = -1; document.body.focus()`,
+	});
+	for (const [name, method, params] of events) {
+		if (verboseEvents) {
+			process.stdout.write(`${JSON.stringify({ type: "input-dispatch", name, method, params })}\n`);
+		}
+		await protocol.send(method, params);
+	}
+	await protocol.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 3 });
+	for (const [name, method, params] of touchEvents) {
+		if (verboseEvents) {
+			process.stdout.write(`${JSON.stringify({ type: "input-dispatch", name, method, params })}\n`);
+		}
+		await protocol.send(method, params);
+	}
+	await protocol.send("Runtime.evaluate", {
+		expression: "new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+		awaitPromise: true,
+	});
+	const after = await screenshotDigest(protocol);
+	const probe = await protocol.send("Runtime.evaluate", {
+		expression: "globalThis.__AEDICULE_INPUT_PROBE",
+		returnByValue: true,
+	});
+	const probeValue = probe.result.value ?? { counts: {}, events: [] };
+	const observed = probeValue.counts;
+	const observedMousePointerEvents = probeValue.events.filter(event => event.pointerType === "mouse");
+	const mousePointerPhases = Object.fromEntries(
+		["pointerdown", "pointerup"].map(type => [
+			type,
+			observedMousePointerEvents.filter(event => event.type === type).length,
+		]),
+	);
+	const observedTouchEvents = probeValue.events.filter(event => event.pointerType === "touch");
+	const touchContacts = [...new Set(observedTouchEvents.map(event => event.pointerId))].sort((left, right) => left - right);
+	const touchPhases = Object.fromEntries(
+		["pointerdown", "pointermove", "pointerup", "pointercancel"].map(type => [
+			type,
+			observedTouchEvents.filter(event => event.type === type).length,
+		]),
+	);
+	return {
+		dispatched: events.length + touchEvents.length,
+		observed,
+		mousePointerPhases,
+		touchContacts,
+		touchPhases,
+		visualChanged: before !== after,
+	};
+}
+
+async function stopChrome(chrome) {
+	if (chrome.exitCode !== null) return;
+	chrome.kill("SIGTERM");
+	await Promise.race([
+		new Promise(resolve => chrome.once("exit", resolve)),
+		new Promise(resolve => setTimeout(resolve, 2_000)),
+	]);
+	if (chrome.exitCode === null) chrome.kill("SIGKILL");
+}
+
+async function inspect(options) {
+	const verboseEvents = process.env.AEDICULE_BROWSER_TRACE_EVENTS === "1";
+	const chromePath = resolveChrome(options.chrome);
+	const profile = mkdtempSync(join(tmpdir(), "aedicule-headless-chrome."));
+	const chromeErrors = [];
+	const chrome = spawn(chromePath, [
+		"--headless=new",
+		"--no-sandbox",
+		"--disable-background-networking",
+		"--disable-component-update",
+		"--enable-unsafe-webgpu",
+		"--enable-unsafe-swiftshader",
+		"--use-webgpu-adapter=swiftshader",
+		"--use-gl=angle",
+		"--use-angle=swiftshader",
+		"--remote-debugging-port=0",
+		`--user-data-dir=${profile}`,
+		"about:blank",
+	], { stdio: ["ignore", "ignore", "pipe"] });
+	chrome.stderr.setEncoding("utf8");
+	chrome.stderr.on("data", data => {
+		chromeErrors.push(...data.split("\n").filter(Boolean));
+		if (chromeErrors.length > 80) chromeErrors.splice(0, chromeErrors.length - 80);
+	});
+
+	let socket;
+	try {
+		const portFile = join(profile, "DevToolsActivePort");
+		await waitForFile(portFile, options.timeoutMs);
+		const [port] = readFileSync(portFile, "utf8").trim().split("\n");
+		const pages = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
+		const page = pages.find(candidate => candidate.type === "page");
+		if (page === undefined) throw new Error("Chrome exposed no debuggable page");
+		socket = await connect(page.webSocketDebuggerUrl, options.timeoutMs);
+		const protocol = createProtocol(socket);
+		const stages = new Map();
+		const exceptions = [];
+		const inputDiagnostics = [];
+		let startupFailure;
+		let settle;
+		const settled = new Promise(resolve => { settle = resolve; });
+
+		protocol.onEvent(message => {
+			if (message.method === "Runtime.exceptionThrown") {
+				const exception = message.params.exceptionDetails.exception?.description
+					?? message.params.exceptionDetails.text;
+				const firstOccurrence = !exceptions.includes(exception);
+				exceptions.push(exception);
+				if (verboseEvents || firstOccurrence) {
+					process.stderr.write(`${JSON.stringify({ type: "exception", exception })}\n`);
+				}
+				return;
+			}
+			if (message.method !== "Runtime.consoleAPICalled") return;
+			const values = message.params.args.map(remoteValue);
+			if (values[0] === "[Aedicule startup]") {
+				const stage = values[1];
+				let detail = values[2] ?? {};
+				try { detail = JSON.parse(detail); } catch { /* Preserve non-JSON diagnostics. */ }
+				stages.set(stage, detail);
+				process.stdout.write(`${JSON.stringify({ type: "stage", stage, detail })}\n`);
+				if (stage === "settled") settle();
+			} else if (values[0] === "[Aedicule startup] failed") {
+				startupFailure = values.slice(1).join(" ");
+				process.stderr.write(`${JSON.stringify({ type: "startup-failure", detail: startupFailure })}\n`);
+				settle();
+			} else if (values[0] === "[Aedicule input]") {
+				const input = { phase: values[1], detail: values[2] };
+				try { input.detail = JSON.parse(input.detail); } catch { /* Preserve non-JSON diagnostics. */ }
+				inputDiagnostics.push(input);
+				if (verboseEvents) {
+					process.stdout.write(`${JSON.stringify({ type: "input-observed", ...input })}\n`);
+				}
+			}
+		});
+
+		await protocol.send("Runtime.enable");
+		await protocol.send("Page.enable");
+		await protocol.send("Page.addScriptToEvaluateOnNewDocument", {
+			source: inputObserverSource(verboseEvents),
+		});
+		await protocol.send("Page.navigate", { url: options.url });
+		await withTimeout(settled, options.timeoutMs, "Aedicule's settled startup stage");
+		const snapshot = await pageSnapshot(protocol);
+		process.stdout.write(`${JSON.stringify({ type: "snapshot", ...snapshot })}\n`);
+		const inputSummary = await synthesizeInput(protocol, snapshot, verboseEvents);
+		process.stdout.write(`${JSON.stringify({
+			type: "input-summary",
+			...inputSummary,
+			diagnostics: inputDiagnostics.length,
+		})}\n`);
+		const finalSnapshot = await pageSnapshot(protocol);
+
+		const missingStages = EXPECTED_STAGES.filter(stage => !stages.has(stage));
+		const drawableCanvas = finalSnapshot.canvases.some(canvas =>
+			canvas.bufferWidth > 1 && canvas.bufferHeight > 1
+			&& canvas.cssWidth > 0 && canvas.cssHeight > 0);
+		const missingInput = [
+			["mousemove", 1],
+			["wheel", 1],
+			["keydown", 1],
+			["keyup", 1],
+		].filter(([type, count]) => (inputSummary.observed[type] ?? 0) < count);
+		const missingMousePointer = [
+			["pointerdown", 3],
+			["pointerup", 3],
+		].filter(([type, count]) => (inputSummary.mousePointerPhases?.[type] ?? 0) < count);
+		const missingTouch = [
+			["pointerdown", 3],
+			["pointermove", 2],
+			["pointerup", 2],
+			["pointercancel", 1],
+		].filter(([type, count]) => (inputSummary.touchPhases?.[type] ?? 0) < count);
+		const failures = [];
+		if (startupFailure !== undefined) failures.push(`startup failed: ${startupFailure}`);
+		if (missingStages.length > 0) failures.push(`missing startup stages: ${missingStages.join(", ")}`);
+		if (exceptions.length > 0) {
+			failures.push(`${exceptions.length} uncaught browser exception(s), ${new Set(exceptions).size} unique`);
+		}
+		if (!drawableCanvas) failures.push("GPUI produced no drawable canvas larger than 1x1");
+		if (finalSnapshot.status !== null) failures.push(`startup status remained visible: ${finalSnapshot.status}`);
+		if (missingInput.length > 0) {
+			failures.push(`synthetic input was not observed: ${missingInput.map(([type]) => type).join(", ")}`);
+		}
+		if (missingMousePointer.length > 0) {
+			failures.push(`synthetic mouse-pointer input was not observed: ${missingMousePointer.map(([type]) => type).join(", ")}`);
+		}
+		if (missingTouch.length > 0 || inputSummary.touchContacts?.length !== 3) {
+			failures.push("synthetic multi-touch identity/phases were not preserved at the DOM");
+		}
+		if (failures.length > 0) throw new Error(failures.join("; "));
+	} catch (error) {
+		const relevantChromeErrors = chromeErrors.filter(line =>
+			!line.startsWith("DevTools listening on ")
+			&& !line.includes("google_apis/gcm/engine/registration_request.cc"));
+		if (relevantChromeErrors.length > 0) {
+			process.stderr.write(`${JSON.stringify({ type: "chrome-stderr-tail", lines: relevantChromeErrors })}\n`);
+		}
+		throw error;
+	} finally {
+		if (socket !== undefined) socket.close();
+		await stopChrome(chrome);
+		rmSync(profile, { recursive: true, force: true });
+	}
+}
+
+try {
+	await inspect(parseArguments(process.argv.slice(2)));
+} catch (error) {
+	process.stderr.write(`web_browser_startup: ${error.message}\n`);
+	process.exitCode = 1;
+}

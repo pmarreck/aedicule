@@ -1,3 +1,8 @@
+---
+description: "GPUI's simple image painter does not expose sprite atlas source cropping."
+datetime: 2026-07-16T01:46:57-04:00 # America/New_York (EDT)
+tags: [gpui, gui, graphics, simple, image, painter, expose, sprite, atlas, source, cropping]
+---
 The pinned GPUI image element accepts a decoded image plus destination bounds,
 but its public simple painter does not accept an atlas source rectangle. The
 frontplane core can still model and test generic sprite source/destination,

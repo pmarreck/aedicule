@@ -1,3 +1,8 @@
+---
+description: "Mutable WAT belongs outside the native Nix source closure."
+datetime: 2026-07-17T00:40:03-04:00 # America/New_York (EDT)
+tags: [mutable, wat, wasm, webassembly, outside, native, nix, nixos, flakes, source, closure]
+---
 The generic frontplane's fallback WAT may be embedded because it is part of the
 stable native ABI conformance boundary. A real application such as
 Vibesteroids must instead be a runtime-loaded data artifact in its own Nix

@@ -12,12 +12,34 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use thiserror::Error;
-use wasmtime::{
+
+#[cfg(all(feature = "native-runtime", feature = "portable-runtime"))]
+compile_error!("select exactly one Aedicule guest runtime");
+#[cfg(not(any(feature = "native-runtime", feature = "portable-runtime")))]
+compile_error!("select either the native-runtime or portable-runtime feature");
+
+use runtime::{
     Caller, Config, Engine, Instance, Linker, Memory, Module, Store, StoreLimits,
     StoreLimitsBuilder, TypedFunc,
 };
+#[cfg(feature = "portable-runtime")]
+use wasmi as runtime;
+#[cfg(feature = "native-runtime")]
+use wasmtime as runtime;
 
 mod wat_abi;
+
+/// Bounded, device-independent decoding for packaged digitized-audio clips.
+pub mod wav;
+
+/// Shared GPUI adapter for validated command frames, used by both native and
+/// browser frontplanes without allowing rendering code to execute guest WAT.
+#[cfg(any(feature = "gui", feature = "web"))]
+pub mod gpui_canvas;
+
+/// Browser-delivery boundary for the WAT document supplied as a static asset.
+#[cfg(feature = "portable-runtime")]
+pub mod web;
 
 pub use wat_abi::{WAT_ABI_IMPORTS, WatAbiImport, wat_abi_markdown};
 
@@ -35,7 +57,89 @@ pub const MAX_TICK_RATE_DENOMINATOR: u32 = 1_000_000;
 pub const WAT_REJECTION_DIAGNOSTIC_PREFIX: &str = "AEDICULE_WAT_REJECTED";
 
 const NANOS_PER_SECOND: u128 = 1_000_000_000;
+const Q16_SCALE: f64 = 65_536.0;
 const WAT_IMPORT_MODULE: &str = wat_abi::IMPORT_MODULE;
+const Q30_ONE: i64 = 1 << 30;
+const CORDIC_INVERSE_GAIN_Q30: i64 = 652_032_874;
+const CORDIC_ATAN_TURN: [i64; 31] = [
+    0x2000_0000,
+    0x12e4_051e,
+    0x09fb_385b,
+    0x0511_11d4,
+    0x028b_0d43,
+    0x0145_d7e1,
+    0x00a2_f61e,
+    0x0051_7c55,
+    0x0028_be53,
+    0x0014_5f2f,
+    0x000a_2f98,
+    0x0005_17cc,
+    0x0002_8be6,
+    0x0001_45f3,
+    0x0000_a2fa,
+    0x0000_517d,
+    0x0000_28be,
+    0x0000_145f,
+    0x0000_0a30,
+    0x0000_0518,
+    0x0000_028c,
+    0x0000_0146,
+    0x0000_00a3,
+    0x0000_0051,
+    0x0000_0029,
+    0x0000_0014,
+    0x0000_000a,
+    0x0000_0005,
+    0x0000_0003,
+    0x0000_0001,
+    0x0000_0001,
+];
+
+/// Evaluates sine and cosine with a fixed integer CORDIC table, making WAT
+/// animation bit-reproducible across CPUs without host `libm` or float opcodes.
+pub fn sin_cos_turn_q30(angle: i32) -> (i32, i32) {
+    let unsigned = angle as u32;
+    match unsigned {
+        0 => return (0, Q30_ONE as i32),
+        0x4000_0000 => return (Q30_ONE as i32, 0),
+        0x8000_0000 => return (0, -(Q30_ONE as i32)),
+        0xc000_0000 => return (-(Q30_ONE as i32), 0),
+        _ => {}
+    }
+
+    let mut residual = i64::from(angle);
+    let mut negate = false;
+    if residual > 0x4000_0000 {
+        residual -= 0x8000_0000;
+        negate = true;
+    } else if residual < -0x4000_0000 {
+        residual += 0x8000_0000;
+        negate = true;
+    }
+
+    let mut cosine = CORDIC_INVERSE_GAIN_Q30;
+    let mut sine = 0_i64;
+    for (shift, arctangent) in CORDIC_ATAN_TURN.into_iter().enumerate() {
+        let previous_cosine = cosine;
+        if residual >= 0 {
+            cosine -= sine >> shift;
+            sine += previous_cosine >> shift;
+            residual -= arctangent;
+        } else {
+            cosine += sine >> shift;
+            sine -= previous_cosine >> shift;
+            residual += arctangent;
+        }
+    }
+    if negate {
+        sine = -sine;
+        cosine = -cosine;
+    }
+    (
+        sine.clamp(-Q30_ONE, Q30_ONE) as i32,
+        cosine.clamp(-Q30_ONE, Q30_ONE) as i32,
+    )
+}
 
 /// Identifies whether a rejection retained the embedded fallback or the last
 /// known-good external guest, so terminal diagnostics describe the survivor.
@@ -612,6 +716,8 @@ pub struct Limits {
     pub max_commands: usize,
     pub max_string_bytes: usize,
     pub max_menu_items: usize,
+    pub max_controls: usize,
+    pub max_control_steps: u32,
     pub max_synth_voices: usize,
     pub max_audio_events: usize,
     pub max_effects: usize,
@@ -632,6 +738,8 @@ impl Default for Limits {
             max_commands: 4_096,
             max_string_bytes: 4_096,
             max_menu_items: 128,
+            max_controls: 32,
+            max_control_steps: 1_000_000,
             max_synth_voices: 128,
             max_audio_events: 256,
             max_effects: 256,
@@ -648,6 +756,7 @@ impl Default for Limits {
 pub struct Metadata {
     pub title: String,
     pub menu_items: Vec<MenuItem>,
+    pub controls: Vec<SliderControl>,
     pub synth_voices: Vec<SynthVoice>,
 }
 
@@ -656,8 +765,48 @@ impl Default for Metadata {
         Self {
             title: "WAT Application".into(),
             menu_items: Vec::new(),
+            controls: Vec::new(),
             synth_voices: Vec::new(),
         }
+    }
+}
+
+/// Describes a host-rendered slider whose exact guest values stay on a
+/// bounded integer lattice even when a GUI toolkit positions its thumb in f32.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SliderControl {
+    pub id: u32,
+    pub label: String,
+    pub min: i32,
+    pub max: i32,
+    pub step: i32,
+    pub initial: i32,
+}
+
+impl SliderControl {
+    /// Maps the guest's authoritative semantic value to the exact GPUI step
+    /// index used only inside the native adapter.
+    pub fn step_index(&self, value: i32) -> Option<u32> {
+        self.contains_value(value)
+            .then(|| ((i64::from(value) - i64::from(self.min)) / i64::from(self.step)) as u32)
+    }
+
+    /// Reconstructs an exact semantic value from a host UI step index without
+    /// admitting floating-point rounding into the WAT control event.
+    pub fn value_at_step(&self, index: u32) -> Option<i32> {
+        let value = i64::from(self.min) + i64::from(index) * i64::from(self.step);
+        (value <= i64::from(self.max)).then_some(value as i32)
+    }
+
+    pub fn step_count(&self) -> u32 {
+        ((i64::from(self.max) - i64::from(self.min)) / i64::from(self.step)) as u32
+    }
+
+    /// Checks an untrusted event or frame value against the exact declared
+    /// integer lattice without passing through a GUI toolkit's float scalar.
+    pub fn contains_value(&self, value: i32) -> bool {
+        let offset = i64::from(value) - i64::from(self.min);
+        value >= self.min && value <= self.max && offset % i64::from(self.step) == 0
     }
 }
 
@@ -751,6 +900,54 @@ impl MenuItem {
 pub struct FrameOutput {
     pub background: u32,
     pub commands: Vec<DrawCommand>,
+}
+
+/// Represents one complete guest-authoritative native UI document. Adapters
+/// reconcile stable IDs only after the whole revision validates successfully.
+#[derive(Debug, Clone, PartialEq)]
+pub struct UiSnapshot {
+    pub revision: u32,
+    pub control_panels: Vec<ControlPanel>,
+    pub sliders: Vec<SliderPlacement>,
+}
+
+/// Places one host-native control surface in the guest-authored UI snapshot;
+/// Aedicule supplies platform styling but never invents its geometry.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ControlPanel {
+    pub id: u32,
+    pub bounds: Rect,
+    pub rgba: u32,
+}
+
+/// Selects how the native label/value is composed inside a guest-provided
+/// slider rectangle without transferring layout ownership to the host.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+pub enum ControlLabelPlacement {
+    Hidden = 0,
+    Above = 1,
+}
+
+impl ControlLabelPlacement {
+    fn from_abi(value: i32) -> Option<Self> {
+        match value {
+            0 => Some(Self::Hidden),
+            1 => Some(Self::Above),
+            _ => None,
+        }
+    }
+}
+
+/// Carries the guest's authoritative integer value and exact Q16-derived
+/// placement for one native slider in the current immutable UI snapshot.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SliderPlacement {
+    pub id: u32,
+    pub panel_id: u32,
+    pub value: i32,
+    pub bounds: Rect,
+    pub label_placement: ControlLabelPlacement,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -1176,13 +1373,27 @@ pub enum Event {
     },
     MenuAction(u32),
     Focus(bool),
+    Control {
+        id: u32,
+        value: i32,
+        phase: ControlPhase,
+    },
     /// Host-reported nominal display mode. The numerator travels in the `code`
     /// slot and the bounded denominator in `a` for WAT ABI event kind 9.
     DisplayRefresh(TickRate),
 }
 
+/// Separates continuous slider motion from its final committed release edge.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+pub enum ControlPhase {
+    Change = 1,
+    Release = 2,
+}
+
 /// Identifies the portable pointer buttons that Aedicule adapters currently
-/// expose to WAT without leaking platform-specific button representations.
+/// expose to WAT. Keeping the numeric IDs here makes native and browser
+/// delivery agree without leaking their distinct platform button types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 pub enum PointerButton {
@@ -1192,7 +1403,8 @@ pub enum PointerButton {
 }
 
 impl PointerButton {
-    /// Creates the stable ABI press edge with logical-pixel coordinates.
+    /// Creates the stable ABI edge event while retaining logical-pixel
+    /// coordinates outside the WAT-specific numeric event conversion.
     pub fn down(self, x: f32, y: f32) -> Event {
         Event::PointerDown {
             button: self as u32,
@@ -1201,7 +1413,8 @@ impl PointerButton {
         }
     }
 
-    /// Creates the matching release edge so guests can clear held state.
+    /// Creates the matching release edge so guests can clear button state
+    /// even when native and web adapters represent mouse input differently.
     pub fn up(self, x: f32, y: f32) -> Event {
         Event::PointerUp {
             button: self as u32,
@@ -1221,7 +1434,8 @@ pub enum PointerScrollUnit {
 }
 
 impl PointerScrollUnit {
-    /// Creates a two-axis scroll edge while omitting phase-only zero motion.
+    /// Creates a two-axis scroll edge while omitting phase-only events whose
+    /// zero deltas contain no guest-observable wheel movement.
     pub fn event(self, delta_x: f32, delta_y: f32) -> Option<Event> {
         if delta_x == 0.0 && delta_y == 0.0 {
             return None;
@@ -1392,6 +1606,14 @@ struct FrameBuilder {
     ids: HashSet<u32>,
 }
 
+struct UiBuilder {
+    revision: u32,
+    control_panels: Vec<ControlPanel>,
+    control_panel_ids: HashSet<u32>,
+    sliders: Vec<SliderPlacement>,
+    slider_ids: HashSet<u32>,
+}
+
 struct PathBuilder {
     id: u32,
     segments: Vec<PathSegment>,
@@ -1402,12 +1624,16 @@ struct HostState {
     store_limits: StoreLimits,
     metadata: Metadata,
     menu_ids: HashSet<u32>,
+    control_ids: HashSet<u32>,
     images: Vec<ImageResource>,
     image_ids: HashSet<u32>,
     frame: Option<FrameBuilder>,
     transform_depth: usize,
     current_path: Option<PathBuilder>,
     completed_frame: Option<FrameOutput>,
+    ui: Option<UiBuilder>,
+    pending_ui: Option<UiSnapshot>,
+    accepted_ui: Option<UiSnapshot>,
     audio: Vec<AudioEvent>,
     effects: Vec<HostEffect>,
     audio_checkpoint: usize,
@@ -1424,12 +1650,25 @@ impl HostState {
     }
 }
 
+#[derive(Clone)]
+enum InitExport {
+    Legacy(TypedFunc<(i32, i32, f32, f32), i32>),
+    Integer(TypedFunc<(i32, i32, i32, i32), i32>),
+}
+
+#[derive(Clone)]
+enum EventExport {
+    Legacy(TypedFunc<(i32, i32, f32, f32), i32>),
+    Integer(TypedFunc<(i32, i32, i32, i32), i32>),
+}
+
 struct Exports {
     abi_major: TypedFunc<(), i32>,
     abi_minor: TypedFunc<(), i32>,
     configure: TypedFunc<(), i32>,
-    init: TypedFunc<(i32, i32, f32, f32), i32>,
-    event: TypedFunc<(i32, i32, f32, f32), i32>,
+    init: InitExport,
+    event: EventExport,
+    control_event: Option<TypedFunc<(i32, i32, i32), i32>>,
     tick: TypedFunc<i32, i32>,
     render: TypedFunc<(), i32>,
     state_ptr: TypedFunc<(), i32>,
@@ -1464,9 +1703,15 @@ impl Frontplane {
     pub fn from_wat(source: &str, limits: Limits) -> Result<Self, FrontplaneError> {
         let bytes =
             wat::parse_str(source).map_err(|error| FrontplaneError::Wat(error.to_string()))?;
+        #[cfg(feature = "native-runtime")]
         let mut config = Config::new();
+        #[cfg(feature = "portable-runtime")]
+        let mut config = Config::default();
         config.consume_fuel(true);
+        #[cfg(feature = "native-runtime")]
         let engine = Engine::new(&config).map_err(runtime_error)?;
+        #[cfg(feature = "portable-runtime")]
+        let engine = Engine::new(&config);
         let module = Module::new(&engine, bytes).map_err(runtime_error)?;
 
         for import in module.imports() {
@@ -1496,12 +1741,16 @@ impl Frontplane {
             store_limits,
             metadata: Metadata::default(),
             menu_ids: HashSet::new(),
+            control_ids: HashSet::new(),
             images: Vec::new(),
             image_ids: HashSet::new(),
             frame: None,
             transform_depth: 0,
             current_path: None,
             completed_frame: None,
+            ui: None,
+            pending_ui: None,
+            accepted_ui: None,
             audio: Vec::new(),
             effects: Vec::new(),
             audio_checkpoint: 0,
@@ -1513,18 +1762,39 @@ impl Frontplane {
         store
             .set_fuel(limits.fuel_per_call)
             .map_err(runtime_error)?;
+        #[cfg(feature = "native-runtime")]
         let instance = linker
             .instantiate(&mut store, &module)
+            .map_err(runtime_error)?;
+        #[cfg(feature = "portable-runtime")]
+        let instance = linker
+            .instantiate_and_start(&mut store, &module)
             .map_err(runtime_error)?;
         let memory = instance
             .get_memory(&mut store, "memory")
             .ok_or(FrontplaneError::MissingExport { name: "memory" })?;
+        let integer_lifecycle = instance.get_export(&mut store, "AE_init_i32").is_some()
+            || instance.get_export(&mut store, "AE_event_i32").is_some();
+        let (init, event) = if integer_lifecycle {
+            (
+                InitExport::Integer(required_func(&instance, &mut store, "AE_init_i32")?),
+                EventExport::Integer(required_func(&instance, &mut store, "AE_event_i32")?),
+            )
+        } else {
+            (
+                InitExport::Legacy(required_func(&instance, &mut store, "AE_init")?),
+                EventExport::Legacy(required_func(&instance, &mut store, "AE_event")?),
+            )
+        };
         let exports = Exports {
             abi_major: required_func(&instance, &mut store, "AE_abi_major")?,
             abi_minor: required_func(&instance, &mut store, "AE_abi_minor")?,
             configure: required_func(&instance, &mut store, "AE_configure")?,
-            init: required_func(&instance, &mut store, "AE_init")?,
-            event: required_func(&instance, &mut store, "AE_event")?,
+            init,
+            event,
+            control_event: instance
+                .get_typed_func::<(i32, i32, i32), i32>(&mut store, "AE_control_event")
+                .ok(),
             tick: required_func(&instance, &mut store, "AE_tick")?,
             render: required_func(&instance, &mut store, "AE_render")?,
             state_ptr: required_func(&instance, &mut store, "AE_state_ptr")?,
@@ -1561,14 +1831,30 @@ impl Frontplane {
     pub fn configure(&mut self) -> Result<(), FrontplaneError> {
         self.store.data_mut().metadata = Metadata::default();
         self.store.data_mut().menu_ids.clear();
+        self.store.data_mut().control_ids.clear();
         self.store.data_mut().images.clear();
         self.store.data_mut().image_ids.clear();
         let function = self.exports.configure.clone();
         let result = self.call_status("AE_configure", function, ());
+        if result.is_ok()
+            && !self.store.data().metadata.controls.is_empty()
+            && self.exports.control_event.is_none()
+        {
+            let state = self.store.data_mut();
+            state.metadata = Metadata::default();
+            state.menu_ids.clear();
+            state.control_ids.clear();
+            state.images.clear();
+            state.image_ids.clear();
+            return Err(FrontplaneError::MissingExport {
+                name: "AE_control_event",
+            });
+        }
         if result.is_err() {
             let state = self.store.data_mut();
             state.metadata = Metadata::default();
             state.menu_ids.clear();
+            state.control_ids.clear();
             state.images.clear();
             state.image_ids.clear();
         }
@@ -1593,17 +1879,35 @@ impl Frontplane {
                 operation: "AE_init",
             });
         }
-        let function = self.exports.init.clone();
-        self.call_status(
-            "AE_init",
-            function,
-            (
-                seed as i32,
-                (seed >> 32) as i32,
-                viewport_width,
-                viewport_height,
+        match self.exports.init.clone() {
+            InitExport::Legacy(function) => self.call_status(
+                "AE_init",
+                function,
+                (
+                    seed as i32,
+                    (seed >> 32) as i32,
+                    viewport_width,
+                    viewport_height,
+                ),
             ),
-        )
+            InitExport::Integer(function) => {
+                let width = logical_to_q16(
+                    viewport_width,
+                    self.store.data().limits.max_coordinate_abs,
+                    "AE_init_i32",
+                )?;
+                let height = logical_to_q16(
+                    viewport_height,
+                    self.store.data().limits.max_coordinate_abs,
+                    "AE_init_i32",
+                )?;
+                self.call_status(
+                    "AE_init_i32",
+                    function,
+                    (seed as i32, (seed >> 32) as i32, width, height),
+                )
+            }
+        }
     }
 
     pub fn metadata(&self) -> &Metadata {
@@ -1645,32 +1949,62 @@ impl Frontplane {
         &self.store.data().images
     }
 
+    /// Exposes the last fully accepted declarative UI revision; omitted guest
+    /// updates leave this snapshot intact for retained adapters to reconcile.
+    pub fn ui_snapshot(&self) -> Option<&UiSnapshot> {
+        self.store.data().accepted_ui.as_ref()
+    }
+
     /// Converts portable typed input into the stable numeric ABI, keeping GPUI
     /// and platform key representations outside the guest boundary.
     pub fn event(&mut self, event: Event) -> Result<(), FrontplaneError> {
-        let (kind, code, a, b) = match event {
-            Event::KeyDown(key) => (1, key as i32, 0.0, 0.0),
-            Event::KeyUp(key) => (2, key as i32, 0.0, 0.0),
-            Event::PointerMove { x, y } => (3, 0, x, y),
-            Event::PointerDown { button, x, y } => (4, button as i32, x, y),
-            Event::PointerUp { button, x, y } => (5, button as i32, x, y),
-            Event::Viewport { width, height } => (6, 0, width, height),
-            Event::MenuAction(id) => (7, id as i32, 0.0, 0.0),
-            Event::Focus(focused) => (8, i32::from(focused), 0.0, 0.0),
-            Event::DisplayRefresh(rate) => (9, rate.numerator as i32, rate.denominator as f32, 0.0),
-            Event::PointerScroll {
-                unit,
-                delta_x,
-                delta_y,
-            } => (10, unit as i32, delta_x, delta_y),
-        };
-        validate_bounded_numbers(
-            "AE_event",
-            &[a, b],
-            self.store.data().limits.max_coordinate_abs,
-        )?;
-        let function = self.exports.event.clone();
-        self.call_status("AE_event", function, (kind, code, a, b))
+        if let Event::Control { id, value, phase } = event {
+            let Some(control) = self
+                .store
+                .data()
+                .metadata
+                .controls
+                .iter()
+                .find(|control| control.id == id)
+            else {
+                return Err(FrontplaneError::UnsupportedCapability {
+                    operation: "AE_control_event",
+                });
+            };
+            if !control.contains_value(value) {
+                return Err(FrontplaneError::InvalidNumber {
+                    operation: "AE_control_event",
+                });
+            }
+            let function =
+                self.exports
+                    .control_event
+                    .clone()
+                    .ok_or(FrontplaneError::MissingExport {
+                        name: "AE_control_event",
+                    })?;
+            return self.call_status(
+                "AE_control_event",
+                function,
+                (id as i32, value, phase as i32),
+            );
+        }
+        match self.exports.event.clone() {
+            EventExport::Legacy(function) => {
+                let (kind, code, a, b) = legacy_event_parameters(event);
+                validate_bounded_numbers(
+                    "AE_event",
+                    &[a, b],
+                    self.store.data().limits.max_coordinate_abs,
+                )?;
+                self.call_status("AE_event", function, (kind, code, a, b))
+            }
+            EventExport::Integer(function) => {
+                let parameters =
+                    integer_event_parameters(event, self.store.data().limits.max_coordinate_abs)?;
+                self.call_status("AE_event_i32", function, parameters)
+            }
+        }
     }
 
     /// Resolves the guest's stateful rate policy after it has received the
@@ -1712,16 +2046,29 @@ impl Frontplane {
             state.transform_depth = 0;
             state.current_path = None;
             state.completed_frame = None;
+            state.ui = None;
+            state.pending_ui = None;
         }
         let function = self.exports.render.clone();
         self.call_status("AE_render", function, ())?;
-        self.store
-            .data_mut()
+        let state = self.store.data_mut();
+        if state.ui.is_some() {
+            state.ui = None;
+            state.pending_ui = None;
+            return Err(FrontplaneError::InvalidFrame(
+                "AE_render left an incomplete UI snapshot",
+            ));
+        }
+        let frame = state
             .completed_frame
             .take()
             .ok_or(FrontplaneError::InvalidFrame(
                 "AE_render did not complete a frame",
-            ))
+            ))?;
+        if let Some(snapshot) = state.pending_ui.take() {
+            state.accepted_ui = Some(snapshot);
+        }
+        Ok(frame)
     }
 
     /// Copies the guest-declared opaque state region after independently
@@ -1826,7 +2173,7 @@ impl Frontplane {
         parameters: P,
     ) -> Result<(), FrontplaneError>
     where
-        P: wasmtime::WasmParams,
+        P: runtime::WasmParams,
     {
         self.prepare_call()?;
         let result = function.call(&mut self.store, parameters);
@@ -1856,7 +2203,7 @@ impl Frontplane {
     fn finish_call<T>(
         &mut self,
         operation: &'static str,
-        result: Result<T, wasmtime::Error>,
+        result: Result<T, runtime::Error>,
     ) -> Result<T, FrontplaneError> {
         let pending_error = self.store.data_mut().pending_error.take();
         let outcome = if let Some(error) = pending_error {
@@ -1888,6 +2235,8 @@ impl Frontplane {
         let state = self.store.data_mut();
         state.audio.truncate(state.audio_checkpoint);
         state.effects.truncate(state.effect_checkpoint);
+        state.ui = None;
+        state.pending_ui = None;
     }
 }
 
@@ -1955,8 +2304,8 @@ fn required_func<P, R>(
     name: &'static str,
 ) -> Result<TypedFunc<P, R>, FrontplaneError>
 where
-    P: wasmtime::WasmParams,
-    R: wasmtime::WasmResults,
+    P: runtime::WasmParams,
+    R: runtime::WasmResults,
 {
     instance
         .get_typed_func::<P, R>(store, name)
@@ -1969,8 +2318,8 @@ fn optional_func<P, R>(
     name: &'static str,
 ) -> Result<Option<TypedFunc<P, R>>, FrontplaneError>
 where
-    P: wasmtime::WasmParams,
-    R: wasmtime::WasmResults,
+    P: runtime::WasmParams,
+    R: runtime::WasmResults,
 {
     if instance.get_export(&mut *store, name).is_none() {
         return Ok(None);
@@ -1981,7 +2330,7 @@ where
         .map_err(|_| FrontplaneError::MissingExport { name })
 }
 
-fn runtime_error(error: wasmtime::Error) -> FrontplaneError {
+fn runtime_error(error: impl fmt::Display) -> FrontplaneError {
     FrontplaneError::Runtime(error.to_string())
 }
 
@@ -1995,6 +2344,90 @@ fn validate_bounded_numbers(
     } else {
         Err(FrontplaneError::InvalidNumber { operation })
     }
+}
+
+fn legacy_event_parameters(event: Event) -> (i32, i32, f32, f32) {
+    match event {
+        Event::KeyDown(key) => (1, key as i32, 0.0, 0.0),
+        Event::KeyUp(key) => (2, key as i32, 0.0, 0.0),
+        Event::PointerMove { x, y } => (3, 0, x, y),
+        Event::PointerDown { button, x, y } => (4, button as i32, x, y),
+        Event::PointerUp { button, x, y } => (5, button as i32, x, y),
+        Event::Viewport { width, height } => (6, 0, width, height),
+        Event::MenuAction(id) => (7, id as i32, 0.0, 0.0),
+        Event::Focus(focused) => (8, i32::from(focused), 0.0, 0.0),
+        Event::Control { .. } => unreachable!("control events use AE_control_event"),
+        Event::DisplayRefresh(rate) => (9, rate.numerator as i32, rate.denominator as f32, 0.0),
+        Event::PointerScroll {
+            unit,
+            delta_x,
+            delta_y,
+        } => (10, unit as i32, delta_x, delta_y),
+    }
+}
+
+/// Converts only logical-pixel event fields to Q16.16; integer event metadata
+/// such as key IDs and display-rate denominators remains unscaled.
+fn integer_event_parameters(
+    event: Event,
+    max_coordinate_abs: f32,
+) -> Result<(i32, i32, i32, i32), FrontplaneError> {
+    let coordinates = |a, b| {
+        Ok((
+            logical_to_q16(a, max_coordinate_abs, "AE_event_i32")?,
+            logical_to_q16(b, max_coordinate_abs, "AE_event_i32")?,
+        ))
+    };
+    let parameters = match event {
+        Event::KeyDown(key) => (1, key as i32, 0, 0),
+        Event::KeyUp(key) => (2, key as i32, 0, 0),
+        Event::PointerMove { x, y } => {
+            let (x, y) = coordinates(x, y)?;
+            (3, 0, x, y)
+        }
+        Event::PointerDown { button, x, y } => {
+            let (x, y) = coordinates(x, y)?;
+            (4, button as i32, x, y)
+        }
+        Event::PointerUp { button, x, y } => {
+            let (x, y) = coordinates(x, y)?;
+            (5, button as i32, x, y)
+        }
+        Event::Viewport { width, height } => {
+            let (width, height) = coordinates(width, height)?;
+            (6, 0, width, height)
+        }
+        Event::MenuAction(id) => (7, id as i32, 0, 0),
+        Event::Focus(focused) => (8, i32::from(focused), 0, 0),
+        Event::Control { .. } => unreachable!("control events use AE_control_event"),
+        Event::DisplayRefresh(rate) => (9, rate.numerator as i32, rate.denominator as i32, 0),
+        Event::PointerScroll {
+            unit,
+            delta_x,
+            delta_y,
+        } => {
+            let (delta_x, delta_y) = coordinates(delta_x, delta_y)?;
+            (10, unit as i32, delta_x, delta_y)
+        }
+    };
+    Ok(parameters)
+}
+
+/// Quantizes adapter-side logical pixels to signed Q16.16 while rejecting
+/// non-finite, policy-exceeding, or representation-overflowing values.
+fn logical_to_q16(
+    value: f32,
+    max_coordinate_abs: f32,
+    operation: &'static str,
+) -> Result<i32, FrontplaneError> {
+    if !value.is_finite() || value.abs() > max_coordinate_abs {
+        return Err(FrontplaneError::InvalidNumber { operation });
+    }
+    let scaled = (f64::from(value) * Q16_SCALE).round();
+    if !(f64::from(i32::MIN)..=f64::from(i32::MAX)).contains(&scaled) {
+        return Err(FrontplaneError::InvalidNumber { operation });
+    }
+    Ok(scaled as i32)
 }
 
 /// Defines the complete capability allowlist and validates each guest value at
@@ -2015,6 +2448,126 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
                     0
                 }
                 Err(error) => caller.data_mut().reject(error, -3),
+            },
+        )
+        .map_err(runtime_error)?;
+    linker
+        .func_wrap(
+            WAT_IMPORT_MODULE,
+            "AE_frame_begin_rgba",
+            |mut caller: Caller<'_, HostState>, rgba: i32| {
+                begin_frame(caller.data_mut(), rgba as u32)
+            },
+        )
+        .map_err(runtime_error)?;
+    linker
+        .func_wrap(
+            WAT_IMPORT_MODULE,
+            "AE_ui_begin",
+            |mut caller: Caller<'_, HostState>, revision: i32| {
+                begin_ui(caller.data_mut(), revision as u32)
+            },
+        )
+        .map_err(runtime_error)?;
+    linker
+        .func_wrap(
+            WAT_IMPORT_MODULE,
+            "AE_ui_end",
+            |mut caller: Caller<'_, HostState>| end_ui(caller.data_mut()),
+        )
+        .map_err(runtime_error)?;
+    linker
+        .func_wrap(
+            WAT_IMPORT_MODULE,
+            "AE_control_panel_q16",
+            |mut caller: Caller<'_, HostState>,
+             id: i32,
+             x: i32,
+             y: i32,
+             width: i32,
+             height: i32,
+             rgba: i32,
+             flags: i32| {
+                let max_abs = caller.data().limits.max_coordinate_abs;
+                let Some(bounds) = q16_rect(x, y, width, height, max_abs) else {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::InvalidNumber("AE_control_panel_q16"), -5);
+                };
+                if flags != 0 {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::InvalidNumber("AE_control_panel_q16"), -5);
+                }
+                push_control_panel(
+                    caller.data_mut(),
+                    ControlPanel {
+                        id: id as u32,
+                        bounds,
+                        rgba: rgba as u32,
+                    },
+                )
+            },
+        )
+        .map_err(runtime_error)?;
+    linker
+        .func_wrap(
+            WAT_IMPORT_MODULE,
+            "AE_slider_place_q16",
+            |mut caller: Caller<'_, HostState>,
+             id: i32,
+             panel_id: i32,
+             value: i32,
+             x: i32,
+             y: i32,
+             width: i32,
+             height: i32,
+             label_placement: i32,
+             flags: i32| {
+                let max_abs = caller.data().limits.max_coordinate_abs;
+                let Some(bounds) = q16_rect(x, y, width, height, max_abs) else {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::InvalidNumber("AE_slider_place_q16"), -5);
+                };
+                let Some(label_placement) = ControlLabelPlacement::from_abi(label_placement) else {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::InvalidNumber("AE_slider_place_q16"), -5);
+                };
+                if flags != 0 {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::InvalidNumber("AE_slider_place_q16"), -5);
+                }
+                let id = id as u32;
+                let Some(control) = caller
+                    .data()
+                    .metadata
+                    .controls
+                    .iter()
+                    .find(|control| control.id == id)
+                else {
+                    return caller.data_mut().reject(
+                        PendingError::InvalidFrame("slider placement uses undeclared control"),
+                        -8,
+                    );
+                };
+                if !control.contains_value(value) {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::InvalidNumber("AE_slider_place_q16"), -5);
+                }
+                push_slider_placement(
+                    caller.data_mut(),
+                    SliderPlacement {
+                        id,
+                        panel_id: panel_id as u32,
+                        value,
+                        bounds,
+                        label_placement,
+                    },
+                )
             },
         )
         .map_err(runtime_error)?;
@@ -2072,6 +2625,70 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
                 0
             },
         )
+        .map_err(runtime_error)?;
+    linker
+        .func_wrap(
+            WAT_IMPORT_MODULE,
+            "AE_slider_i32",
+            |mut caller: Caller<'_, HostState>,
+             id: i32,
+             label_ptr: i32,
+             label_len: i32,
+             min: i32,
+             max: i32,
+             step: i32,
+             initial: i32| {
+                if caller.data().metadata.controls.len() >= caller.data().limits.max_controls {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::Budget("AE_slider_i32", "control"), -2);
+                }
+                let range = i64::from(max) - i64::from(min);
+                let initial_offset = i64::from(initial) - i64::from(min);
+                if range <= 0
+                    || step <= 0
+                    || range % i64::from(step) != 0
+                    || initial < min
+                    || initial > max
+                    || initial_offset % i64::from(step) != 0
+                    || range / i64::from(step) > i64::from(caller.data().limits.max_control_steps)
+                {
+                    return caller.data_mut().reject(
+                        PendingError::InvalidFrame("invalid integer slider lattice"),
+                        -8,
+                    );
+                }
+                let id = id as u32;
+                if !caller.data_mut().control_ids.insert(id) {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::DuplicateId("AE_slider_i32", id), -7);
+                }
+                let label = match read_string(&mut caller, label_ptr, label_len, "AE_slider_i32") {
+                    Ok(label) if !label.is_empty() => label,
+                    Ok(_) => {
+                        return caller
+                            .data_mut()
+                            .reject(PendingError::InvalidFrame("empty integer slider label"), -8);
+                    }
+                    Err(error) => return caller.data_mut().reject(error, -3),
+                };
+                caller.data_mut().metadata.controls.push(SliderControl {
+                    id,
+                    label,
+                    min,
+                    max,
+                    step,
+                    initial,
+                });
+                0
+            },
+        )
+        .map_err(runtime_error)?;
+    linker
+        .func_wrap(WAT_IMPORT_MODULE, "AE_sin_cos_turn", |angle: i32| {
+            sin_cos_turn_q30(angle)
+        })
         .map_err(runtime_error)?;
     linker
         .func_wrap(
@@ -2239,17 +2856,7 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
                         .data_mut()
                         .reject(PendingError::InvalidNumber("frame_begin"), -5);
                 }
-                if caller.data().frame.is_some() {
-                    return caller
-                        .data_mut()
-                        .reject(PendingError::InvalidFrame("nested frame_begin"), -6);
-                }
-                caller.data_mut().frame = Some(FrameBuilder {
-                    background: components_to_rgba(r, g, b, a),
-                    commands: Vec::new(),
-                    ids: HashSet::new(),
-                });
-                0
+                begin_frame(caller.data_mut(), components_to_rgba(r, g, b, a))
             },
         )
         .map_err(runtime_error)?;
@@ -2344,6 +2951,26 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
     linker
         .func_wrap(
             WAT_IMPORT_MODULE,
+            "AE_path_move_q16",
+            |mut caller: Caller<'_, HostState>, x: i32, y: i32| {
+                let max_abs = caller.data().limits.max_coordinate_abs;
+                let Some((x, y)) = q16_point(x, y, max_abs) else {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::InvalidNumber("AE_path_move_q16"), -5);
+                };
+                push_path_segment(
+                    &mut caller,
+                    PathSegment::Move(Point { x, y }),
+                    &[x, y],
+                    "AE_path_move_q16",
+                )
+            },
+        )
+        .map_err(runtime_error)?;
+    linker
+        .func_wrap(
+            WAT_IMPORT_MODULE,
             "AE_path_line",
             |mut caller: Caller<'_, HostState>, x: f32, y: f32| {
                 push_path_segment(
@@ -2351,6 +2978,26 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
                     PathSegment::Line(Point { x, y }),
                     &[x, y],
                     "path_line",
+                )
+            },
+        )
+        .map_err(runtime_error)?;
+    linker
+        .func_wrap(
+            WAT_IMPORT_MODULE,
+            "AE_path_line_q16",
+            |mut caller: Caller<'_, HostState>, x: i32, y: i32| {
+                let max_abs = caller.data().limits.max_coordinate_abs;
+                let Some((x, y)) = q16_point(x, y, max_abs) else {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::InvalidNumber("AE_path_line_q16"), -5);
+                };
+                push_path_segment(
+                    &mut caller,
+                    PathSegment::Line(Point { x, y }),
+                    &[x, y],
+                    "AE_path_line_q16",
                 )
             },
         )
@@ -2433,6 +3080,43 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
                         stroke_rgba: Some(stroke as u32),
                     },
                     "path_end",
+                )
+            },
+        )
+        .map_err(runtime_error)?;
+    linker
+        .func_wrap(
+            WAT_IMPORT_MODULE,
+            "AE_path_end_q16",
+            |mut caller: Caller<'_, HostState>, width: i32, fill: i32, stroke: i32, flags: i32| {
+                let max_abs = caller.data().limits.max_coordinate_abs;
+                let Some(width) = q16_logical(width, max_abs) else {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::InvalidNumber("AE_path_end_q16"), -5);
+                };
+                if width < 0.0 || flags != 0 {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::InvalidNumber("AE_path_end_q16"), -5);
+                }
+                let Some(path) = caller.data_mut().current_path.take() else {
+                    return caller.data_mut().reject(
+                        PendingError::InvalidFrame("path_end without path_begin"),
+                        -6,
+                    );
+                };
+                push_command(
+                    caller.data_mut(),
+                    path.id,
+                    DrawCommand::Path {
+                        id: path.id,
+                        segments: path.segments,
+                        width,
+                        fill_rgba: (fill != 0).then_some(fill as u32),
+                        stroke_rgba: (stroke != 0).then_some(stroke as u32),
+                    },
+                    "AE_path_end_q16",
                 )
             },
         )
@@ -2778,6 +3462,64 @@ fn push_command(
     0
 }
 
+/// Adds a guest-positioned native surface to the live frame while keeping its
+/// stable identity and capacity independent from canvas draw-command IDs.
+fn push_control_panel(state: &mut HostState, panel: ControlPanel) -> i32 {
+    let max_controls = state.limits.max_controls;
+    let Some(ui) = state.ui.as_mut() else {
+        return state.reject(
+            PendingError::InvalidFrame("control panel outside UI snapshot"),
+            -6,
+        );
+    };
+    if ui.control_panels.len() >= max_controls {
+        return state.reject(
+            PendingError::Budget("AE_control_panel_q16", "control panel"),
+            -2,
+        );
+    }
+    if !ui.control_panel_ids.insert(panel.id) {
+        return state.reject(
+            PendingError::DuplicateId("AE_control_panel_q16", panel.id),
+            -7,
+        );
+    }
+    ui.control_panels.push(panel);
+    0
+}
+
+/// Adds one declared slider to the current UI frame, validating panel
+/// ownership and per-frame identity before any native adapter sees it.
+fn push_slider_placement(state: &mut HostState, slider: SliderPlacement) -> i32 {
+    let max_controls = state.limits.max_controls;
+    let Some(ui) = state.ui.as_mut() else {
+        return state.reject(
+            PendingError::InvalidFrame("slider placement outside UI snapshot"),
+            -6,
+        );
+    };
+    if !ui.control_panel_ids.contains(&slider.panel_id) {
+        return state.reject(
+            PendingError::InvalidFrame("slider placement uses unknown control panel"),
+            -8,
+        );
+    }
+    if ui.sliders.len() >= max_controls {
+        return state.reject(
+            PendingError::Budget("AE_slider_place_q16", "slider placement"),
+            -2,
+        );
+    }
+    if !ui.slider_ids.insert(slider.id) {
+        return state.reject(
+            PendingError::DuplicateId("AE_slider_place_q16", slider.id),
+            -7,
+        );
+    }
+    ui.sliders.push(slider);
+    0
+}
+
 fn push_unkeyed(state: &mut HostState, command: DrawCommand, operation: &'static str) -> i32 {
     let max_commands = state.limits.max_commands;
     let Some(frame) = state.frame.as_mut() else {
@@ -2835,6 +3577,29 @@ fn bounded_finite(values: &[f32], max_abs: f32) -> bool {
             .all(|value| value.is_finite() && value.abs() <= max_abs)
 }
 
+/// Converts the guest's exact signed Q16.16 geometry into the host renderer's
+/// logical-pixel scalar only after enforcing the configured coordinate policy.
+fn q16_logical(value: i32, max_abs: f32) -> Option<f32> {
+    let logical = (f64::from(value) / Q16_SCALE) as f32;
+    bounded_finite(&[logical], max_abs).then_some(logical)
+}
+
+fn q16_point(x: i32, y: i32, max_abs: f32) -> Option<(f32, f32)> {
+    Some((q16_logical(x, max_abs)?, q16_logical(y, max_abs)?))
+}
+
+fn q16_rect(x: i32, y: i32, width: i32, height: i32, max_abs: f32) -> Option<Rect> {
+    if width <= 0 || height <= 0 {
+        return None;
+    }
+    Some(Rect {
+        x: q16_logical(x, max_abs)?,
+        y: q16_logical(y, max_abs)?,
+        width: q16_logical(width, max_abs)?,
+        height: q16_logical(height, max_abs)?,
+    })
+}
+
 fn normalized(values: &[f32]) -> bool {
     finite(values) && values.iter().all(|value| (0.0..=1.0).contains(value))
 }
@@ -2842,4 +3607,66 @@ fn normalized(values: &[f32]) -> bool {
 fn components_to_rgba(r: f32, g: f32, b: f32, a: f32) -> u32 {
     let byte = |value: f32| (value * 255.0).round() as u32;
     (byte(r) << 24) | (byte(g) << 16) | (byte(b) << 8) | byte(a)
+}
+
+fn begin_frame(state: &mut HostState, background: u32) -> i32 {
+    if state.frame.is_some() {
+        return state.reject(PendingError::InvalidFrame("nested frame_begin"), -6);
+    }
+    state.frame = Some(FrameBuilder {
+        background,
+        commands: Vec::new(),
+        ids: HashSet::new(),
+    });
+    0
+}
+
+/// Starts a keyed declarative UI transaction whose opaque revision changes
+/// only when the guest's desired native UI tree changes.
+fn begin_ui(state: &mut HostState, revision: u32) -> i32 {
+    if state.ui.is_some() {
+        return state.reject(PendingError::InvalidFrame("nested ui_begin"), -6);
+    }
+    if state.pending_ui.is_some() {
+        return state.reject(
+            PendingError::InvalidFrame("multiple UI snapshots in one render"),
+            -6,
+        );
+    }
+    if state
+        .accepted_ui
+        .as_ref()
+        .is_some_and(|accepted| accepted.revision == revision)
+    {
+        return state.reject(
+            PendingError::InvalidFrame("UI revision was already accepted"),
+            -6,
+        );
+    }
+    state.ui = Some(UiBuilder {
+        revision,
+        control_panels: Vec::new(),
+        control_panel_ids: HashSet::new(),
+        sliders: Vec::new(),
+        slider_ids: HashSet::new(),
+    });
+    0
+}
+
+/// Validates and stages one complete UI document; publication waits until the
+/// surrounding `AE_render` transaction also returns a complete canvas frame.
+fn end_ui(state: &mut HostState) -> i32 {
+    if state.pending_error.is_some() {
+        state.ui = None;
+        return -6;
+    }
+    let Some(ui) = state.ui.take() else {
+        return state.reject(PendingError::InvalidFrame("ui_end without ui_begin"), -6);
+    };
+    state.pending_ui = Some(UiSnapshot {
+        revision: ui.revision,
+        control_panels: ui.control_panels,
+        sliders: ui.sliders,
+    });
+    0
 }

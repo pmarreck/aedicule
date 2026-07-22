@@ -1,3 +1,8 @@
+---
+description: "Live WAT reloads need transactional candidate swap and explicit state schema."
+datetime: 2026-07-16T09:36:26-04:00 # America/New_York (EDT)
+tags: [live, wat, wasm, webassembly, reloads, transactional, candidate, swap, explicit, state, schema]
+---
 Compile, configure, initialize, restore, and smoke-render a candidate instance
 before swapping it into the GPUI adapter. A failed candidate must leave the
 last good instance advancing; display the error as recoverable rather than

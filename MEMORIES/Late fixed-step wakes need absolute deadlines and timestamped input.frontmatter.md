@@ -1,3 +1,8 @@
+---
+description: "Late fixed step wakes need absolute deadlines and timestamped input."
+datetime: 2026-07-17T10:54:26-04:00 # America/New_York (EDT)
+tags: [fixed, step, wakes, absolute, deadlines, timestamped, input]
+---
 Treat native timer wakes as advisory samples of a monotonic clock. Compute each
 one-shot delay from `origin + ceil(tick_ordinal * 1e9 / tick_hz)` so early,
 late, and spurious wakes cannot shift the simulation timeline or accumulate

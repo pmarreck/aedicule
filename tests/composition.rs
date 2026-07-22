@@ -1,4 +1,9 @@
-use gpui_wasm::{Affine, DrawCommand, Frontplane, ImageFormat, Limits, PathSegment, Point, Rect};
+use std::path::Path;
+
+use gpui_wasm::{
+    Affine, DrawCommand, Frontplane, FrontplaneError, ImageFormat, Limits, PathSegment, Point,
+    Rect, WatRejectionStage, format_wat_rejection_diagnostic,
+};
 
 const COMPOSITION_WAT: &str = r#"(module
 	(import "aedicule.v0" "AE_image_define" (func $image (param i32 i32 i32 i32) (result i32)))
@@ -135,6 +140,37 @@ fn unbalanced_composition_stacks_reject_the_whole_frame() {
     frontplane.init(1, 320.0, 240.0).unwrap();
 
     assert!(frontplane.render().is_err());
+}
+
+#[test]
+fn draw_ids_are_unique_across_primitive_kinds_within_each_frame() {
+    let source = COMPOSITION_WAT.replace("i32.const 50 i32.const 7", "i32.const 40 i32.const 7");
+    let mut frontplane = Frontplane::from_wat(&source, Limits::default()).unwrap();
+    frontplane.configure().unwrap();
+    frontplane.init(1, 320.0, 240.0).unwrap();
+
+    let error = frontplane.render().unwrap_err();
+    assert!(matches!(
+        &error,
+        FrontplaneError::DuplicateId { operation, id }
+            if *operation == "sprite" && *id == 40
+    ));
+    let diagnostic = format_wat_rejection_diagnostic(
+        Path::new("collision.wat"),
+        WatRejectionStage::InitialLoad,
+        &error.to_string(),
+    );
+    assert!(diagnostic.contains("duplicate stable ID 40 in sprite"));
+}
+
+#[test]
+fn draw_ids_may_be_reused_after_the_next_frame_begins() {
+    let mut frontplane = fixture();
+    let first = frontplane.render().unwrap();
+    let second = frontplane.render().unwrap();
+
+    assert_eq!(first.commands.len(), 4);
+    assert_eq!(second.commands.len(), 4);
 }
 
 #[test]

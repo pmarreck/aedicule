@@ -14,8 +14,19 @@ publish = false
 default-run = "gpui-wasm"
 
 [features]
-default = ["gui"]
+default = ["gui", "native-runtime"]
+native-runtime = ["dep:wasmtime"]
+portable-runtime = ["dep:wasmi"]
+web = [
+	"portable-runtime",
+	"dep:gpui",
+	"dep:gpui_platform",
+	"dep:js-sys",
+	"dep:wasm-bindgen",
+	"dep:web-time",
+]
 gui = [
+	"native-runtime",
 	"dep:anyhow",
 	"dep:gpui",
 	"dep:gpui-component",
@@ -28,15 +39,23 @@ gui = [
 [dependencies]
 thiserror = "2.0.16"
 wat = "1.253.0"
-wasmtime = { version = "46.0.1", default-features = false, features = ["cranelift", "runtime", "std"] }
+wasmtime = { version = "46.0.1", default-features = false, features = ["cranelift", "runtime", "std"], optional = true }
+wasmi = { version = "1.1.0", default-features = false, features = ["std", "extra-checks"], optional = true }
 
 anyhow = { version = "1.0.100", optional = true }
 gpui = { git = "https://github.com/zed-industries/zed", rev = "1d217ee39d381ac101b7cf49d3d22451ac1093fe", optional = true }
 gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "1d217ee39d381ac101b7cf49d3d22451ac1093fe", features = ["font-kit", "x11", "wayland", "runtime_shaders"], optional = true }
+js-sys = { version = "0.3.103", optional = true }
+wasm-bindgen = { version = "0.2.126", optional = true }
+web-time = { version = "1.1.0", optional = true }
 gpui-component = { git = "https://github.com/longbridge/gpui-component", rev = "b7e63cc29018c27bb24788ddb212f4cbdd861334", optional = true }
 gpui-component-assets = { git = "https://github.com/longbridge/gpui-component", rev = "b7e63cc29018c27bb24788ddb212f4cbdd861334", optional = true }
 rodio = { version = "0.22.2", default-features = false, features = ["playback"], optional = true }
 smol = { version = "2.0.2", optional = true }
+
+[dev-dependencies]
+gpui = { git = "https://github.com/zed-industries/zed", rev = "1d217ee39d381ac101b7cf49d3d22451ac1093fe", features = ["test-support"] }
+wasmprinter = "0.251.0"
 
 [[bin]]
 name = "gpui-wasm"
@@ -47,10 +66,19 @@ required-features = ["gui"]
 name = "gpui-wasm-render"
 path = "src/bin/gpui-wasm-render.rs"
 
+[[bin]]
+name = "aedicule-web"
+path = "src/bin/aedicule-web.rs"
+required-features = ["web"]
+
 [profile.release]
 opt-level = 3
 lto = "thin"
 
 [patch."https://github.com/zed-industries/zed"]
+gpui = { git = "https://github.com/pmarreck/zed", rev = "7e34550622005f62cd337d465cb5fd25c2ce8bd7" }
+gpui_platform = { git = "https://github.com/pmarreck/zed", rev = "7e34550622005f62cd337d465cb5fd25c2ce8bd7" }
+
+[patch."https://github.com/pmarreck/zed"]
 ztracing = { path = "third_party/ztracing" }
 ztracing_macro = { path = "third_party/ztracing_macro" }

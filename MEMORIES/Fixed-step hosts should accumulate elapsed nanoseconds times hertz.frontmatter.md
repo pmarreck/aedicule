@@ -1,3 +1,8 @@
+---
+description: "Fixed step hosts should accumulate elapsed nanoseconds times hertz."
+datetime: 2026-07-17T01:06:34-04:00 # America/New_York (EDT)
+tags: [fixed, step, hosts, accumulate, elapsed, nanoseconds, times, hertz]
+---
 Scheduling `Duration::from_nanos(1_000_000_000 / hz)` repeatedly truncates
 fractional periods such as 120 Hz and lets callback work time slow the
 simulation. Instead, sample an injected monotonic clock, add

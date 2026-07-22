@@ -8,25 +8,25 @@ use std::{
 };
 
 use gpui::{
-    AnyWindowHandle, App, AppContext as _, Bounds, Context, FocusHandle, Focusable, Hsla,
+    AnyWindowHandle, App, AppContext as _, Context, Entity, FocusHandle, Focusable,
     InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent, KeyUpEvent, Menu, MenuItem,
-    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement as _, PathBuilder,
-    Render, ScrollDelta, ScrollWheelEvent, SharedString, Styled as _, TextAlign, TextRun, Window,
-    WindowBounds, WindowOptions, actions, canvas, div, point, prelude::FluentBuilder as _, px,
-    rgba, size,
+    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement as _, Render,
+    ScrollDelta, ScrollWheelEvent, Styled as _, Subscription, Window, WindowBounds, WindowOptions,
+    actions, canvas, div, prelude::FluentBuilder as _, px, rgba, size,
 };
 use gpui_component::{
     ActiveTheme as _, Root, Theme, ThemeMode, TitleBar,
     button::{Button, ButtonVariants as _},
     h_flex,
+    slider::{Slider, SliderEvent, SliderState},
 };
 use gpui_wasm::{
-    Affine, AudioEvent, DEFAULT_PLUGIN_ENV, DrawCommand, Event, FALLBACK_WAT, FileRevision,
-    FrameOutput, Frontplane, HostEffect, Key, LaunchAction, Limits, Metadata, PathSegment,
-    PluginInit, PluginSource, PointerButton, PointerScrollUnit, RevisionTracker, SimulationCall,
-    SimulationScheduler, StateTransfer, SynthFilter, SynthVoice, SynthWaveform, WatRejectionStage,
-    display_refresh_rate_from_environment, format_wat_rejection_diagnostic, initialize_frontplane,
-    prepare_reload, resolve_launch,
+    AudioEvent, ControlLabelPlacement, ControlPhase, DEFAULT_PLUGIN_ENV, Event, FALLBACK_WAT,
+    FileRevision, FrameOutput, Frontplane, HostEffect, Key, LaunchAction, Limits, Metadata,
+    PluginInit, PluginSource, PointerButton, PointerScrollUnit, Rect, RevisionTracker,
+    SimulationCall, SimulationScheduler, SliderControl, StateTransfer, SynthFilter, SynthVoice,
+    SynthWaveform, WatRejectionStage, display_refresh_rate_from_environment,
+    format_wat_rejection_diagnostic, initialize_frontplane, prepare_reload, resolve_launch,
 };
 use rodio::{DeviceSinkBuilder, MixerDeviceSink, buffer::SamplesBuffer};
 use smol::Timer;
@@ -445,6 +445,15 @@ struct FrontplaneView {
     monotonic_origin: Instant,
     scheduler: SimulationScheduler,
     timing_generation: u64,
+    sliders: Vec<NativeSlider>,
+    _slider_subscriptions: Vec<Subscription>,
+}
+
+#[derive(Clone)]
+struct NativeSlider {
+    control: SliderControl,
+    state: Entity<SliderState>,
+    synced_ui_revision: Option<u32>,
 }
 
 #[derive(Default)]
@@ -473,6 +482,64 @@ impl ViewportTracker {
 }
 
 impl FrontplaneView {
+    /// Adapts exact integer control lattices to GPUI step indices, translating
+    /// every emitted index back through `min + index * step` before scheduling.
+    fn build_sliders(
+        controls: &[SliderControl],
+        cx: &mut Context<Self>,
+    ) -> (Vec<NativeSlider>, Vec<Subscription>) {
+        let mut sliders = Vec::with_capacity(controls.len());
+        let mut subscriptions = Vec::with_capacity(controls.len());
+        for control in controls {
+            let initial_index =
+                (i64::from(control.initial) - i64::from(control.min)) / i64::from(control.step);
+            let state = cx.new(|_| {
+                SliderState::new()
+                    .min(0.0)
+                    .max(control.step_count() as f32)
+                    .step(1.0)
+                    .default_value(initial_index as f32)
+            });
+            let subscribed_control = control.clone();
+            subscriptions.push(
+                cx.subscribe(&state, move |this, _, event: &SliderEvent, cx| {
+                    let (slider_value, phase) = match event {
+                        SliderEvent::Change(value) => (*value, ControlPhase::Change),
+                        SliderEvent::Release(value) => (*value, ControlPhase::Release),
+                    };
+                    let index = slider_value.end().round();
+                    if !index.is_finite() || index < 0.0 {
+                        return;
+                    }
+                    let index = index as u32;
+                    if let Some(value) = subscribed_control.value_at_step(index) {
+                        if let Some(slider) = this
+                            .sliders
+                            .iter_mut()
+                            .find(|slider| slider.control.id == subscribed_control.id)
+                        {
+                            slider.synced_ui_revision = None;
+                        }
+                        this.queue_native_event(
+                            Event::Control {
+                                id: subscribed_control.id,
+                                value,
+                                phase,
+                            },
+                            cx,
+                        );
+                    }
+                }),
+            );
+            sliders.push(NativeSlider {
+                control: control.clone(),
+                state,
+                synced_ui_revision: None,
+            });
+        }
+        (sliders, subscriptions)
+    }
+
     fn new(startup: Startup, window: &Window, cx: &mut Context<Self>) -> Self {
         let Startup {
             frontplane,
@@ -489,6 +556,7 @@ impl FrontplaneView {
             Duration::ZERO,
         );
         let entries = standard_menu_entries(&metadata);
+        let (sliders, slider_subscriptions) = Self::build_sliders(&metadata.controls, cx);
         let mut view = Self {
             frontplane,
             frame,
@@ -517,6 +585,8 @@ impl FrontplaneView {
             monotonic_origin,
             scheduler,
             timing_generation: 0,
+            sliders,
+            _slider_subscriptions: slider_subscriptions,
         };
 
         view.spawn_timing_loop(cx);
@@ -588,6 +658,12 @@ impl FrontplaneView {
         self.spawn_timing_loop(cx);
     }
 
+    /// Publishes one fully validated guest canvas transaction; native UI has
+    /// its own guest-authored revision lifecycle inside the frontplane.
+    fn accept_frame(&mut self, frame: FrameOutput) {
+        self.frame = frame;
+    }
+
     fn poll_reload(&mut self, cx: &mut Context<Self>) -> bool {
         let Some(source) = self.source.as_mut() else {
             return false;
@@ -643,7 +719,7 @@ impl FrontplaneView {
                 let metadata = prepared.frontplane.metadata().clone();
                 let entries = standard_menu_entries(&metadata);
                 self.frontplane = prepared.frontplane;
-                self.frame = prepared.frame;
+                self.accept_frame(prepared.frame);
                 self.title = metadata.title.clone();
                 self.new_label = entries.iter().find_map(|entry| match entry {
                     StandardMenuEntry::New(label) => Some(label.clone()),
@@ -658,6 +734,9 @@ impl FrontplaneView {
                     _ => None,
                 });
                 self.audio.replace_programs(&metadata.synth_voices);
+                let (sliders, subscriptions) = Self::build_sliders(&metadata.controls, cx);
+                self.sliders = sliders;
+                self._slider_subscriptions = subscriptions;
                 self.restart_timing_loop(cx);
                 self.fatal_error = None;
                 self.reload_error = None;
@@ -714,7 +793,7 @@ impl FrontplaneView {
         }
         if pump.render {
             match self.frontplane.render() {
-                Ok(frame) => self.frame = frame,
+                Ok(frame) => self.accept_frame(frame),
                 Err(error) => {
                     self.fatal_error = Some(error.to_string());
                     return true;
@@ -835,6 +914,29 @@ impl Focusable for FrontplaneView {
     }
 }
 
+/// Keeps the desktop host title bar in one explicit layer so its hit-routing
+/// policy can be tested independently from WAT execution and audio setup.
+fn host_title_bar_layer() -> gpui::Div {
+    div().absolute().top_0().left_0().right_0().occlude()
+}
+
+/// Claims pointer ownership for host-provided guest controls so manipulating a
+/// slider cannot simultaneously enqueue a pointer edge on the WAT canvas.
+fn host_control_layer() -> gpui::Div {
+    div().occlude()
+}
+
+/// Converts one validated guest-authored control rectangle into an occluding
+/// GPUI layer without applying a host width cap or positional policy.
+fn guest_positioned_control_layer(bounds: Rect) -> gpui::Div {
+    host_control_layer()
+        .absolute()
+        .left(px(bounds.x))
+        .top(px(bounds.y))
+        .w(px(bounds.width))
+        .h(px(bounds.height))
+}
+
 impl Render for FrontplaneView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let viewport = window.viewport_size();
@@ -845,12 +947,69 @@ impl Render for FrontplaneView {
             self.queue_native_event(Event::Viewport { width, height }, cx);
         }
         let frame = self.frame.clone();
+        let ui = self.frontplane.ui_snapshot().cloned();
         let fatal_error = self.fatal_error.clone();
         let reload_error = self.reload_error.clone();
         let title = self.title.clone();
         let new_label = self.new_label.clone();
         let help_label = self.help_label.clone();
         let quit_label = self.quit_label.clone();
+        let control_panels = ui
+            .iter()
+            .flat_map(|snapshot| snapshot.control_panels.iter())
+            .map(|panel| {
+                guest_positioned_control_layer(panel.bounds)
+                    .id(("control-panel", panel.id as usize))
+                    .rounded_lg()
+                    .bg(rgba(panel.rgba))
+            })
+            .collect::<Vec<_>>();
+        let mut slider_layers =
+            Vec::with_capacity(ui.as_ref().map_or(0, |snapshot| snapshot.sliders.len()));
+        for placement in ui.iter().flat_map(|snapshot| snapshot.sliders.iter()) {
+            let Some(slider) = self
+                .sliders
+                .iter_mut()
+                .find(|slider| slider.control.id == placement.id)
+            else {
+                continue;
+            };
+            let ui_revision = ui
+                .as_ref()
+                .expect("slider placement belongs to an accepted UI snapshot")
+                .revision;
+            if slider.synced_ui_revision != Some(ui_revision) {
+                let index = slider
+                    .control
+                    .step_index(placement.value)
+                    .expect("validated slider placement stays on its declared lattice");
+                slider.synced_ui_revision = Some(ui_revision);
+                slider.state.update(cx, |state, slider_cx| {
+                    state.set_value(index as f32, window, slider_cx);
+                });
+            }
+            let track = div().w_full().child(Slider::new(&slider.state));
+            let content = match placement.label_placement {
+                ControlLabelPlacement::Hidden => div().size_full().flex().child(track),
+                ControlLabelPlacement::Above => div()
+                    .size_full()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .child(
+                        div()
+                            .w_full()
+                            .text_sm()
+                            .child(format!("{}: {}", slider.control.label, placement.value)),
+                    )
+                    .child(track),
+            };
+            slider_layers.push(
+                guest_positioned_control_layer(placement.bounds)
+                    .id(("native-slider", placement.id as usize))
+                    .child(content),
+            );
+        }
         let can_reload = self.source.is_some();
         let source_status = match &self.source {
             Some(source) if source.watch => {
@@ -950,7 +1109,7 @@ impl Render for FrontplaneView {
                         canvas(
                             move |bounds, _, _| (bounds, frame),
                             move |_, (bounds, frame), window, cx| {
-                                paint_frame(&frame, bounds, window, cx)
+                                gpui_wasm::gpui_canvas::paint_frame(&frame, bounds, window, cx)
                             },
                         )
                         .size_full(),
@@ -982,50 +1141,61 @@ impl Render for FrontplaneView {
                         )
                     }),
             )
+            .children(control_panels)
+            .children(slider_layers)
             .child(
-                TitleBar::new().absolute().top_0().left_0().right_0().child(
-                    h_flex()
-                        .w_full()
-                        .pr_3()
-                        .gap_2()
-                        .justify_between()
-                        .child(title)
-                        .child(
-                            h_flex()
-                                .gap_2()
-                                .when(can_reload, |this| {
-                                    this.child(
-                                        Button::new("reload-plugin").label(EN.reload).on_click(
+                host_title_bar_layer().child(
+                    TitleBar::new().child(
+                        h_flex()
+                            .w_full()
+                            .pr_3()
+                            .gap_2()
+                            .justify_between()
+                            .child(title)
+                            .child(
+                                h_flex()
+                                    .gap_2()
+                                    .when(can_reload, |this| {
+                                        this.child(
+                                            Button::new("reload-plugin").label(EN.reload).on_click(
+                                                cx.listener(|this, _, window, cx| {
+                                                    this.reload_plugin(&ReloadPlugin, window, cx)
+                                                }),
+                                            ),
+                                        )
+                                    })
+                                    .when_some(new_label, |this, label| {
+                                        this.child(
+                                            Button::new("new-game")
+                                                .primary()
+                                                .label(label)
+                                                .on_click(cx.listener(|this, _, window, cx| {
+                                                    this.new_application(
+                                                        &NewApplication,
+                                                        window,
+                                                        cx,
+                                                    )
+                                                })),
+                                        )
+                                    })
+                                    .when_some(help_label, |this, label| {
+                                        this.child(
+                                            Button::new("help-controls").label(label).on_click(
+                                                cx.listener(|this, _, window, cx| {
+                                                    this.show_help(&ShowHelp, window, cx)
+                                                }),
+                                            ),
+                                        )
+                                    })
+                                    .when_some(quit_label, |this, label| {
+                                        this.child(Button::new("quit").label(label).on_click(
                                             cx.listener(|this, _, window, cx| {
-                                                this.reload_plugin(&ReloadPlugin, window, cx)
+                                                this.quit(&Quit, window, cx)
                                             }),
-                                        ),
-                                    )
-                                })
-                                .when_some(new_label, |this, label| {
-                                    this.child(
-                                        Button::new("new-game").primary().label(label).on_click(
-                                            cx.listener(|this, _, window, cx| {
-                                                this.new_application(&NewApplication, window, cx)
-                                            }),
-                                        ),
-                                    )
-                                })
-                                .when_some(help_label, |this, label| {
-                                    this.child(Button::new("help-controls").label(label).on_click(
-                                        cx.listener(|this, _, window, cx| {
-                                            this.show_help(&ShowHelp, window, cx)
-                                        }),
-                                    ))
-                                })
-                                .when_some(quit_label, |this, label| {
-                                    this.child(Button::new("quit").label(label).on_click(
-                                        cx.listener(|this, _, window, cx| {
-                                            this.quit(&Quit, window, cx)
-                                        }),
-                                    ))
-                                }),
-                        ),
+                                        ))
+                                    }),
+                            ),
+                    ),
                 ),
             )
             .child(
@@ -1063,262 +1233,6 @@ fn map_key(key: &str) -> Option<Key> {
         "h" => Some(Key::H),
         "f1" => Some(Key::F1),
         _ => None,
-    }
-}
-
-#[derive(Clone, Copy)]
-struct Matrix(Affine);
-
-impl Matrix {
-    const IDENTITY: Self = Self(Affine {
-        m11: 1.0,
-        m12: 0.0,
-        m21: 0.0,
-        m22: 1.0,
-        tx: 0.0,
-        ty: 0.0,
-    });
-
-    /// Composes parent and child affine transforms without leaking GPUI matrix
-    /// types into the frontplane ABI.
-    fn then(self, next: Affine) -> Self {
-        let parent = self.0;
-        Self(Affine {
-            m11: parent.m11 * next.m11 + parent.m21 * next.m12,
-            m12: parent.m12 * next.m11 + parent.m22 * next.m12,
-            m21: parent.m11 * next.m21 + parent.m21 * next.m22,
-            m22: parent.m12 * next.m21 + parent.m22 * next.m22,
-            tx: parent.m11 * next.tx + parent.m21 * next.ty + parent.tx,
-            ty: parent.m12 * next.tx + parent.m22 * next.ty + parent.ty,
-        })
-    }
-
-    /// Projects one logical plugin point into its current composed viewport.
-    fn apply(self, x: f32, y: f32) -> (f32, f32) {
-        (
-            self.0.m11 * x + self.0.m21 * y + self.0.tx,
-            self.0.m12 * x + self.0.m22 * y + self.0.ty,
-        )
-    }
-}
-
-/// Adapts a validated immutable scene command buffer into GPUI paths and text;
-/// no guest execution occurs while GPUI window/context borrows are live.
-fn paint_frame(
-    frame: &FrameOutput,
-    bounds: Bounds<gpui::Pixels>,
-    window: &mut Window,
-    cx: &mut App,
-) {
-    let scale = 1.0;
-    let viewport = viewport_transform(bounds);
-    let mut matrices = vec![Matrix(viewport)];
-
-    for command in &frame.commands {
-        match command {
-            DrawCommand::PushTransform(transform) => {
-                matrices.push(
-                    matrices
-                        .last()
-                        .copied()
-                        .unwrap_or(Matrix::IDENTITY)
-                        .then(*transform),
-                );
-            }
-            DrawCommand::PopTransform => {
-                if matrices.len() > 1 {
-                    matrices.pop();
-                }
-            }
-            DrawCommand::Line {
-                x1,
-                y1,
-                x2,
-                y2,
-                width,
-                rgba: color,
-                ..
-            } => {
-                let matrix = *matrices.last().unwrap();
-                let (x1, y1) = matrix.apply(*x1, *y1);
-                let (x2, y2) = matrix.apply(*x2, *y2);
-                let mut path = PathBuilder::stroke(px(*width * scale));
-                path.move_to(point(px(x1), px(y1)));
-                path.line_to(point(px(x2), px(y2)));
-                if let Ok(path) = path.build() {
-                    window.paint_path(path, rgba(*color));
-                }
-            }
-            DrawCommand::Circle {
-                x,
-                y,
-                radius,
-                width,
-                rgba: color,
-                filled,
-                ..
-            } => {
-                let matrix = *matrices.last().unwrap();
-                let mut points = Vec::with_capacity(32);
-                for index in 0..32 {
-                    let angle = index as f32 * std::f32::consts::TAU / 32.0;
-                    let (x, y) = matrix.apply(*x + radius * angle.cos(), *y + radius * angle.sin());
-                    points.push(point(px(x), px(y)));
-                }
-                let mut path = if *filled {
-                    PathBuilder::fill()
-                } else {
-                    PathBuilder::stroke(px(*width * scale))
-                };
-                path.add_polygon(&points, true);
-                if let Ok(path) = path.build() {
-                    window.paint_path(path, rgba(*color));
-                }
-            }
-            DrawCommand::Text {
-                text,
-                x,
-                y,
-                size,
-                rgba: color,
-                centered,
-                ..
-            } => {
-                let matrix = *matrices.last().unwrap();
-                let (x, y) = matrix.apply(*x, *y);
-                let text = SharedString::from(text.clone());
-                let run = TextRun {
-                    len: text.len(),
-                    font: window.text_style().font(),
-                    color: Hsla::from(rgba(*color)),
-                    background_color: None,
-                    underline: None,
-                    strikethrough: None,
-                };
-                let font_size = px(*size * scale);
-                let line = window
-                    .text_system()
-                    .shape_line(text, font_size, &[run], None);
-                let x = if *centered {
-                    x - f32::from(line.width()) / 2.0
-                } else {
-                    x
-                };
-                let _ = line.paint(
-                    point(px(x), px(y - f32::from(font_size) / 2.0)),
-                    font_size,
-                    TextAlign::Left,
-                    None,
-                    window,
-                    cx,
-                );
-            }
-            DrawCommand::Path {
-                segments,
-                width,
-                fill_rgba,
-                stroke_rgba,
-                ..
-            } => {
-                let matrix = *matrices.last().unwrap();
-                if let Some(color) = fill_rgba {
-                    paint_path(segments, matrix, PathBuilder::fill(), *color, window);
-                }
-                if let Some(color) = stroke_rgba {
-                    paint_path(
-                        segments,
-                        matrix,
-                        PathBuilder::stroke(px(*width * scale)),
-                        *color,
-                        window,
-                    );
-                }
-            }
-            DrawCommand::Sprite { destination, .. } => {
-                // Image atlas decoding/cropping is the remaining v0 adapter spike.
-                let matrix = *matrices.last().unwrap();
-                let corners = [
-                    (destination.x, destination.y),
-                    (destination.x + destination.width, destination.y),
-                    (
-                        destination.x + destination.width,
-                        destination.y + destination.height,
-                    ),
-                    (destination.x, destination.y + destination.height),
-                ];
-                let points: Vec<_> = corners
-                    .into_iter()
-                    .map(|(x, y)| {
-                        let (x, y) = matrix.apply(x, y);
-                        point(px(x), px(y))
-                    })
-                    .collect();
-                let mut path = PathBuilder::stroke(px(scale));
-                path.add_polygon(&points, true);
-                if let Ok(path) = path.build() {
-                    window.paint_path(path, rgba(0xff00ffff));
-                }
-            }
-        }
-    }
-}
-
-/// Maps guest coordinates directly into the complete canvas instead of
-/// imposing a fixed-aspect logical viewport and letterboxing unused pixels.
-fn viewport_transform(bounds: Bounds<gpui::Pixels>) -> Affine {
-    Affine {
-        m11: 1.0,
-        m12: 0.0,
-        m21: 0.0,
-        m22: 1.0,
-        tx: f32::from(bounds.origin.x),
-        ty: f32::from(bounds.origin.y),
-    }
-}
-
-/// Replays the generic quadratic/cubic path model through GPUI after applying
-/// the current affine composition matrix.
-fn paint_path(
-    segments: &[PathSegment],
-    matrix: Matrix,
-    mut path: PathBuilder,
-    color: u32,
-    window: &mut Window,
-) {
-    for segment in segments {
-        match segment {
-            PathSegment::Move(point_) => {
-                let (x, y) = matrix.apply(point_.x, point_.y);
-                path.move_to(point(px(x), px(y)));
-            }
-            PathSegment::Line(point_) => {
-                let (x, y) = matrix.apply(point_.x, point_.y);
-                path.line_to(point(px(x), px(y)));
-            }
-            PathSegment::Quadratic { control, end } => {
-                let (cx, cy) = matrix.apply(control.x, control.y);
-                let (x, y) = matrix.apply(end.x, end.y);
-                path.curve_to(point(px(x), px(y)), point(px(cx), px(cy)));
-            }
-            PathSegment::Cubic {
-                control_1,
-                control_2,
-                end,
-            } => {
-                let (c1x, c1y) = matrix.apply(control_1.x, control_1.y);
-                let (c2x, c2y) = matrix.apply(control_2.x, control_2.y);
-                let (x, y) = matrix.apply(end.x, end.y);
-                path.cubic_bezier_to(
-                    point(px(x), px(y)),
-                    point(px(c1x), px(c1y)),
-                    point(px(c2x), px(c2y)),
-                );
-            }
-            PathSegment::Close => path.close(),
-        }
-    }
-    if let Ok(path) = path.build() {
-        window.paint_path(path, rgba(color));
     }
 }
 
@@ -1519,13 +1433,146 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::{
-        DECIMAL_SCALE, StandardMenuEntry, ViewportTracker, fixed_sine, map_key,
-        render_synth_program_fixed, standard_menu_entries, viewport_transform,
+        DECIMAL_SCALE, StandardMenuEntry, ViewportTracker, fixed_sine,
+        guest_positioned_control_layer, host_title_bar_layer, map_key, render_synth_program_fixed,
+        standard_menu_entries,
     };
-    use gpui::{Bounds, point, px, size};
+    use gpui::{
+        Bounds, Context, InteractiveElement as _, IntoElement, MouseButton, ParentElement as _,
+        Render, Styled as _, TestApp, Window, div, point, px, size,
+    };
+    use gpui_component::TitleBar;
     use gpui_wasm::{
         Key, MenuItem as PluginMenuItem, Metadata, SynthFilter, SynthVoice, SynthWaveform,
+        gpui_canvas::viewport_transform,
     };
+
+    #[derive(Default)]
+    struct HostTitleBarHitProbe {
+        guest_pointer_downs: usize,
+        host_pointer_downs: usize,
+    }
+
+    struct HostControlHitProbe {
+        bounds: gpui_wasm::Rect,
+        guest_pointer_downs: usize,
+        host_pointer_downs: usize,
+    }
+
+    impl Default for HostControlHitProbe {
+        fn default() -> Self {
+            Self {
+                bounds: gpui_wasm::Rect {
+                    x: 100.0,
+                    y: 100.0,
+                    width: 200.0,
+                    height: 40.0,
+                },
+                guest_pointer_downs: 0,
+                host_pointer_downs: 0,
+            }
+        }
+    }
+
+    impl Render for HostControlHitProbe {
+        fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            div()
+                .relative()
+                .size_full()
+                .child(div().absolute().inset_0().on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|this, _, _, _| this.guest_pointer_downs += 1),
+                ))
+                .child(guest_positioned_control_layer(self.bounds).on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|this, _, _, _| this.host_pointer_downs += 1),
+                ))
+        }
+    }
+
+    impl Render for HostTitleBarHitProbe {
+        fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            div()
+                .relative()
+                .size_full()
+                .child(div().absolute().inset_0().on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|this, _, _, _| this.guest_pointer_downs += 1),
+                ))
+                .child(host_title_bar_layer().child(TitleBar::new().child(
+                    div().size_full().on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _, _, _| this.host_pointer_downs += 1),
+                    ),
+                )))
+        }
+    }
+
+    #[test]
+    fn host_title_bar_occludes_guest_pointer_edges() {
+        let mut app = TestApp::new();
+        app.update(gpui_component::init);
+        let mut window = app.open_window(|_, _| HostTitleBarHitProbe::default());
+        window.draw();
+
+        window.simulate_click(point(px(100.0), px(17.0)), MouseButton::Left);
+        window.read(|probe, _| {
+            assert_eq!(probe.host_pointer_downs, 1);
+            assert_eq!(probe.guest_pointer_downs, 0);
+        });
+
+        window.simulate_click(point(px(100.0), px(100.0)), MouseButton::Left);
+        window.read(|probe, _| {
+            assert_eq!(probe.host_pointer_downs, 1);
+            assert_eq!(probe.guest_pointer_downs, 1);
+        });
+    }
+
+    #[test]
+    fn host_control_surface_occludes_guest_pointer_edges() {
+        let mut app = TestApp::new();
+        let mut window = app.open_window(|_, _| HostControlHitProbe::default());
+        window.draw();
+
+        window.simulate_click(point(px(150.0), px(120.0)), MouseButton::Left);
+        window.read(|probe, _| {
+            assert_eq!(probe.host_pointer_downs, 1);
+            assert_eq!(probe.guest_pointer_downs, 0);
+        });
+
+        window.simulate_click(point(px(50.0), px(50.0)), MouseButton::Left);
+        window.read(|probe, _| {
+            assert_eq!(probe.host_pointer_downs, 1);
+            assert_eq!(probe.guest_pointer_downs, 1);
+        });
+    }
+
+    #[test]
+    fn guest_positioned_control_surface_can_span_the_full_viewport_width() {
+        let mut app = TestApp::new();
+        let mut window = app.open_window(|_, _| HostControlHitProbe {
+            bounds: gpui_wasm::Rect {
+                x: 12.0,
+                y: 100.0,
+                width: 776.0,
+                height: 80.0,
+            },
+            ..HostControlHitProbe::default()
+        });
+        window.draw();
+
+        window.simulate_click(point(px(780.0), px(140.0)), MouseButton::Left);
+        window.read(|probe, _| {
+            assert_eq!(probe.host_pointer_downs, 1);
+            assert_eq!(probe.guest_pointer_downs, 0);
+        });
+
+        window.simulate_click(point(px(4.0), px(140.0)), MouseButton::Left);
+        window.read(|probe, _| {
+            assert_eq!(probe.host_pointer_downs, 1);
+            assert_eq!(probe.guest_pointer_downs, 1);
+        });
+    }
 
     #[test]
     fn plugin_metadata_drives_only_recognized_standard_native_actions() {
@@ -1538,6 +1585,7 @@ mod tests {
                 PluginMenuItem::action(6, "Leave", Some("Ctrl+Q")),
                 PluginMenuItem::action(1024, "Plugin-specific", None),
             ],
+            controls: Vec::new(),
             synth_voices: Vec::new(),
         };
 
