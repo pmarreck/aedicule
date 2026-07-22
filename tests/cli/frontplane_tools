@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+
+set -u
+
+diagnostics=$(mktemp -d "$TMPDIR/aedicule-frontplane-tools.XXXXXX")
+trap 'rm -rf "$diagnostics"' EXIT
+
+output=$(nix build .#frontplane --no-link --print-out-paths \
+	2>"$diagnostics/build.stderr")
+status=$?
+if (( status != 0 )); then
+	cat "$diagnostics/build.stderr" >&2
+	exit "$status"
+fi
+
+failures=0
+for tool in gpui-wasm gpui-wasm-render; do
+	if [[ ! -x "$output/bin/$tool" ]]; then
+		printf 'native frontplane package lacks executable: %s\n' "$tool" >&2
+		failures=$((failures + 1))
+	fi
+done
+
+exit "$failures"

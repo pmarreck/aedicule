@@ -208,7 +208,7 @@
 						# makes this dependency derivation stable across Rust-only edits.
 						cargoVendorDir = null;
 						cargoDeps = applicationCargoDeps;
-						cargoExtraArgs = "--bin gpui-wasm";
+						cargoExtraArgs = "--bin gpui-wasm --bin gpui-wasm-render";
 						strictDeps = true;
 						nativeBuildInputs = with pkgs; [
 							rustPlatform.cargoSetupHook
@@ -223,7 +223,8 @@
 						# The package and warning gates need release artifacts; test-only
 						# dependencies are a smaller delta compiled by the test derivation.
 						doCheck = false;
-						buildPhaseCargoCommand = "cargoWithProfile build --bin gpui-wasm";
+						buildPhaseCargoCommand =
+							"cargoWithProfile build --bin gpui-wasm --bin gpui-wasm-render";
 						}
 					);
 					gpuiWebFont = path: hash: pkgs.fetchurl {

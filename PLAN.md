@@ -22,6 +22,9 @@
   - [x] Carry the browser runtime in native deliveries and test runtime
     discovery without host-specific paths.
     (2026-07-22 13:57 EDT)
+  - [x] Preserve the documented downstream tool surface by packaging both
+    `gpui-wasm` and `gpui-wasm-render` in the native `frontplane` flake output.
+    (2026-07-22 15:33 EDT; caught by Vibesteroids' pinned runtime gate)
   - [x] Expose immutable `assets/` FLAC samples through bounded
     `AE_sample_asset` / `AE_sample_play` imports, with identical bare-WAT,
     directory, archive, and reload admission plus native device playback.

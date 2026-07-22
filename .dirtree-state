@@ -91,6 +91,7 @@ annotate=[
 	tests/cli/demo_snapshots = Verifies bundled demo bytes against immutable provenance hashes.
 	tests/cli/development_dependencies = Classifies the complete external executable set required by the pure test shell.
 	tests/cli/document_packages = Cross-platform application/document packaging contract and runtime-library regression checks.
+	tests/cli/frontplane_tools = Proves the native Nix frontplane package exposes both documented executables.
 	tests/cli/github_pages = Structural gate for the Pages workflow, isolation assets, official deployment actions, and public demo link.
 	tests/cli/launcher_cwd = Regression test that proves run resolves the flake and Cargo manifest from its own directory while preserving caller CWD.
 	tests/cli/macos_reproducibility = Exercises Mach-O UUID canonicalization, malformed input, and LuaJIT-only build integration.
