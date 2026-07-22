@@ -170,10 +170,13 @@ content-hashed, decoded once, and cached under guest-scoped IDs. Animation is
 guest state: a guest selects source rectangles, transforms, and opacity from
 deterministic ticks. The renderer owns no application clock.
 
-Menus are the first semantic component plane. Retained buttons, toggles, text
-inputs, lists, dialogs, layout, focus traversal, and accessibility nodes should
-use a future stable semantic tree rather than painted imitations in the scene
-stream.
+The implemented `AE_ui_*` transaction is the keyed retained kernel of the
+proposed Aedicule View Protocol: a guest can atomically publish absolute native
+panels, integer sliders, and action buttons today. It is not yet a general
+semantic tree. Containers/layout, dynamic text, text inputs, toggles, lists,
+dialogs, focus traversal, accessibility, event-driven lifecycle, and browser
+parity follow the platform-neutral design in `VIEW_PROTOCOL.md` rather than
+painted imitations in the scene stream.
 
 ### 6.4 Events
 
@@ -364,7 +367,8 @@ state. No translation corpus is required while the protocol is experimental.
 - arbitrary WASI authority;
 - online services or multiplayer facilities;
 - mobile-native GPUI support;
-- a complete retained semantic widget protocol;
+- a complete Aedicule View Protocol implementation beyond the current narrow
+  native-controls profile;
 - automatic state migration across incompatible schemas;
 - complete localization; or
 - production security or cross-platform compatibility claims.
@@ -373,7 +377,8 @@ state. No translation corpus is required while the protocol is experimental.
 
 1. Implement a non-game application, preferably a small editor, without adding
    its business logic to Rust.
-2. Specify retained semantic components, text input, focus, and accessibility.
+2. Implement the staged retained semantic components, text input, focus, and
+   accessibility contract specified in `VIEW_PROTOCOL.md`.
 3. Move candidate compilation off the UI thread while proving deterministic
    replacement ordering.
 4. Exercise macOS and aarch64 Linux with the same guest and headless artifacts.

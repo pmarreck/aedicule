@@ -1,5 +1,25 @@
 # Plan
 
+- [ ] Generalize the keyed native-control proof into the Aedicule View
+  Protocol (AVP), a platform-neutral semantic application UI.
+  - [x] Name the protocol and specify the retained view-document model,
+    optional canvas composition, event-driven lifecycle, semantic nodes,
+    layout, dynamic text/events, accessibility, adapter parity, explicit host
+    services, budgets, and staged delivery plan in `VIEW_PROTOCOL.md`.
+    (2026-07-21 23:55 EDT)
+  - [x] Audit the existing keyed-view kernel and adapters for general-app
+    readiness; record correctness, test, boundary, and scaling findings in
+    `CODE_REVIEW.md`. (2026-07-22 00:00 EDT)
+  - [ ] Extract an adapter-neutral typed view-document module with one
+    aggregate node budget while preserving the current v0 native-controls
+    profile.
+  - [ ] Permit view-only output transactions and event-driven `0/1` guests.
+  - [ ] Deliver the general forms slice through desktop, browser, and headless
+    adapters before claiming general-application support.
+  - [ ] Add explicit asynchronous capability profiles one service at a time.
+  - Curiosity poke: can a separately owned editor guest falsify the protocol
+    before packed document encoding or multiple-window support adds complexity?
+
 - [ ] Add a zero-float WAT profile with exact integer host controls,
   deterministic trig, and Q16.16 vector paths for Ulam/Uzumaki-class clients.
   - [x] Accept paired `AE_init_i32` / `AE_event_i32` lifecycle exports and

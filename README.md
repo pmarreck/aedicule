@@ -191,6 +191,8 @@ Working:
   rate, with timestamped input, display-refresh events, and visible
   bounded-catch-up drops;
 - deterministic snapshots, replay, SVG rendering, and seeded execution;
+- a narrow atomic keyed-view kernel for guest-owned native panels, integer
+  sliders, and action buttons;
 - external WAT loading, content watching, and transactional hot reload; and
 - reproducible Nix builds with a pure deterministic test suite.
 
@@ -198,8 +200,10 @@ Known limits:
 
 - ABI v0 will change;
 - GPUI sprite-atlas source cropping is modeled but not fully painted natively;
-- retained widgets, accessibility semantics, clipping, and richer images need
-  further protocol and adapter work;
+- the current retained-view vocabulary is only panels, sliders, and buttons;
+  the platform-neutral [Aedicule View Protocol](VIEW_PROTOCOL.md) specifies
+  hierarchy, layout, dynamic text/input, accessibility, event-driven apps,
+  browser parity, and explicit host services still to build;
 - the public GPUI display API identifies the display but does not expose its
   refresh mode, so the runtime core accepts exact display-change events but the
   native adapter currently starts from deterministic 60/1 Hz rather than
@@ -217,6 +221,7 @@ Known limits:
 | `src/main.rs` | Native GPUI adapter, input, menus, audio, scheduling, and live reload |
 | `src/bin/gpui-wasm-render.rs` | Deterministic headless SVG adapter |
 | `src/wat_abi.rs` | Declarative source for the generated WAT ABI reference |
+| `VIEW_PROTOCOL.md` | Proposed general semantic UI and application-capability architecture |
 | `src/fallback.wat` | Stable neutral ABI-conformance fallback |
 | `WAT_ABI.md` | Generated complete reference for WAT application authors |
 | `GPUI_REFRESH_API_PROPOSAL.md` | Deferred human-owned upstream design for native refresh and presentation APIs |

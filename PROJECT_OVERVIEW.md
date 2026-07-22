@@ -39,6 +39,13 @@ application brain. It receives no ambient platform authority.
 **Command frame** — a finite host-owned immutable list of scene, audio, and
 effect requests emitted during a guest lifecycle call.
 
+**Aedicule View Protocol (AVP)** — the proposed platform-neutral semantic UI
+plane. Its immutable keyed unit is a **view document**. The implemented
+`AE_ui_*` panels/sliders/buttons prove the transactional kernel as a narrow v0
+native-controls profile; hierarchy, general widgets, accessibility, browser
+parity, and application services remain specified work. See
+`VIEW_PROTOCOL.md`.
+
 **Fixed tick** — one deterministic simulation step. The host converts elapsed
 monotonic time into integer ticks against absolute rational boundaries; the
 guest never observes wall time. Display mode is instead an explicit `AE_event`
