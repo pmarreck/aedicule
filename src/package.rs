@@ -4,7 +4,7 @@
 //! and browser delivery so packaging cannot change application-visible bytes.
 
 use std::{
-    collections::HashSet,
+    collections::{BTreeMap, HashSet},
     fs::{self, OpenOptions},
     io::Write,
     path::{Component, Path, PathBuf},
@@ -17,7 +17,7 @@ use futures_lite::future::block_on;
 use futures_lite::io::Cursor;
 use unicode_normalization::UnicodeNormalization;
 
-use crate::{DEFAULT_PLUGIN_FILE, FALLBACK_WAT, PluginSource};
+use crate::{ApplicationAssets, DEFAULT_PLUGIN_FILE, FALLBACK_WAT, PluginSource};
 
 const MAX_PACKAGE_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_ENTRY_BYTES: u64 = 16 * 1024 * 1024;
@@ -157,6 +157,107 @@ pub fn read_application_file(source: &PluginSource, name: &str) -> Result<Vec<u8
             .map(|entry| entry.bytes)
             .ok_or_else(|| format!("package {} lacks {name}", path.display())),
     }
+}
+
+/// Preloads only the bounded `assets/` capability subtree from any supported
+/// application container, producing identical virtual names before WAT runs.
+pub fn read_application_assets(source: &PluginSource) -> Result<ApplicationAssets, String> {
+    match source {
+        PluginSource::Embedded => Ok(BTreeMap::new()),
+        PluginSource::File(path) => {
+            read_directory_assets(path.parent().unwrap_or_else(|| Path::new(".")))
+        }
+        PluginSource::Directory(root) => read_directory_assets(root),
+        PluginSource::Archive(path) => Ok(read_archive_entries(path)?
+            .into_iter()
+            .filter(|entry| is_valid_asset_name(&entry.name))
+            .map(|entry| (entry.name, entry.bytes))
+            .collect()),
+    }
+}
+
+fn read_directory_assets(root: &Path) -> Result<ApplicationAssets, String> {
+    let asset_root = root.join("assets");
+    let metadata = match fs::symlink_metadata(&asset_root) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(BTreeMap::new()),
+        Err(error) => return Err(format!("inspect {}: {error}", asset_root.display())),
+    };
+    if metadata.file_type().is_symlink() {
+        return Err(format!(
+            "symbolic links are not asset entries: {}",
+            asset_root.display()
+        ));
+    }
+    if !metadata.is_dir() {
+        return Err(format!(
+            "application assets path is not a directory: {}",
+            asset_root.display()
+        ));
+    }
+
+    let mut assets = BTreeMap::new();
+    let mut total_bytes = 0_u64;
+    collect_asset_entries(root, &asset_root, &mut assets, &mut total_bytes)?;
+    Ok(assets)
+}
+
+fn collect_asset_entries(
+    root: &Path,
+    directory: &Path,
+    assets: &mut ApplicationAssets,
+    total_bytes: &mut u64,
+) -> Result<(), String> {
+    let mut children = fs::read_dir(directory)
+        .map_err(|error| format!("read {}: {error}", directory.display()))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("read {}: {error}", directory.display()))?;
+    children.sort_by_key(|entry| entry.file_name());
+    for child in children {
+        let path = child.path();
+        let metadata = fs::symlink_metadata(&path)
+            .map_err(|error| format!("inspect {}: {error}", path.display()))?;
+        if metadata.file_type().is_symlink() {
+            return Err(format!(
+                "symbolic links are not asset entries: {}",
+                path.display()
+            ));
+        }
+        if metadata.is_dir() {
+            collect_asset_entries(root, &path, assets, total_bytes)?;
+            continue;
+        }
+        if !metadata.is_file() {
+            return Err(format!("unsupported asset entry type: {}", path.display()));
+        }
+        if metadata.len() > MAX_ENTRY_BYTES {
+            return Err(format!(
+                "asset entry exceeds {MAX_ENTRY_BYTES} bytes: {}",
+                path.display()
+            ));
+        }
+        *total_bytes = total_bytes
+            .checked_add(metadata.len())
+            .ok_or_else(|| "asset entry sizes overflow".to_owned())?;
+        if *total_bytes > MAX_PACKAGE_BYTES {
+            return Err(format!(
+                "application assets exceed {MAX_PACKAGE_BYTES} bytes"
+            ));
+        }
+        if assets.len() == MAX_ENTRIES {
+            return Err(format!("application has more than {MAX_ENTRIES} assets"));
+        }
+        let name = path_to_name(
+            path.strip_prefix(root)
+                .expect("asset entry remains below application root"),
+        )?;
+        debug_assert!(is_valid_asset_name(&name));
+        assets.insert(
+            name,
+            fs::read(&path).map_err(|error| format!("read {}: {error}", path.display()))?,
+        );
+    }
+    Ok(())
 }
 
 /// Discovers independently runnable WAST suites directly below `tests/`.
@@ -416,4 +517,10 @@ fn validate_name(name: &str) -> Result<(), String> {
         return Err(format!("package path is not NFC Unicode: {name:?}"));
     }
     Ok(())
+}
+
+pub(crate) fn is_valid_asset_name(name: &str) -> bool {
+    name.strip_prefix("assets/")
+        .is_some_and(|relative| !relative.is_empty())
+        && validate_name(name).is_ok()
 }

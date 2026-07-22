@@ -143,14 +143,24 @@ optional `AE_after_restore` rebuilds derived caches after bytes are installed.
 
 ### 6.2 Metadata and audio imports
 
-The generated ABI reference contains the exact `AE_title`, `AE_menu_item`, and
-`AE_synth_voice` declarations, including bounded flag and scalar meanings.
+The generated ABI reference contains the exact `AE_title`, `AE_menu_item`,
+`AE_synth_voice`, `AE_sample_asset`, and `AE_sample_play` declarations,
+including bounded flag and scalar meanings.
 
 Audio program IDs are application-owned. Waveforms currently include sine,
 sawtooth, white noise, and brown noise. Integer millihertz and parts-per-million
 fields keep synthesis declarations portable. Oscillator phase, envelopes,
 filters, noise shaping, and mixing use signed decimal fixed point; conversion
 to `f32` PCM occurs only at the audio-device adapter.
+
+Sample IDs occupy a namespace separate from synth program IDs. During
+`AE_configure`, `AE_sample_asset` may bind a unique ID only to an admitted
+`.flac` below the application's immutable `assets/` virtual root. Bare WAT,
+directory, and `.aed` launch resolve identical catalogs; declarations are
+re-resolved for a transactional reload. Encoded bytes, decoded frames,
+channels, sample rate, and aggregate decoded storage are bounded before native
+playback. `AE_sample_play` is a one-way transactional output with finite volume
+in `0..=1`, pitch in `0.25..=4`, and version-0 flags equal to zero.
 
 ### 6.3 Scene imports
 

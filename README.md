@@ -9,9 +9,9 @@ A generic native [GPUI](https://www.gpui.rs/) frontplane for applications
 written directly in WebAssembly Text format (WAT).
 
 This is now a working proof of concept. The Rust frontplane supplies
-Wasmtime isolation, GPUI rendering, input, menus, bounded audio synthesis,
-lifecycle management, deterministic headless rendering, and transactional hot
-reload. A guest supplies the application.
+Wasmtime isolation, GPUI rendering, input, menus, bounded synthesized and FLAC
+sampled audio, lifecycle management, deterministic headless rendering, and
+transactional hot reload. A guest supplies the application.
 
 The first substantial guest is maintained separately in
 [`vibesteroids_wat`](https://github.com/pmarreck/vibesteroids_wat).
@@ -92,7 +92,8 @@ See [WAT_ABI.md](WAT_ABI.md) for the generated client ABI reference and
 
 - Direct WAT can own nontrivial deterministic application state and behavior.
 - One bounded ABI can express vector scenes, affine transforms, paths, sprites,
-  text, menus, input, composable synth voices, effects, and snapshots.
+  text, menus, input, composable synth voices, packaged FLAC samples, effects,
+  and snapshots.
 - The same command frame drives native GPUI and deterministic headless SVG.
 - Compatible live edits preserve state without restarting the process.
 - Broken candidates never displace the last working module.
@@ -163,6 +164,22 @@ An application directory resolves to `code.wat`. `--seed N` provides a
 deterministic unsigned 64-bit seed. Watching follows the path rather than an
 open inode, so both direct writes and atomic editor saves are detected.
 
+An application can remain an ordinary directory or become one deterministic
+stored-ZIP `.aed` without changing its virtual paths:
+
+```console
+./run --package path/to/application [application.aed]
+./run --depackage application.aed [output-directory]
+./run --test application.aed
+./run application.aed
+```
+
+Declared FLAC files below `assets/` are preloaded through a bounded immutable
+catalog; WAT never receives ambient filesystem access. `AE_sample_asset` binds
+a virtual path during configuration and `AE_sample_play` queues transactional
+one-shot playback with bounded volume and pitch. The native adapter currently
+plays these samples; browser sampled-audio parity remains future work.
+
 The frontplane has no bundled production application. Its embedded module is
 a deliberately neutral, stable conformance fallback for recovery and adapter
 testing.
@@ -218,7 +235,8 @@ Working:
 - bounded Wasmtime lifecycle and `aedicule.v0` / `AE_*` ABI;
 - full-window GPUI canvas, native input, standard menus, and status/error UI;
 - vector, path, transform, text, image-resource, and sprite commands;
-- guest-declared decimal-fixed synth programs with audio-device adaptation;
+- guest-declared decimal-fixed synth programs and bounded packaged FLAC samples
+  with native audio-device adaptation;
 - exact rational, absolute-deadline scheduling at every supported guest-declared
   rate, with timestamped input, display-refresh events, and visible
   bounded-catch-up drops;
@@ -234,6 +252,7 @@ Known limits:
 
 - ABI v0 will change;
 - GPUI sprite-atlas source cropping is modeled but not fully painted natively;
+- browser delivery does not yet play guest-declared synth or sampled audio;
 - the current retained-view vocabulary is only panels, sliders, and buttons;
   the platform-neutral [Aedicule View Protocol](VIEW_PROTOCOL.md) specifies
   hierarchy, layout, dynamic text/input, accessibility, event-driven apps,
@@ -252,8 +271,9 @@ Known limits:
 
 | Path | Purpose |
 | --- | --- |
-| `src/lib.rs` | GPUI-independent Wasmtime runtime, bounded ABI, snapshots, reload, synth metadata, and SVG core |
-| `src/main.rs` | Native GPUI adapter, input, menus, audio, scheduling, and live reload |
+| `src/lib.rs` | GPUI-independent Wasmtime runtime, bounded ABI, virtual assets, snapshots, reload, audio metadata, and SVG core |
+| `src/flac.rs` | Bounded lossless FLAC admission into canonical fixed-point PCM |
+| `src/main.rs` | Native GPUI adapter, input, menus, synthesized/sample audio, scheduling, and live reload |
 | `src/bin/gpui-wasm-render.rs` | Deterministic headless SVG adapter |
 | `src/wat_abi.rs` | Declarative source for the generated WAT ABI reference |
 | `VIEW_PROTOCOL.md` | Proposed general semantic UI and application-capability architecture |

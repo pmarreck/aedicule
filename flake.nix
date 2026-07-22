@@ -196,7 +196,7 @@
 					applicationCargoDeps = pkgs.rustPlatform.fetchCargoVendor {
 						name = "aedicule-cargo-deps";
 						src = cargoDependencySource;
-						hash = "sha256-YJn9MXVe+BnRfII6aamLRRHWTE9n4avYw9xFPgXF+Ag=";
+						hash = "sha256-Q8ruCyX5lQTlpWMyHBnu0Y5mDzBILwBjl3mzbwFZiVE=";
 					};
 					nativeCommonArgs = {
 						pname = "gpui-wasm";

@@ -4,7 +4,7 @@
 //! output independent of GPUI. Native and future web frontplanes are adapters
 //! over the same lifecycle, validation, snapshot, and command-buffer logic.
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::ffi::OsString;
 use std::fmt;
 use std::fmt::Write as _;
@@ -29,6 +29,7 @@ use wasmtime as runtime;
 
 #[cfg(feature = "native-runtime")]
 mod application_test;
+mod flac;
 mod package;
 mod wat_abi;
 #[cfg(feature = "native-runtime")]
@@ -36,8 +37,10 @@ mod web_server;
 
 #[cfg(feature = "native-runtime")]
 pub use application_test::{ApplicationTestReport, run_application_tests};
+pub use flac::{FlacError, decode_flac};
 pub use package::{
-    AED_MIME_TYPE, depackage_application, package_application, read_application_file,
+    AED_MIME_TYPE, depackage_application, package_application, read_application_assets,
+    read_application_file,
 };
 #[cfg(feature = "native-runtime")]
 pub use web_server::{WebServer, discover_web_runtime};
@@ -68,6 +71,10 @@ pub const MAX_SIMULATION_HZ: u32 = 1_000;
 pub const MAX_TICK_RATE_DENOMINATOR: u32 = 1_000_000;
 /// Stable terminal prefix for rejected external WAT sources.
 pub const WAT_REJECTION_DIAGNOSTIC_PREFIX: &str = "AEDICULE_WAT_REJECTED";
+
+/// Immutable virtual-root files admitted by an application I/O adapter before
+/// guest instantiation; only explicit capability imports can observe them.
+pub type ApplicationAssets = BTreeMap<String, Vec<u8>>;
 
 const NANOS_PER_SECOND: u128 = 1_000_000_000;
 const Q16_SCALE: f64 = 65_536.0;
@@ -929,6 +936,9 @@ pub struct Limits {
     pub max_control_steps: u32,
     pub max_synth_voices: usize,
     pub max_audio_events: usize,
+    pub max_sample_assets: usize,
+    pub max_sample_encoded_bytes: usize,
+    pub max_total_sample_decoded_bytes: usize,
     pub max_effects: usize,
     pub max_image_bytes: usize,
     pub max_total_image_bytes: usize,
@@ -951,6 +961,9 @@ impl Default for Limits {
             max_control_steps: 1_000_000,
             max_synth_voices: 128,
             max_audio_events: 256,
+            max_sample_assets: 64,
+            max_sample_encoded_bytes: 16 * 1024 * 1024,
+            max_total_sample_decoded_bytes: 64 * 1024 * 1024,
             max_effects: 256,
             max_image_bytes: 4 * 1024 * 1024,
             max_total_image_bytes: 16 * 1024 * 1024,
@@ -967,6 +980,7 @@ pub struct Metadata {
     pub menu_items: Vec<MenuItem>,
     pub controls: Vec<SliderControl>,
     pub synth_voices: Vec<SynthVoice>,
+    pub sample_assets: Vec<SampleAsset>,
 }
 
 impl Default for Metadata {
@@ -976,8 +990,17 @@ impl Default for Metadata {
             menu_items: Vec::new(),
             controls: Vec::new(),
             synth_voices: Vec::new(),
+            sample_assets: Vec::new(),
         }
     }
+}
+
+/// One immutable decoded sample admitted from an application virtual root.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SampleAsset {
+    pub id: u32,
+    pub path: String,
+    pub clip: wav::WavClip,
 }
 
 /// Describes a host-rendered slider whose exact guest values stay on a
@@ -1545,6 +1568,14 @@ pub struct AudioEvent {
     pub flags: u32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SampleAudioEvent {
+    pub id: u32,
+    pub volume: f32,
+    pub pitch: f32,
+    pub flags: u32,
+}
+
 impl AudioEvent {
     pub fn fire() -> Self {
         Self {
@@ -1743,6 +1774,8 @@ pub struct PreparedReload {
 
 #[derive(Debug, Error)]
 pub enum FrontplaneError {
+    #[error("could not load application: {0}")]
+    Application(String),
     #[error("could not parse WAT: {0}")]
     Wat(String),
     #[error("could not compile or instantiate WebAssembly: {0}")]
@@ -1846,8 +1879,10 @@ struct HostState {
     limits: Limits,
     store_limits: StoreLimits,
     metadata: Metadata,
+    application_assets: ApplicationAssets,
     menu_ids: HashSet<u32>,
     control_ids: HashSet<u32>,
+    sample_ids: HashSet<u32>,
     images: Vec<ImageResource>,
     image_ids: HashSet<u32>,
     frame: Option<FrameBuilder>,
@@ -1858,13 +1893,20 @@ struct HostState {
     pending_ui: Option<UiSnapshot>,
     accepted_ui: Option<UiSnapshot>,
     audio: Vec<AudioEvent>,
+    sample_audio: Vec<SampleAudioEvent>,
     effects: Vec<HostEffect>,
     audio_checkpoint: usize,
+    sample_audio_checkpoint: usize,
     effect_checkpoint: usize,
     pending_error: Option<PendingError>,
+    active_operation: Option<&'static str>,
 }
 
 impl HostState {
+    fn audio_event_budget_exhausted(&self) -> bool {
+        self.audio.len().saturating_add(self.sample_audio.len()) >= self.limits.max_audio_events
+    }
+
     fn reject(&mut self, error: PendingError, status: i32) -> i32 {
         if self.pending_error.is_none() {
             self.pending_error = Some(error);
@@ -1921,9 +1963,33 @@ impl fmt::Debug for Frontplane {
 }
 
 impl Frontplane {
+    /// Resolves code and immutable assets through one virtual-root adapter so a
+    /// bare WAT, source directory, and `.aed` instantiate identically.
+    pub fn from_application(
+        source: &PluginSource,
+        limits: Limits,
+    ) -> Result<Self, FrontplaneError> {
+        let code = read_application_file(source, DEFAULT_PLUGIN_FILE)
+            .map_err(FrontplaneError::Application)?;
+        let source_text = String::from_utf8(code)
+            .map_err(|error| FrontplaneError::Application(error.to_string()))?;
+        let assets = read_application_assets(source).map_err(FrontplaneError::Application)?;
+        Self::from_wat_with_assets(&source_text, limits, assets)
+    }
+
     /// Compiles WAT, rejects ambient capabilities, binds the bounded host ABI,
     /// and validates all lifecycle export signatures before returning.
     pub fn from_wat(source: &str, limits: Limits) -> Result<Self, FrontplaneError> {
+        Self::from_wat_with_assets(source, limits, ApplicationAssets::new())
+    }
+
+    /// Instantiates a guest with an immutable, prevalidated virtual-root asset
+    /// catalog; imports can bind only named entries and never ambient files.
+    pub fn from_wat_with_assets(
+        source: &str,
+        limits: Limits,
+        application_assets: ApplicationAssets,
+    ) -> Result<Self, FrontplaneError> {
         let bytes =
             wat::parse_str(source).map_err(|error| FrontplaneError::Wat(error.to_string()))?;
         #[cfg(feature = "native-runtime")]
@@ -1963,8 +2029,10 @@ impl Frontplane {
             limits: limits.clone(),
             store_limits,
             metadata: Metadata::default(),
+            application_assets,
             menu_ids: HashSet::new(),
             control_ids: HashSet::new(),
+            sample_ids: HashSet::new(),
             images: Vec::new(),
             image_ids: HashSet::new(),
             frame: None,
@@ -1975,10 +2043,13 @@ impl Frontplane {
             pending_ui: None,
             accepted_ui: None,
             audio: Vec::new(),
+            sample_audio: Vec::new(),
             effects: Vec::new(),
             audio_checkpoint: 0,
+            sample_audio_checkpoint: 0,
             effect_checkpoint: 0,
             pending_error: None,
+            active_operation: None,
         };
         let mut store = Store::new(&engine, state);
         store.limiter(|state| &mut state.store_limits);
@@ -2055,8 +2126,10 @@ impl Frontplane {
         self.store.data_mut().metadata = Metadata::default();
         self.store.data_mut().menu_ids.clear();
         self.store.data_mut().control_ids.clear();
+        self.store.data_mut().sample_ids.clear();
         self.store.data_mut().images.clear();
         self.store.data_mut().image_ids.clear();
+        self.store.data_mut().sample_audio.clear();
         let function = self.exports.configure.clone();
         let result = self.call_status("AE_configure", function, ());
         if result.is_ok()
@@ -2067,8 +2140,10 @@ impl Frontplane {
             state.metadata = Metadata::default();
             state.menu_ids.clear();
             state.control_ids.clear();
+            state.sample_ids.clear();
             state.images.clear();
             state.image_ids.clear();
+            state.sample_audio.clear();
             return Err(FrontplaneError::MissingExport {
                 name: "AE_control_event",
             });
@@ -2078,8 +2153,10 @@ impl Frontplane {
             state.metadata = Metadata::default();
             state.menu_ids.clear();
             state.control_ids.clear();
+            state.sample_ids.clear();
             state.images.clear();
             state.image_ids.clear();
+            state.sample_audio.clear();
         }
         result
     }
@@ -2331,6 +2408,10 @@ impl Frontplane {
         std::mem::take(&mut self.store.data_mut().audio)
     }
 
+    pub fn drain_sample_audio(&mut self) -> Vec<SampleAudioEvent> {
+        std::mem::take(&mut self.store.data_mut().sample_audio)
+    }
+
     pub fn drain_effects(&mut self) -> Vec<HostEffect> {
         std::mem::take(&mut self.store.data_mut().effects)
     }
@@ -2371,7 +2452,7 @@ impl Frontplane {
         operation: &'static str,
         function: TypedFunc<(), i32>,
     ) -> Result<i32, FrontplaneError> {
-        self.prepare_call()?;
+        self.prepare_call(operation)?;
         let result = function.call(&mut self.store, ());
         self.finish_call(operation, result)
     }
@@ -2381,7 +2462,7 @@ impl Frontplane {
         function: TypedFunc<(i32, i32), (i32, i32)>,
         current: TickRate,
     ) -> Result<(i32, i32), FrontplaneError> {
-        self.prepare_call()?;
+        self.prepare_call("AE_tick_rate")?;
         let result = function.call(
             &mut self.store,
             (current.numerator as i32, current.denominator as i32),
@@ -2398,7 +2479,7 @@ impl Frontplane {
     where
         P: runtime::WasmParams,
     {
-        self.prepare_call()?;
+        self.prepare_call(operation)?;
         let result = function.call(&mut self.store, parameters);
         let status = self.finish_call(operation, result)?;
         if status == 0 {
@@ -2411,14 +2492,17 @@ impl Frontplane {
 
     /// Establishes fuel and output checkpoints that make each untrusted guest
     /// export an independently bounded transaction.
-    fn prepare_call(&mut self) -> Result<(), FrontplaneError> {
+    fn prepare_call(&mut self, operation: &'static str) -> Result<(), FrontplaneError> {
         let state = self.store.data_mut();
         state.pending_error = None;
         state.audio_checkpoint = state.audio.len();
+        state.sample_audio_checkpoint = state.sample_audio.len();
         state.effect_checkpoint = state.effects.len();
         self.store
             .set_fuel(self.store.data().limits.fuel_per_call)
-            .map_err(runtime_error)
+            .map_err(runtime_error)?;
+        self.store.data_mut().active_operation = Some(operation);
+        Ok(())
     }
 
     /// Converts Wasmtime traps and host-import rejections into typed failures,
@@ -2428,7 +2512,9 @@ impl Frontplane {
         operation: &'static str,
         result: Result<T, runtime::Error>,
     ) -> Result<T, FrontplaneError> {
-        let pending_error = self.store.data_mut().pending_error.take();
+        let state = self.store.data_mut();
+        let pending_error = state.pending_error.take();
+        state.active_operation = None;
         let outcome = if let Some(error) = pending_error {
             Err(error.into_public())
         } else {
@@ -2457,6 +2543,7 @@ impl Frontplane {
     fn rollback_outputs(&mut self) {
         let state = self.store.data_mut();
         state.audio.truncate(state.audio_checkpoint);
+        state.sample_audio.truncate(state.sample_audio_checkpoint);
         state.effects.truncate(state.effect_checkpoint);
         state.ui = None;
         state.pending_ui = None;
@@ -2501,8 +2588,20 @@ pub fn prepare_reload(
     limits: Limits,
     init: PluginInit,
 ) -> Result<PreparedReload, FrontplaneError> {
+    prepare_reload_with_assets(current, source, limits, init, ApplicationAssets::new())
+}
+
+/// Prepares a transactional replacement against the newly resolved immutable
+/// asset catalog, so archive/directory reload never retains stale media bytes.
+pub fn prepare_reload_with_assets(
+    current: &mut Frontplane,
+    source: &str,
+    limits: Limits,
+    init: PluginInit,
+    application_assets: ApplicationAssets,
+) -> Result<PreparedReload, FrontplaneError> {
     let snapshot = current.snapshot()?;
-    let mut candidate = Frontplane::from_wat(source, limits)?;
+    let mut candidate = Frontplane::from_wat_with_assets(source, limits, application_assets)?;
     candidate.configure()?;
     candidate.init(init.seed, init.viewport_width, init.viewport_height)?;
     let state_transfer = match candidate.restore(&snapshot) {
@@ -2513,6 +2612,7 @@ pub fn prepare_reload(
     candidate.observe_display_refresh(current.display_refresh.unwrap_or(init.display_refresh))?;
     let frame = candidate.render()?;
     candidate.drain_audio();
+    candidate.drain_sample_audio();
     candidate.drain_effects();
     Ok(PreparedReload {
         frontplane: candidate,
@@ -3045,6 +3145,98 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
                     filter_end_millihz: filter_end_millihz as u32,
                     cooldown_ms: cooldown_ms as u32,
                 });
+                0
+            },
+        )
+        .map_err(runtime_error)?;
+    linker
+        .func_wrap(
+            WAT_IMPORT_MODULE,
+            "AE_sample_asset",
+            |mut caller: Caller<'_, HostState>,
+             id: i32,
+             path_ptr: i32,
+             path_len: i32,
+             flags: i32| {
+                if caller.data().active_operation != Some("AE_configure") {
+                    return caller.data_mut().reject(
+                        PendingError::InvalidFrame("AE_sample_asset is configure-only"),
+                        -8,
+                    );
+                }
+                if flags != 0 {
+                    return caller.data_mut().reject(
+                        PendingError::InvalidFrame("unsupported AE_sample_asset flags"),
+                        -8,
+                    );
+                }
+                if caller.data().metadata.sample_assets.len()
+                    >= caller.data().limits.max_sample_assets
+                {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::Budget("AE_sample_asset", "sample asset"), -2);
+                }
+                let id = id as u32;
+                if caller.data().sample_ids.contains(&id) {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::DuplicateId("AE_sample_asset", id), -7);
+                }
+                let path = match read_string(&mut caller, path_ptr, path_len, "AE_sample_asset") {
+                    Ok(path) => path,
+                    Err(error) => return caller.data_mut().reject(error, -3),
+                };
+                if !crate::package::is_valid_asset_name(&path) || !path.ends_with(".flac") {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::Unsupported("AE_sample_asset"), -4);
+                }
+                let Some(bytes) = caller.data().application_assets.get(&path).cloned() else {
+                    return caller.data_mut().reject(
+                        PendingError::InvalidFrame("sample asset is unavailable"),
+                        -8,
+                    );
+                };
+                if bytes.len() > caller.data().limits.max_sample_encoded_bytes {
+                    return caller.data_mut().reject(
+                        PendingError::Budget("AE_sample_asset", "encoded sample byte"),
+                        -2,
+                    );
+                }
+                let current_decoded_bytes = caller
+                    .data()
+                    .metadata
+                    .sample_assets
+                    .iter()
+                    .map(|sample| sample.clip.samples.len().saturating_mul(4))
+                    .fold(0_usize, usize::saturating_add);
+                let remaining_decoded_bytes = caller
+                    .data()
+                    .limits
+                    .max_total_sample_decoded_bytes
+                    .saturating_sub(current_decoded_bytes);
+                let decode_limits = wav::WavLimits {
+                    max_decoded_bytes: remaining_decoded_bytes.min(32 * 1024 * 1024),
+                    ..wav::WavLimits::default()
+                };
+                let clip = match decode_flac(&bytes, &decode_limits) {
+                    Ok(clip) => clip,
+                    Err(_) => {
+                        return caller.data_mut().reject(
+                            PendingError::InvalidFrame(
+                                "sample asset is not a supported bounded FLAC",
+                            ),
+                            -8,
+                        );
+                    }
+                };
+                caller.data_mut().sample_ids.insert(id);
+                caller
+                    .data_mut()
+                    .metadata
+                    .sample_assets
+                    .push(SampleAsset { id, path, clip });
                 0
             },
         )
@@ -3610,13 +3802,54 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
                         .data_mut()
                         .reject(PendingError::InvalidNumber("audio"), -5);
                 }
-                if caller.data().audio.len() >= caller.data().limits.max_audio_events {
+                if caller.data().audio_event_budget_exhausted() {
                     return caller
                         .data_mut()
                         .reject(PendingError::Budget("audio", "audio event"), -2);
                 }
                 caller.data_mut().audio.push(AudioEvent {
                     id: id as u32,
+                    volume,
+                    pitch,
+                    flags: flags as u32,
+                });
+                0
+            },
+        )
+        .map_err(runtime_error)?;
+    linker
+        .func_wrap(
+            WAT_IMPORT_MODULE,
+            "AE_sample_play",
+            |mut caller: Caller<'_, HostState>, id: i32, volume: f32, pitch: f32, flags: i32| {
+                if caller.data().active_operation == Some("AE_configure") || flags != 0 {
+                    return caller.data_mut().reject(
+                        PendingError::InvalidFrame("invalid AE_sample_play phase or flags"),
+                        -8,
+                    );
+                }
+                if !finite(&[volume, pitch])
+                    || !(0.0..=1.0).contains(&volume)
+                    || !(0.25..=4.0).contains(&pitch)
+                {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::InvalidNumber("AE_sample_play"), -5);
+                }
+                let id = id as u32;
+                if !caller.data().sample_ids.contains(&id) {
+                    return caller.data_mut().reject(
+                        PendingError::InvalidFrame("AE_sample_play uses undeclared sample"),
+                        -8,
+                    );
+                }
+                if caller.data().audio_event_budget_exhausted() {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::Budget("AE_sample_play", "audio event"), -2);
+                }
+                caller.data_mut().sample_audio.push(SampleAudioEvent {
+                    id,
                     volume,
                     pitch,
                     flags: flags as u32,

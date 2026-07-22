@@ -224,7 +224,11 @@ fn validate_format(format: PcmFormat, limits: &WavLimits) -> Result<(), WavError
 
 /// Converts one signed integer PCM value into the symmetric decimal amplitude
 /// range, preserving both representable extrema exactly without float math.
-fn normalize_integer_sample(value: i64, negative_extent: i64, positive_extent: i64) -> i32 {
+pub(crate) fn normalize_integer_sample(
+    value: i64,
+    negative_extent: i64,
+    positive_extent: i64,
+) -> i32 {
     let scale = i64::from(AUDIO_FIXED_SCALE);
     let normalized = if value < 0 {
         value * scale / negative_extent

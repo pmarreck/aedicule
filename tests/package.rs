@@ -5,7 +5,8 @@ use async_zip::{
 };
 use futures_lite::{future::block_on, io::Cursor};
 use gpui_wasm::{
-    AED_MIME_TYPE, PluginSource, depackage_application, package_application, read_application_file,
+    AED_MIME_TYPE, PluginSource, depackage_application, package_application,
+    read_application_assets, read_application_file,
 };
 
 fn temporary_directory(label: &str) -> PathBuf {
@@ -75,6 +76,15 @@ fn directory_packages_are_deterministic_round_trippable_and_source_equivalent() 
     assert_eq!(
         read_application_file(&archive_source, "assets/greta.flac").unwrap(),
         [0x66, 0x4c, 0x61, 0x43],
+    );
+    let file_assets = read_application_assets(&file_source).unwrap();
+    let directory_assets = read_application_assets(&directory_source).unwrap();
+    let archive_assets = read_application_assets(&archive_source).unwrap();
+    assert_eq!(file_assets, directory_assets);
+    assert_eq!(directory_assets, archive_assets);
+    assert_eq!(
+        archive_assets.into_iter().collect::<Vec<_>>(),
+        vec![("assets/greta.flac".to_owned(), vec![0x66, 0x4c, 0x61, 0x43],)],
     );
 
     let unpacked = temporary.join("unpacked");

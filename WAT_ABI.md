@@ -153,6 +153,14 @@ Returns deterministic Q1.30 sine and cosine for a wrapping binary angle where `2
 
 Declares a bounded synthesized-audio program during `AE_configure`.
 
+### `AE_sample_asset`
+
+```wat
+(func $AE_sample_asset (param id i32) (param path_ptr i32) (param path_len i32) (param flags i32) (result i32))
+```
+
+Binds a unique sampled-audio ID to one bounded FLAC under the application `assets/` virtual root during `AE_configure`; version 0 requires `flags = 0`.
+
 ### `AE_image_define`
 
 ```wat
@@ -328,6 +336,14 @@ Completes the current frame after all path and transform stacks balance.
 ```
 
 Queues one declared synthesized-audio program with volume 0..1 and pitch 0.25..4.
+
+### `AE_sample_play`
+
+```wat
+(func $AE_sample_play (param id i32) (param volume f32) (param pitch f32) (param flags i32) (result i32))
+```
+
+Queues one declared immutable sample with volume 0..1 and pitch 0.25..4; playback is one-way and version 0 requires `flags = 0`.
 
 ### `AE_effect`
 

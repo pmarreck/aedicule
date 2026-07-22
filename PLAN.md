@@ -22,8 +22,12 @@
   - [x] Carry the browser runtime in native deliveries and test runtime
     discovery without host-specific paths.
     (2026-07-22 13:57 EDT)
-  - [ ] Expose declared package assets to WAT through the separately specified
-    bounded image/sample ABI; do not grant arbitrary virtual-filesystem reads.
+  - [x] Expose immutable `assets/` FLAC samples through bounded
+    `AE_sample_asset` / `AE_sample_play` imports, with identical bare-WAT,
+    directory, archive, and reload admission plus native device playback.
+    (2026-07-22 14:48 EDT)
+  - [ ] Expose packaged image assets by virtual name without granting arbitrary
+    virtual-filesystem reads, then add browser sample/image adapter parity.
   - Curiosity poke: non-loopback browsers require a secure context as well as
     COOP/COEP, so remote/tailnet serving needs an explicit TLS/reverse-proxy
     contract rather than silently printing an unusable HTTP URL.

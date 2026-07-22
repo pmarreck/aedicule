@@ -26,14 +26,15 @@ use gpui_component::{
 use gpui_wasm::{
     AudioEvent, ControlLabelPlacement, ControlPhase, DEFAULT_PLUGIN_ENV, Event, FALLBACK_WAT,
     FileRevision, FrameOutput, Frontplane, HostEffect, Key, LaunchAction, Limits, Metadata,
-    PluginInit, PluginSource, PointerButton, PointerScrollUnit, Rect, RevisionTracker,
-    SimulationCall, SimulationScheduler, SliderControl, StateTransfer, SynthFilter, SynthVoice,
-    SynthWaveform, WatRejectionStage, WebServer, depackage_application, discover_web_runtime,
-    display_refresh_rate_from_environment, file_url_to_path, format_wat_rejection_diagnostic,
-    initialize_frontplane, package_application, prepare_reload, read_application_file,
-    resolve_launch, run_application_tests,
+    PluginInit, PluginSource, PointerButton, PointerScrollUnit, Rect, RevisionTracker, SampleAsset,
+    SampleAudioEvent, SimulationCall, SimulationScheduler, SliderControl, StateTransfer,
+    SynthFilter, SynthVoice, SynthWaveform, WatRejectionStage, WebServer, depackage_application,
+    discover_web_runtime, display_refresh_rate_from_environment, file_url_to_path,
+    format_wat_rejection_diagnostic, initialize_frontplane, package_application,
+    prepare_reload_with_assets, read_application_assets, read_application_file, resolve_launch,
+    run_application_tests,
 };
-use rodio::{DeviceSinkBuilder, MixerDeviceSink, buffer::SamplesBuffer};
+use rodio::{DeviceSinkBuilder, MixerDeviceSink, Source as _, buffer::SamplesBuffer};
 use smol::Timer;
 
 actions!(gpui_wasm, [NewApplication, ShowHelp, ReloadPlugin, Quit]);
@@ -202,11 +203,17 @@ fn native_menus(metadata: &Metadata, can_reload: bool) -> Vec<Menu> {
 struct AudioOutput {
     sink: Option<MixerDeviceSink>,
     programs: HashMap<u32, Vec<SynthVoice>>,
+    samples: HashMap<u32, HostSample>,
     last_played: HashMap<u32, Instant>,
 }
 
+#[derive(Clone)]
+struct HostSample {
+    source: SamplesBuffer,
+}
+
 impl AudioOutput {
-    fn new(voices: &[SynthVoice]) -> Self {
+    fn new(metadata: &Metadata) -> Self {
         let sink = DeviceSinkBuilder::open_default_sink().ok().map(|mut sink| {
             sink.log_on_drop(false);
             sink
@@ -214,20 +221,26 @@ impl AudioOutput {
         let mut output = Self {
             sink,
             programs: HashMap::new(),
+            samples: HashMap::new(),
             last_played: HashMap::new(),
         };
-        output.replace_programs(voices);
+        output.replace_metadata(metadata);
         output
     }
 
-    fn replace_programs(&mut self, voices: &[SynthVoice]) {
+    fn replace_metadata(&mut self, metadata: &Metadata) {
         self.programs.clear();
+        self.samples.clear();
         self.last_played.clear();
-        for voice in voices {
+        for voice in &metadata.synth_voices {
             self.programs
                 .entry(voice.program_id)
                 .or_default()
                 .push(voice.clone());
+        }
+        for sample in &metadata.sample_assets {
+            self.samples
+                .insert(sample.id, render_sample_for_host(sample));
         }
     }
 
@@ -260,6 +273,20 @@ impl AudioOutput {
             samples,
         ));
     }
+
+    fn play_sample(&mut self, event: SampleAudioEvent) {
+        let Some(sink) = &self.sink else { return };
+        let Some(sample) = self.samples.get(&event.id) else {
+            return;
+        };
+        sink.mixer().add(
+            sample
+                .source
+                .clone()
+                .speed(event.pitch)
+                .amplify(event.volume),
+        );
+    }
 }
 
 const DECIMAL_SCALE: i64 = 1_000_000;
@@ -281,6 +308,18 @@ fn audio_samples_to_host(samples: Vec<i32>) -> Vec<f32> {
         .into_iter()
         .map(|sample| sample as f32 / DECIMAL_SCALE as f32)
         .collect()
+}
+
+/// Converts admitted fixed PCM into rodio's device-independent source shape;
+/// pitch and gain remain event-time transformations rather than stored data.
+fn render_sample_for_host(sample: &SampleAsset) -> HostSample {
+    HostSample {
+        source: SamplesBuffer::new(
+            NonZeroU16::new(sample.clip.channels).expect("admitted sample channels are nonzero"),
+            NonZeroU32::new(sample.clip.sample_rate).expect("admitted sample rate is nonzero"),
+            audio_samples_to_host(sample.clip.samples.clone()),
+        ),
+    }
 }
 
 fn render_synth_program_for_host(
@@ -621,7 +660,7 @@ impl FrontplaneView {
             }),
             focus_handle: cx.focus_handle(),
             window_handle: window.window_handle(),
-            audio: AudioOutput::new(&metadata.synth_voices),
+            audio: AudioOutput::new(&metadata),
             source,
             fatal_error: None,
             reload_error,
@@ -756,11 +795,19 @@ impl FrontplaneView {
                 return;
             }
         };
-        match prepare_reload(
+        let assets = match read_application_assets(application) {
+            Ok(assets) => assets,
+            Err(error) => {
+                self.set_reload_error(path, EN.reload_failed, Some(&error));
+                return;
+            }
+        };
+        match prepare_reload_with_assets(
             &mut self.frontplane,
             &source,
             Limits::default(),
             self.plugin_init,
+            assets,
         ) {
             Ok(prepared) => {
                 let notice = match prepared.state_transfer {
@@ -787,7 +834,8 @@ impl FrontplaneView {
         let revision = FileRevision::read(&revision_path);
         let result =
             application_source_text(&application, &revision_path, &revision).and_then(|source| {
-                load_frontplane(&source, self.plugin_init).map_err(|error| error.to_string())
+                load_application_frontplane(&source, &application, self.plugin_init)
+                    .map_err(|error| error.to_string())
             });
         match result {
             Ok((frontplane, frame)) => {
@@ -832,7 +880,7 @@ impl FrontplaneView {
             StandardMenuEntry::Quit(label) => Some(label.clone()),
             _ => None,
         });
-        self.audio.replace_programs(&metadata.synth_voices);
+        self.audio.replace_metadata(&metadata);
         let (sliders, subscriptions) = Self::build_sliders(&metadata.controls, cx);
         self.sliders = sliders;
         self._slider_subscriptions = subscriptions;
@@ -893,6 +941,9 @@ impl FrontplaneView {
         }
         for event in self.frontplane.drain_audio() {
             self.audio.play(event);
+        }
+        for event in self.frontplane.drain_sample_audio() {
+            self.audio.play_sample(event);
         }
         for effect in self.frontplane.drain_effects() {
             if effect == HostEffect::Quit {
@@ -1404,13 +1455,35 @@ fn load_frontplane(
     source: &str,
     plugin_init: PluginInit,
 ) -> Result<(Frontplane, FrameOutput), gpui_wasm::FrontplaneError> {
-    Frontplane::from_wat(source, Limits::default()).and_then(|mut frontplane| {
-        initialize_frontplane(&mut frontplane, plugin_init)?;
-        let frame = frontplane.render()?;
-        frontplane.drain_audio();
-        frontplane.drain_effects();
-        Ok((frontplane, frame))
-    })
+    initialize_loaded_frontplane(
+        Frontplane::from_wat(source, Limits::default())?,
+        plugin_init,
+    )
+}
+
+fn load_application_frontplane(
+    source: &str,
+    application: &PluginSource,
+    plugin_init: PluginInit,
+) -> Result<(Frontplane, FrameOutput), gpui_wasm::FrontplaneError> {
+    let assets =
+        read_application_assets(application).map_err(gpui_wasm::FrontplaneError::Application)?;
+    initialize_loaded_frontplane(
+        Frontplane::from_wat_with_assets(source, Limits::default(), assets)?,
+        plugin_init,
+    )
+}
+
+fn initialize_loaded_frontplane(
+    mut frontplane: Frontplane,
+    plugin_init: PluginInit,
+) -> Result<(Frontplane, FrameOutput), gpui_wasm::FrontplaneError> {
+    initialize_frontplane(&mut frontplane, plugin_init)?;
+    let frame = frontplane.render()?;
+    frontplane.drain_audio();
+    frontplane.drain_sample_audio();
+    frontplane.drain_effects();
+    Ok((frontplane, frame))
 }
 
 fn startup(source: PluginSource, watch: bool, seed: Option<u64>) -> Result<Startup, String> {
@@ -1445,7 +1518,8 @@ fn startup(source: PluginSource, watch: bool, seed: Option<u64>) -> Result<Start
             revisions.observe(&revision);
             let result =
                 application_source_text(&application, &path, &revision).and_then(|source| {
-                    load_frontplane(&source, plugin_init).map_err(|error| error.to_string())
+                    load_application_frontplane(&source, &application, plugin_init)
+                        .map_err(|error| error.to_string())
                 });
             match result {
                 Ok((frontplane, frame)) => Startup {
@@ -1694,8 +1768,8 @@ mod tests {
     use super::{
         DECIMAL_SCALE, StandardMenuEntry, TITLE_BAR_GLYPH_RGBA, ViewportTracker, fixed_sine,
         guest_positioned_control_layer, host_title_bar_layer, map_key, menu_action_event,
-        menu_action_label, render_synth_program_fixed, standard_menu_entries,
-        title_bar_control_glyph_overlay, title_bar_control_glyphs,
+        menu_action_label, render_sample_for_host, render_synth_program_fixed,
+        standard_menu_entries, title_bar_control_glyph_overlay, title_bar_control_glyphs,
     };
     use gpui::{
         Bounds, Context, InteractiveElement as _, IntoElement, MouseButton, ParentElement as _,
@@ -1703,9 +1777,10 @@ mod tests {
     };
     use gpui_component::TitleBar;
     use gpui_wasm::{
-        Event, Key, MenuItem as PluginMenuItem, Metadata, SynthFilter, SynthVoice, SynthWaveform,
-        gpui_canvas::viewport_transform,
+        Event, Key, MenuItem as PluginMenuItem, Metadata, SampleAsset, SynthFilter, SynthVoice,
+        SynthWaveform, gpui_canvas::viewport_transform,
     };
+    use rodio::Source as _;
 
     #[derive(Default)]
     struct HostTitleBarHitProbe {
@@ -1871,6 +1946,7 @@ mod tests {
             ],
             controls: Vec::new(),
             synth_voices: Vec::new(),
+            sample_assets: Vec::new(),
         };
 
         assert_eq!(
@@ -1966,5 +2042,32 @@ mod tests {
         assert_eq!(fixed_sine(500_000), 0);
         assert_eq!(fixed_sine(750_000), -DECIMAL_SCALE);
         assert_eq!(fixed_sine(1_000_000), 0);
+    }
+
+    #[test]
+    fn admitted_fixed_pcm_is_converted_only_at_the_native_audio_boundary() {
+        let sample = SampleAsset {
+            id: 77,
+            path: "assets/audio/sample.flac".to_owned(),
+            clip: gpui_wasm::wav::WavClip {
+                channels: 2,
+                sample_rate: 8_000,
+                frames: 2,
+                samples: vec![-1_000_000, 0, 500_000, 1_000_000],
+            },
+        };
+
+        let rendered = render_sample_for_host(&sample);
+        assert_eq!(
+            (
+                rendered.source.channels().get(),
+                rendered.source.sample_rate().get()
+            ),
+            (2, 8_000)
+        );
+        assert_eq!(
+            rendered.source.collect::<Vec<_>>(),
+            vec![-1.0, 0.0, 0.5, 1.0]
+        );
     }
 }

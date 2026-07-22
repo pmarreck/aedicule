@@ -1051,6 +1051,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "claxon"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4bfbf56724aa9eca8afa4fcfadeb479e722935bb2a0900c2d37e0cc477af0688"
+
+[[package]]
 name = "cobs"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2811,6 +2817,7 @@ dependencies = [
  "ahash",
  "anyhow",
  "async_zip",
+ "claxon",
  "embed-resource",
  "futures-lite 2.6.1",
  "gpui",

@@ -68,6 +68,11 @@ pub const WAT_ABI_IMPORTS: &[WatAbiImport] = &[
         summary: "Declares a bounded synthesized-audio program during `AE_configure`.",
     },
     WatAbiImport {
+        name: "AE_sample_asset",
+        signature: "(param id i32) (param path_ptr i32) (param path_len i32) (param flags i32) (result i32)",
+        summary: "Binds a unique sampled-audio ID to one bounded FLAC under the application `assets/` virtual root during `AE_configure`; version 0 requires `flags = 0`.",
+    },
+    WatAbiImport {
         name: "AE_image_define",
         signature: "(param id i32) (param ptr i32) (param len i32) (param flags i32) (result i32)",
         summary: "Defines an image resource; `flags & 1` selects raw RGBA, otherwise bytes are encoded image data.",
@@ -176,6 +181,11 @@ pub const WAT_ABI_IMPORTS: &[WatAbiImport] = &[
         name: "AE_audio",
         signature: "(param id i32) (param volume f32) (param pitch f32) (param flags i32) (result i32)",
         summary: "Queues one declared synthesized-audio program with volume 0..1 and pitch 0.25..4.",
+    },
+    WatAbiImport {
+        name: "AE_sample_play",
+        signature: "(param id i32) (param volume f32) (param pitch f32) (param flags i32) (result i32)",
+        summary: "Queues one declared immutable sample with volume 0..1 and pitch 0.25..4; playback is one-way and version 0 requires `flags = 0`.",
     },
     WatAbiImport {
         name: "AE_effect",
