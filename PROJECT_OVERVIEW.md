@@ -26,7 +26,9 @@ remain pre-production.
 **Main branch:** yolo
 
 **i18n phase:** prepare. Frontplane-owned strings are centralized; only English
-is populated while the ABI remains experimental.
+is populated while the ABI remains experimental. The canonical 50-locale
+baseline, RTL set, selection rationale, and browser locale behavior are recorded
+in `docs/I18N.md`.
 
 ## Terms
 

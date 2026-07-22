@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+
+set -u
+
+root=$(cd "$(dirname "$0")/../.." && pwd -P)
+expected=$'web\nmacos-aarch64\nlinux-aarch64\nwindows-aarch64\nlinux-x86_64\nwindows-x86_64'
+failures=0
+
+require_text() {
+	file=$1
+	needle=$2
+	if [[ ! -f "$root/$file" ]] || ! rg -F "$needle" "$root/$file" >/dev/null; then
+		printf '%s does not declare %s\n' "$file" "$needle" >&2
+		failures=$((failures + 1))
+	fi
+}
+
+reject_text() {
+	file=$1
+	needle=$2
+	if [[ -f "$root/$file" ]] && rg -F "$needle" "$root/$file" >/dev/null; then
+		printf '%s still contains obsolete text: %s\n' "$file" "$needle" >&2
+		failures=$((failures + 1))
+	fi
+}
+
+if [[ ! -f "$root/delivery-targets" ]]; then
+	printf 'delivery-targets is missing\n' >&2
+	failures=$((failures + 1))
+else
+	actual=$(<"$root/delivery-targets")
+	if [[ "$actual" != "$expected" ]]; then
+		printf 'delivery-targets does not name the exact public matrix\n' >&2
+		failures=$((failures + 1))
+	fi
+fi
+
+if [[ ! -x "$root/build_all" ]]; then
+	printf 'build_all is missing or not executable\n' >&2
+	failures=$((failures + 1))
+else
+	fake_bin="$TMPDIR/aedicule-delivery-matrix-bin-$$"
+	invocation="$TMPDIR/aedicule-delivery-matrix-invocation-$$"
+	mkdir -p "$fake_bin"
+	trap 'rm -rf "$fake_bin" "$invocation"' EXIT
+	cat >"$fake_bin/nix" <<'FAKE_NIX'
+#!/usr/bin/env bash
+printf '%s\n' "$@" >"$AEDICULE_TEST_NIX_INVOCATION"
+FAKE_NIX
+	chmod +x "$fake_bin/nix"
+	PATH="$fake_bin:$PATH" AEDICULE_TEST_NIX_INVOCATION="$invocation" \
+		"$root/build_all" --no-link
+	status=$?
+	if (( status != 0 )); then
+		printf 'build_all did not delegate successfully to nix\n' >&2
+		failures=$((failures + 1))
+	elif [[ $(<"$invocation") != $'build\n.#release-all\n--out-link\nresult-all\n--no-link' ]]; then
+		printf 'build_all did not request the aggregate delivery output\n' >&2
+		failures=$((failures + 1))
+	fi
+fi
+
+system=$(nix eval --impure --raw --expr builtins.currentSystem 2>/dev/null)
+status=$?
+if (( status != 0 )); then
+	printf 'could not resolve the current Nix system\n' >&2
+	failures=$((failures + 1))
+else
+	expected_outputs='["delivery-all","delivery-linux-aarch64","delivery-linux-x86_64","delivery-macos-aarch64","delivery-web","delivery-windows-aarch64","delivery-windows-x86_64"]'
+	actual_outputs=$(nix eval --json --apply \
+		'packages: builtins.filter (name: builtins.substring 0 9 name == "delivery-") (builtins.attrNames packages)' \
+		"$root#packages.$system" 2>/dev/null)
+	status=$?
+	if (( status != 0 )) || [[ "$actual_outputs" != "$expected_outputs" ]]; then
+		printf 'flake delivery outputs do not match the exact public matrix\n' >&2
+		failures=$((failures + 1))
+	fi
+	expected_release_outputs='["release-all","release-linux-aarch64","release-linux-x86_64","release-macos-aarch64","release-web","release-windows-aarch64","release-windows-x86_64"]'
+	actual_release_outputs=$(nix eval --json --apply \
+		'packages: builtins.filter (name: builtins.substring 0 8 name == "release-") (builtins.attrNames packages)' \
+		"$root#packages.$system" 2>/dev/null)
+	status=$?
+	if (( status != 0 )) || [[ "$actual_release_outputs" != "$expected_release_outputs" ]]; then
+		printf 'flake release outputs do not match the exact public archive matrix\n' >&2
+		failures=$((failures + 1))
+	fi
+fi
+
+require_text .mechatron-prime/targets 'packages.x86_64-linux.release-all'
+require_text .github/workflows/ci.yml 'nix build .#release-all'
+require_text .github/workflows/release.yml 'nix build .#release-all'
+require_text .github/workflows/release.yml 'gh release create'
+require_text flake.nix 'mkZipRelease "macos-aarch64" "Aedicule"'
+require_text README.md './build_all'
+require_text README.md 'macOS / Apple Silicon'
+require_text README.md 'Windows / ARM64'
+require_text README.md 'https://github.com/pmarreck/aedicule/releases/latest'
+reject_text README.md 'Mecha Aedicule asks a slightly strange but useful question:'
+
+exit "$failures"

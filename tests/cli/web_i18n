@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+
+set -u
+
+root=$(cd "$(dirname "$0")/../.." && pwd -P)
+
+node --input-type=module - "$root" <<'TEST'
+import assert from "node:assert/strict";
+import { pathToFileURL } from "node:url";
+
+const root = process.argv[2];
+const i18n = await import(pathToFileURL(`${root}/packaging/web/launcher-i18n.mjs`));
+assert.deepEqual(i18n.supportedLocales, [
+	"am", "ar", "az", "bg", "bn", "bs", "da", "de", "el", "en",
+	"es", "fa", "fi", "fil", "fr", "ha", "he", "hi", "hr", "hu",
+	"id", "ig", "is", "it", "ja", "km", "ko", "mk", "nb", "nl",
+	"pa", "pl", "ps", "pt_br", "ro", "ru", "sl", "sq", "sr", "sv",
+	"sw", "ta", "th", "tr", "uk", "ur", "vi", "yo", "zh_hans", "zh_hant",
+]);
+assert.deepEqual(Object.keys(i18n.english).sort(), [
+	"intro", "open", "title", "ulamDescription", "ulamName",
+	"vibesteroidsDescription", "vibesteroidsName",
+]);
+assert.equal(i18n.resolveLocale(["fil-PH"]), "fil");
+assert.equal(i18n.resolveLocale(["pt-BR"]), "pt_br");
+assert.equal(i18n.resolveLocale(["zh"]), "zh_hans");
+assert.equal(i18n.resolveLocale(["zh-TW"]), "zh_hant");
+assert.equal(i18n.resolveLocale(["zh-Hant-HK"]), "zh_hant");
+assert.equal(i18n.directionFor("ar"), "rtl");
+assert.equal(i18n.directionFor("en"), "ltr");
+
+const warnings = [];
+assert.deepEqual(i18n.loadCatalog(["de-DE"], warning => warnings.push(warning)), {
+	locale: "en",
+	strings: i18n.english,
+});
+assert.deepEqual(warnings, ["WARN: i18n missing-locale de"]);
+TEST

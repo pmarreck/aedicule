@@ -1,0 +1,26 @@
+#!/usr/bin/env sh
+
+set -u
+
+case $0 in
+	*/*) bindir=${0%/*} ;;
+	*) bindir=. ;;
+esac
+bindir=$(CDPATH= cd -- "$bindir" && pwd -P)
+root=$(CDPATH= cd -- "$bindir/.." && pwd -P)
+runtime_library_path=$root/lib
+if [ -n "${LD_LIBRARY_PATH:-}" ]; then
+	runtime_library_path=$runtime_library_path:$LD_LIBRARY_PATH
+fi
+
+export LD_LIBRARY_PATH=$runtime_library_path
+export ALSA_CONFIG_DIR=$root/share/alsa
+export ALSA_PLUGIN_DIR=$root/lib/alsa-lib
+export XKB_CONFIG_ROOT=$root/share/X11/xkb
+export XLOCALEDIR=$root/share/X11/locale
+export XCURSOR_PATH=${XCURSOR_PATH:-$HOME/.icons:/usr/share/icons:/usr/share/pixmaps}
+if [ -f /etc/fonts/fonts.conf ]; then
+	export FONTCONFIG_FILE=/etc/fonts/fonts.conf
+fi
+exec "$root/lib/@LOADER@" --library-path "$runtime_library_path" \
+	"$root/libexec/aedicule" "$@"

@@ -585,6 +585,49 @@ pub enum LaunchAction {
     About,
 }
 
+/// Converts a platform `file:` open-document URL into the same local path
+/// accepted by the CLI, rejecting remote authorities and malformed escapes.
+pub fn file_url_to_path(url: &str) -> Option<PathBuf> {
+    let remainder = url.strip_prefix("file://")?;
+    let encoded_path = if remainder.starts_with('/') {
+        remainder.to_owned()
+    } else if let Some(path) = remainder.strip_prefix("localhost/") {
+        format!("/{path}")
+    } else {
+        return None;
+    };
+    let bytes = encoded_path.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] != b'%' {
+            decoded.push(bytes[index]);
+            index += 1;
+            continue;
+        }
+        let high = *bytes.get(index + 1)?;
+        let low = *bytes.get(index + 2)?;
+        decoded.push(hex_digit(high)? * 16 + hex_digit(low)?);
+        index += 3;
+    }
+    let decoded = String::from_utf8(decoded).ok()?;
+    #[cfg(windows)]
+    let decoded = decoded
+        .strip_prefix('/')
+        .filter(|path| path.as_bytes().get(1) == Some(&b':'))
+        .unwrap_or(&decoded);
+    Some(PathBuf::from(decoded))
+}
+
+fn hex_digit(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
+}
+
 /// Resolves the native runner's order-sensitive source switches while treating
 /// an application directory as a container for the conventional `code.wat`.
 pub fn resolve_launch(

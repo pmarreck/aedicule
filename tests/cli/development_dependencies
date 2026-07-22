@@ -2,7 +2,7 @@
 
 set -u
 
-required=(cargo nix nix-store rg)
+required=(cargo nix nix-store node rg)
 failures=0
 
 for executable in "${required[@]}"; do

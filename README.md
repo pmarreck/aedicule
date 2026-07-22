@@ -8,12 +8,7 @@
 A generic native [GPUI](https://www.gpui.rs/) frontplane for applications
 written directly in WebAssembly Text format (WAT).
 
-Mecha Aedicule asks a slightly strange but useful question:
-
-> Can a small, capability-bounded WAT module own an application's state and
-> behavior while a reusable Rust host supplies a polished native window?
-
-The answer is now a working proof of concept. The Rust frontplane supplies
+This is now a working proof of concept. The Rust frontplane supplies
 Wasmtime isolation, GPUI rendering, input, menus, bounded audio synthesis,
 lifecycle management, deterministic headless rendering, and transactional hot
 reload. A guest supplies the application.
@@ -107,15 +102,47 @@ See [WAT_ABI.md](WAT_ABI.md) for the generated client ABI reference and
 
 ## Try it
 
+Download the latest packaged builds from
+[GitHub Releases](https://github.com/pmarreck/aedicule/releases/latest). Every
+release includes immutable Ulam Flower and Vibesteroids demo snapshots plus a
+checksum manifest.
+
+| Target | Package |
+| --- | --- |
+| Web | Static-site ZIP containing both demos |
+| macOS / Apple Silicon | `.app` ZIP with WAT document association |
+| Linux / ARM64 | Self-contained `tar.gz` with desktop/MIME metadata |
+| Windows / ARM64 | ZIP with app/document icons and association helper |
+| Linux / x86_64 | Self-contained `tar.gz` with desktop/MIME metadata |
+| Windows / x86_64 | ZIP with app/document icons and association helper |
+
+On desktop, pass a `.wat` path to Aedicule or drag a WAT document onto the
+application. macOS registers the document type from its application bundle;
+Linux ships desktop and MIME metadata; Windows includes an optional PowerShell
+association helper.
+
+The first release is unsigned. On macOS, use **Open** from Finder's context
+menu on first launch if Gatekeeper asks you to confirm the application.
+
+The web ZIP is ready for any static HTTPS host. Its top-level launcher offers
+both bundled demos; each demo directory is also a self-contained Aedicule site.
+
+## Build it
+
 The supported development path uses Nix flakes:
 
 ```console
 ./test
-./build
+./build                   # optimized build for this platform
+./build_all               # deterministic archives for all six targets
 ./run                     # code.wat in the working directory, if present
 ./run --watch app/code.wat
 ./run --embedded          # stable ABI-conformance fallback
 ```
+
+`./build_all` writes the archives, `SHA256SUMS`, target list, and demo
+provenance manifest through the `result-all` symlink. `./build --test` runs the
+complete suite, while `./build --debug` makes a local debug build.
 
 The package contains:
 
@@ -195,6 +222,8 @@ Working:
   sliders, and action buttons;
 - external WAT loading, content watching, and transactional hot reload; and
 - reproducible Nix builds with a pure deterministic test suite.
+- deterministic six-target release archives, with both bundled web demos
+  passing the headless WebGPU startup and synthetic-input probe.
 
 Known limits:
 
@@ -210,7 +239,8 @@ Known limits:
   observing a window move across displays. `AE_DISPLAY_REFRESH_RATE` can set
   an exact process-start override such as `60000/1001` or canonical `59.94`;
 - candidate compilation currently occurs on the UI thread;
-- platform parity beyond x86_64 Linux is unproven; and
+- all six delivery artifacts cross-build reproducibly, but macOS, Windows,
+  and Linux/ARM still need runtime exercise on their destination hardware; and
 - arbitrary hostile WAT should not yet be treated as production-safe.
 
 ## Repository map

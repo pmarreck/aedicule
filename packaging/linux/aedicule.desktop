@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Aedicule
+Comment=Run capability-bounded WebAssembly Text applications
+Exec=aedicule %f
+TryExec=aedicule
+Icon=aedicule
+Terminal=false
+Categories=Development;Utility;
+MimeType=text/x-webassembly-wat;

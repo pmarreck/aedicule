@@ -18,7 +18,7 @@ jobs:
   nix:
     name: Nix build and tests (x86_64-linux)
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 180
 
     steps:
       - name: Check out source
@@ -34,3 +34,6 @@ jobs:
 
       - name: Run complete test suite
         run: ./test
+
+      - name: Build complete release matrix
+        run: nix build .#release-all --out-link result-all --print-build-logs

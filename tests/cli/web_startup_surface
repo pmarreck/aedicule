@@ -49,5 +49,13 @@ expect_text "$root/tests/integration/web_browser_startup" 'touchCancel' \
 	'headless browser probe does not exercise touch cancellation'
 expect_text "$root/tests/integration/web_browser_startup" 'type: "input-summary"' \
 	'headless browser probe does not compact its synthetic input result'
+expect_text "$root/test" 'run_web_build() {' \
+	'full suite does not capture and classify expected browser compiler diagnostics'
+expect_text "$root/test" 'warning: unstable feature specified for `-Ctarget-feature`: `atomics`' \
+	'full suite does not explicitly classify the required unstable atomics warning'
+expect_text "$root/test" 'cargo --quiet --config web/cargo-config.toml build --lib' \
+	'browser library compilation emits dependency progress and compatibility notices in the full suite'
+expect_text "$root/test" 'cargo --quiet --config web/cargo-config.toml build --bin aedicule-web' \
+	'browser executable compilation emits dependency progress and compatibility notices in the full suite'
 
 exit "$failures"

@@ -1,0 +1,47 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  archives:
+    name: Build and publish six targets
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31.11.0
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build deterministic release archives
+        run: nix build .#release-all --out-link result-all --print-build-logs
+
+      - name: Verify release checksums
+        run: cd result-all && sha256sum --check SHA256SUMS
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME"
+          result-all/aedicule-*
+          result-all/SHA256SUMS
+          result-all/delivery-targets
+          result-all/demo-manifest.tsv
+          --verify-tag
+          --generate-notes
+          --title "Aedicule $GITHUB_REF_NAME"

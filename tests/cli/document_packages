@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+
+set -u
+
+root=$(cd "$(dirname "$0")/../.." && pwd -P)
+failures=0
+
+require_text() {
+	file=$1
+	needle=$2
+	if [[ ! -f "$root/$file" ]] || ! rg -F "$needle" "$root/$file" >/dev/null; then
+		printf '%s does not declare %s\n' "$file" "$needle" >&2
+		failures=$((failures + 1))
+	fi
+}
+
+for icon in \
+	assets/icons/aedicule-app.png \
+	assets/icons/aedicule-wat-document.png \
+	assets/icons/Aedicule.ico \
+	assets/icons/Aedicule-WAT.ico; do
+	if [[ ! -s "$root/$icon" ]]; then
+		printf '%s is missing or empty\n' "$icon" >&2
+		failures=$((failures + 1))
+	fi
+done
+
+require_text packaging/macos/Info.plist.in CFBundleDocumentTypes
+require_text packaging/macos/Info.plist.in UTImportedTypeDeclarations
+require_text packaging/macos/Info.plist.in org.webassembly.wat
+require_text packaging/macos/Info.plist.in CFBundleTypeIconFile
+require_text packaging/macos/Info.plist.in '<string>11.0</string>'
+require_text flake.nix 'MACOSX_DEPLOYMENT_TARGET = "11.0";'
+require_text packaging/linux/aedicule.desktop 'Exec=aedicule %f'
+require_text packaging/linux/aedicule.desktop 'MimeType=text/x-webassembly-wat;'
+require_text packaging/linux/aedicule-launcher.in '@LOADER@'
+require_text packaging/linux/aedicule-launcher.in 'LD_LIBRARY_PATH'
+require_text packaging/linux/org.webassembly.wat.xml 'glob pattern="*.wat"'
+require_text packaging/windows/install-file-association.ps1 'Aedicule.WAT'
+require_text packaging/windows/install-file-association.ps1 '"%1"'
+require_text packaging/windows/aedicule.rc 'Aedicule.ico'
+require_text flake.nix 'runtimeDll'
+require_text flake.nix 'cp -L "$runtimeDll" $out/'
+require_text flake.nix '$out/Tools/install-file-association.ps1'
+require_text packaging/web/manifest.webmanifest '"name": "Aedicule"'
+require_text web/index.html 'rel="icon"'
+require_text web/index.html 'rel="manifest"'
+require_text flake.nix 'cp ${./demos/manifest.tsv} $out/manifest.tsv'
+
+library_scan_loops=$(rg -F 'for libraryDirectory in "$storePath/lib" "$storePath/lib64"; do' \
+	"$root/flake.nix" | wc -l)
+if (( library_scan_loops != 1 )); then
+	printf 'Linux delivery must scan each closure library directory exactly once\n' >&2
+	failures=$((failures + 1))
+fi
+
+exit "$failures"

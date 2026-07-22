@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<title>Aedicule demos</title>
+		<link rel="icon" href="./icon.png">
+		<link rel="manifest" href="./manifest.webmanifest">
+		<style>
+			:root { color-scheme: dark; font: 16px/1.5 ui-sans-serif, system-ui, sans-serif; }
+			body { min-height: 100vh; margin: 0; display: grid; place-items: center; background: #080b14; color: #f4f7ff; }
+			main { width: min(64rem, calc(100% - 2rem)); padding: 3rem 0; }
+			header { display: grid; justify-items: center; text-align: center; margin-bottom: 2rem; }
+			header img { width: 8rem; height: 8rem; object-fit: contain; }
+			h1 { margin: 1rem 0 .25rem; font-size: clamp(2rem, 7vw, 4rem); }
+			.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); gap: 1rem; }
+			article { display: grid; align-content: start; padding: 1.5rem; border: 1px solid #273350; border-radius: 1rem; background: #101729; }
+			h2 { color: #5de7ff; margin: 0; }
+			a { justify-self: start; margin-top: 1rem; padding: .7rem 1rem; border-radius: .6rem; background: #e5b84b; color: #0a1020; font-weight: 800; text-decoration: none; }
+			a:focus-visible { outline: 3px solid #5de7ff; outline-offset: 3px; }
+		</style>
+	</head>
+	<body>
+		<main>
+			<header>
+				<img src="./icon.png" alt="">
+				<h1 data-i18n="title"></h1>
+				<p data-i18n="intro"></p>
+			</header>
+			<section class="grid">
+				<article>
+					<h2 data-i18n="ulamName"></h2>
+					<p data-i18n="ulamDescription"></p>
+					<a href="./ulam-flower/" data-i18n="open"></a>
+				</article>
+				<article>
+					<h2 data-i18n="vibesteroidsName"></h2>
+					<p data-i18n="vibesteroidsDescription"></p>
+					<a href="./vibesteroids/" data-i18n="open"></a>
+				</article>
+			</section>
+		</main>
+		<script type="module" src="./launcher.mjs"></script>
+	</body>
+</html>

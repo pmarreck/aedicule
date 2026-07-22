@@ -6,7 +6,7 @@ use std::{
 
 use gpui_wasm::{
     FALLBACK_WAT, FileRevision, Frontplane, LaunchAction, Limits, PluginSource, RevisionTracker,
-    WatRejectionStage, format_wat_rejection_diagnostic,
+    WatRejectionStage, file_url_to_path, format_wat_rejection_diagnostic,
     resolve_launch as resolve_launch_with_default,
 };
 
@@ -119,6 +119,22 @@ fn explicit_file_directory_watch_and_embedded_modes_resolve_predictably() {
         }
     );
     fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn platform_document_urls_decode_to_the_same_wat_path_as_cli_launches() {
+    assert_eq!(
+        file_url_to_path("file:///Applications/Ulam%20Flower/code.wat"),
+        Some(PathBuf::from("/Applications/Ulam Flower/code.wat"))
+    );
+    assert_eq!(
+        file_url_to_path("file://localhost/tmp/100%25-fun.wat"),
+        Some(PathBuf::from("/tmp/100%-fun.wat"))
+    );
+    assert_eq!(file_url_to_path("https://example.test/code.wat"), None);
+    assert_eq!(file_url_to_path("file://remote-host/tmp/code.wat"), None);
+    assert_eq!(file_url_to_path("file:///tmp/broken%2.wat"), None);
+    assert_eq!(file_url_to_path("file:///tmp/not-utf8-%FF.wat"), None);
 }
 
 #[test]

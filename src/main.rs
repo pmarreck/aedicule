@@ -1,9 +1,11 @@
 use std::{
-    collections::HashMap,
+    cell::RefCell,
+    collections::{HashMap, VecDeque},
     env,
     num::{NonZeroU16, NonZeroU32},
     path::{Path, PathBuf},
     process::ExitCode,
+    rc::Rc,
     time::{Duration, Instant},
 };
 
@@ -25,7 +27,7 @@ use gpui_wasm::{
     FileRevision, FrameOutput, Frontplane, HostEffect, Key, LaunchAction, Limits, Metadata,
     PluginInit, PluginSource, PointerButton, PointerScrollUnit, Rect, RevisionTracker,
     SimulationCall, SimulationScheduler, SliderControl, StateTransfer, SynthFilter, SynthVoice,
-    SynthWaveform, WatRejectionStage, display_refresh_rate_from_environment,
+    SynthWaveform, WatRejectionStage, display_refresh_rate_from_environment, file_url_to_path,
     format_wat_rejection_diagnostic, initialize_frontplane, prepare_reload, resolve_launch,
 };
 use rodio::{DeviceSinkBuilder, MixerDeviceSink, buffer::SamplesBuffer};
@@ -463,6 +465,7 @@ struct FrontplaneView {
     monotonic_origin: Instant,
     scheduler: SimulationScheduler,
     timing_generation: u64,
+    open_documents: Rc<RefCell<VecDeque<PathBuf>>>,
     sliders: Vec<NativeSlider>,
     _slider_subscriptions: Vec<Subscription>,
 }
@@ -558,7 +561,12 @@ impl FrontplaneView {
         (sliders, subscriptions)
     }
 
-    fn new(startup: Startup, window: &Window, cx: &mut Context<Self>) -> Self {
+    fn new(
+        startup: Startup,
+        open_documents: Rc<RefCell<VecDeque<PathBuf>>>,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let Startup {
             frontplane,
             frame,
@@ -603,6 +611,7 @@ impl FrontplaneView {
             monotonic_origin,
             scheduler,
             timing_generation: 0,
+            open_documents,
             sliders,
             _slider_subscriptions: slider_subscriptions,
         };
@@ -648,6 +657,9 @@ impl FrontplaneView {
                 let keep_running = match this.update(cx, |this, cx| {
                     if this.timing_generation != generation {
                         return false;
+                    }
+                    if this.open_requested_document(cx) {
+                        cx.notify();
                     }
                     let now = this.monotonic_origin.elapsed();
                     if this.pump_simulation(now, cx) {
@@ -734,45 +746,84 @@ impl FrontplaneView {
             self.plugin_init,
         ) {
             Ok(prepared) => {
-                let metadata = prepared.frontplane.metadata().clone();
-                let entries = standard_menu_entries(&metadata);
-                self.frontplane = prepared.frontplane;
-                self.accept_frame(prepared.frame);
-                self.title = metadata.title.clone();
-                self.new_label = entries.iter().find_map(|entry| match entry {
-                    StandardMenuEntry::New(label) => Some(label.clone()),
-                    _ => None,
-                });
-                self.help_label = entries.iter().find_map(|entry| match entry {
-                    StandardMenuEntry::Help(label) => Some(label.clone()),
-                    _ => None,
-                });
-                self.quit_label = entries.iter().find_map(|entry| match entry {
-                    StandardMenuEntry::Quit(label) => Some(label.clone()),
-                    _ => None,
-                });
-                self.audio.replace_programs(&metadata.synth_voices);
-                let (sliders, subscriptions) = Self::build_sliders(&metadata.controls, cx);
-                self.sliders = sliders;
-                self._slider_subscriptions = subscriptions;
-                self.restart_timing_loop(cx);
-                self.fatal_error = None;
-                self.reload_error = None;
-                self.reload_notice = Some(match prepared.state_transfer {
+                let notice = match prepared.state_transfer {
                     StateTransfer::Preserved => EN.reload_preserved,
                     StateTransfer::Restarted => EN.reload_restarted,
-                });
-                self.viewport.invalidate();
-                cx.set_menus(native_menus(&metadata, true));
-                let title = window_title(&metadata);
-                let _ = cx.update_window(self.window_handle, |_, window, _| {
-                    window.set_window_title(&title);
-                });
+                };
+                self.install_frontplane(prepared.frontplane, prepared.frame, notice, cx);
             }
             Err(error) => {
                 self.set_reload_error(path, EN.reload_failed, Some(&error.to_string()));
             }
         }
+    }
+
+    /// Treats an OS open-document event as a fresh application launch while
+    /// preserving the current guest transactionally if the candidate fails.
+    fn open_requested_document(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(path) = self.open_documents.borrow_mut().pop_front() else {
+            return false;
+        };
+        let revision = FileRevision::read(&path);
+        let result = source_text(&path, &revision).and_then(|source| {
+            load_frontplane(&source, self.plugin_init).map_err(|error| error.to_string())
+        });
+        match result {
+            Ok((frontplane, frame)) => {
+                let mut revisions = RevisionTracker::default();
+                revisions.observe(&revision);
+                self.source = Some(ExternalSource {
+                    path,
+                    watch: false,
+                    revisions,
+                });
+                self.install_frontplane(frontplane, frame, EN.reload_restarted, cx);
+            }
+            Err(error) => self.set_reload_error(&path, EN.reload_failed, Some(&error)),
+        }
+        true
+    }
+
+    /// Reconciles all host adapters from one accepted guest replacement so
+    /// metadata, controls, timing, menus, title, and frame change atomically.
+    fn install_frontplane(
+        &mut self,
+        frontplane: Frontplane,
+        frame: FrameOutput,
+        notice: &'static str,
+        cx: &mut Context<Self>,
+    ) {
+        let metadata = frontplane.metadata().clone();
+        let entries = standard_menu_entries(&metadata);
+        self.frontplane = frontplane;
+        self.accept_frame(frame);
+        self.title = metadata.title.clone();
+        self.new_label = entries.iter().find_map(|entry| match entry {
+            StandardMenuEntry::New(label) => Some(label.clone()),
+            _ => None,
+        });
+        self.help_label = entries.iter().find_map(|entry| match entry {
+            StandardMenuEntry::Help(label) => Some(label.clone()),
+            _ => None,
+        });
+        self.quit_label = entries.iter().find_map(|entry| match entry {
+            StandardMenuEntry::Quit(label) => Some(label.clone()),
+            _ => None,
+        });
+        self.audio.replace_programs(&metadata.synth_voices);
+        let (sliders, subscriptions) = Self::build_sliders(&metadata.controls, cx);
+        self.sliders = sliders;
+        self._slider_subscriptions = subscriptions;
+        self.restart_timing_loop(cx);
+        self.fatal_error = None;
+        self.reload_error = None;
+        self.reload_notice = Some(notice);
+        self.viewport.invalidate();
+        cx.set_menus(native_menus(&metadata, self.source.is_some()));
+        let title = window_title(&metadata);
+        let _ = cx.update_window(self.window_handle, |_, window, _| {
+            window.set_window_title(&title);
+        });
     }
 
     fn set_reload_error(&mut self, path: &Path, message: &str, detail: Option<&str>) {
@@ -1432,6 +1483,15 @@ fn window_title(metadata: &Metadata) -> String {
 
 fn run_application(startup: Startup) {
     let app = gpui_platform::application().with_assets(gpui_component_assets::Assets);
+    let open_documents = Rc::new(RefCell::new(VecDeque::new()));
+    app.on_open_urls({
+        let open_documents = open_documents.clone();
+        move |urls| {
+            open_documents
+                .borrow_mut()
+                .extend(urls.iter().filter_map(|url| file_url_to_path(url)));
+        }
+    });
     app.run(move |cx| {
         gpui_component::init(cx);
         cx.bind_keys([
@@ -1449,12 +1509,13 @@ fn run_application(startup: Startup) {
             window_bounds: Some(WindowBounds::centered(size(px(1100.0), px(850.0)), cx)),
             ..Default::default()
         };
+        let open_documents = open_documents.clone();
         cx.spawn(async move |cx| {
             cx.open_window(options, move |window, cx| {
                 window.activate_window();
                 window.set_window_title(&window_title);
                 Theme::change(ThemeMode::Dark, Some(window), cx);
-                let view = cx.new(|cx| FrontplaneView::new(startup, window, cx));
+                let view = cx.new(|cx| FrontplaneView::new(startup, open_documents, window, cx));
                 view.focus_handle(cx).focus(window, cx);
                 cx.new(|cx| Root::new(view, window, cx))
             })

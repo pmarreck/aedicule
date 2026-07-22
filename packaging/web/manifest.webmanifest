@@ -1,0 +1,16 @@
+{
+	"name": "Aedicule",
+	"short_name": "Aedicule",
+	"description": "Run capability-bounded WebAssembly Text applications",
+	"display": "standalone",
+	"background_color": "#080b14",
+	"theme_color": "#101729",
+	"icons": [
+		{
+			"src": "icon.png",
+			"sizes": "any",
+			"type": "image/png",
+			"purpose": "any"
+		}
+	]
+}

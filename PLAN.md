@@ -1,5 +1,30 @@
 # Plan
 
+- [ ] Ship Aedicule and the Ulam Flower/Vibesteroids demos as one coherent
+  six-target delivery matrix.
+  - [x] Make `./build` produce the optimized current-platform application and
+    add `./build_all` for exactly web, macOS/aarch64, Linux/aarch64,
+    Windows/aarch64, Linux/x86_64, and Windows/x86_64.
+    (2026-07-22 02:57 EDT)
+  - [x] Package the Aedicule application/document icon family and native `.wat`
+    launch metadata (macOS UTType/document roles, Windows drop-path handling,
+    Linux MIME/desktop metadata).
+    (2026-07-22 02:58 EDT)
+  - [x] Include immutable, independently tested Ulam Flower and Vibesteroids
+    WAT snapshots in each release without absorbing their source repositories.
+    (2026-07-22 02:58 EDT)
+  - [ ] Produce deterministic archives with manifests/checksums and publish
+    them as GitHub Release assets.
+  - [ ] Expand Mechatron Prime and GitHub Actions gates to falsify the complete
+    target/archive matrix, then watch both after pushing.
+  - [ ] Re-run the browser startup probe and obtain Peter's iPhone visual
+    acceptance before describing the web demos as playable.
+    (Headless Ulam Flower and Vibesteroids startup/input probes passed
+    2026-07-22 03:00 EDT; iPhone visual acceptance remains.)
+  - Curiosity poke: native compilation is not sufficient portability proof;
+    can each archive be exercised on its target without accidentally retaining
+    Nix-store or build-host paths?
+
 - [ ] Generalize the keyed native-control proof into the Aedicule View
   Protocol (AVP), a platform-neutral semantic application UI.
   - [x] Name the protocol and specify the retained view-document model,
@@ -84,7 +109,9 @@
   - Curiosity poke: can the browser guest adapter preserve the native ABI's
     bounded lifecycle and deterministic command-frame semantics despite losing
     Wasmtime's native fuel and interruption facilities?
-  - [ ] Prove GPUI-web compilation and a browser guest/frame vertical slice.
+  - [x] Prove GPUI-web compilation and a browser guest/frame vertical slice.
+    (2026-07-22 03:00 EDT: both release-bundled demos reached a 780×437 WebGPU
+    canvas without browser exceptions.)
   - [x] Prove the portable browser runtime with synthetic pointer and keyboard
     edges plus exact scheduled WAT updates, without GUI sleeps. (2026-07-19
     18:39 EDT)
@@ -103,9 +130,10 @@
   - [x] Emit a structured browser-console timeline for successful and failed
     startup stages without logging guest source or other application data.
     (2026-07-20 20:14 EDT)
-  - [ ] Retain GPUI's application handle for the browser document lifetime,
+  - [x] Retain GPUI's application handle for the browser document lifetime,
     then make the headless Chrome/CDP startup probe pass with a nontrivial
     canvas and no dropped wasm-bindgen callbacks.
+    (2026-07-22 03:00 EDT)
     - Curiosity poke: can we carry upstream GPUI commit `74798c68` as a
       one-commit fork from our existing pin instead of importing 452 unrelated
       Zed commits?

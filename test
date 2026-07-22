@@ -10,6 +10,8 @@ if [[ ${GPUI_WASM_TEST_SHELL:-0} != 1 ]]; then
 	exec "${develop[@]}" -c env GPUI_WASM_TEST_SHELL=1 "$0" "$@"
 fi
 
+source tests/lib/capture.bash
+
 failures=0
 
 run_check() {
@@ -20,17 +22,50 @@ run_check() {
 	fi
 }
 
+run_web_build() {
+	local out= err= rc=0 unexpected= line
+	capture "$@"
+	if (( rc != 0 )); then
+		printf 'browser compilation failed:\n%s\n%s\n' "$out" "$err" >&2
+		failures=$((failures + 1))
+		return
+	fi
+
+	while IFS= read -r line; do
+		case "$line" in
+			''|'  |'|\
+			'warning: unstable feature specified for `-Ctarget-feature`: `atomics`'|\
+			'  = note: this feature is not stably supported; its behavior can change in the future'|\
+			warning:\ *warning*\ emitted)
+				;;
+			*)
+				unexpected+="$line"$'\n'
+				;;
+		esac
+	done <<< "$err"
+
+	if [[ -n $out || -n $unexpected ]]; then
+		printf 'browser compilation emitted unexpected diagnostics:\n%s%s\n' \
+			"$out" "$unexpected" >&2
+		failures=$((failures + 1))
+	fi
+}
+
 run_check ./tests/cli/development_dependencies
 run_check ./tests/cli/repository_boundary
 run_check ./tests/cli/launcher_cwd
 run_check ./tests/cli/web_startup_surface
+run_check ./tests/cli/delivery_matrix
+run_check ./tests/cli/document_packages
+run_check ./tests/cli/demo_snapshots
+run_check ./tests/cli/web_i18n
 run_check cargo test --no-default-features --features native-runtime
 run_check cargo test --no-default-features --features portable-runtime
 run_check cargo test --lib --no-default-features --features web web::tests
-run_check nix develop .#web --ignore-environment --keep HOME --keep TMPDIR -c \
-	cargo --config web/cargo-config.toml build --lib --target wasm32-unknown-unknown --no-default-features --features portable-runtime
-run_check nix develop .#web --ignore-environment --keep HOME --keep TMPDIR -c \
-	cargo --config web/cargo-config.toml build --bin aedicule-web --target wasm32-unknown-unknown --no-default-features --features web
+run_web_build nix develop .#web --ignore-environment --keep HOME --keep TMPDIR -c \
+	cargo --quiet --config web/cargo-config.toml build --lib --target wasm32-unknown-unknown --no-default-features --features portable-runtime
+run_web_build nix develop .#web --ignore-environment --keep HOME --keep TMPDIR -c \
+	cargo --quiet --config web/cargo-config.toml build --bin aedicule-web --target wasm32-unknown-unknown --no-default-features --features web
 run_check ./tests/cli/web_delivery
 run_check cargo test --bin gpui-wasm
 run_check cargo test --test gui_cli
