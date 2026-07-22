@@ -148,7 +148,9 @@ The supported development path uses Nix flakes:
 
 `./build_all` writes the archives, `SHA256SUMS`, target list, and demo
 provenance manifest through the `result-all` symlink. `./build --test` runs the
-complete suite, while `./build --debug` makes a local debug build.
+complete suite, while `./build --debug` makes a local debug build. The native
+optimized build grants its one Nix derivation all detected CPU threads;
+`./build_all` retains Nix's multi-derivation scheduling for the target matrix.
 
 The package contains:
 
@@ -211,11 +213,15 @@ compatibility.
 
 ## Headless rendering
 
-The renderer accepts `-` or `@stdin` as WAT input and `-`, `@stdout`, or
+The renderer accepts the same bare-WAT, application-directory, and `.aed`
+sources as the GUI frontplane, including their bounded `assets/` catalogs. It
+also accepts `-` or `@stdin` as asset-free WAT input and `-`, `@stdout`, or
 `@stderr` as output:
 
 ```console
 result/bin/gpui-wasm-render path/to/code.wat --ticks 300 -o frame.svg
+result/bin/gpui-wasm-render path/to/application --ticks 300 -o frame.svg
+result/bin/gpui-wasm-render application.aed --ticks 300 -o frame.svg
 ```
 
 This gives humans, CI systems, and review agents an exact inspectable artifact

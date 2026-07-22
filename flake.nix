@@ -156,6 +156,7 @@
 									"/Cargo.lock"
 									"/README.md"
 									"/WAT_ABI.md"
+									"/build"
 									"/build_all"
 									"/check_reproducible"
 									"/delivery-targets"
@@ -543,7 +544,7 @@
 								tests/cli/macos_reproducibility tests/cli/reproducible_releases \
 								tests/cli/web_i18n tests/cli/github_pages \
 								tests/cli/ci_acceleration \
-								tests/cli/rust_dependency_cache \
+								tests/cli/native_parallelism \
 								packaging/macos/canonicalize_uuid check_reproducible
 							cargo test --no-default-features --features native-runtime
 							cargo test --bin gpui-wasm
@@ -559,7 +560,10 @@
 							./tests/cli/web_i18n
 							./tests/cli/github_pages
 							./tests/cli/ci_acceleration
-							./tests/cli/rust_dependency_cache
+							# Daemon-dependent flake mutation and real package realization
+							# remain in the outer ./test gate; this sandbox runs pure checks.
+							./tests/cli/native_parallelism
+							node ./tests/integration/web_browser_startup_unit.mjs
 							runHook postCheck
 						'';
 						installPhase = ''

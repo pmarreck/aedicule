@@ -8,6 +8,12 @@
   - [x] Add `--package` / `--depackage` CLI actions with derived output names,
     spaces in paths, clean diagnostics, and no source-tree mutation.
     (2026-07-22 13:57 EDT)
+  - [ ] Add `--appify` / `--deappify` as the platform-delivery layer above
+    `.aed`: combine a pinned Aedicule runtime with one exact guest package into
+    a normal current-platform application, then losslessly recover its
+    constituent runtime/package artifacts and build manifest. Use one file
+    where the platform supports it and a native application bundle where it
+    does not; preserve the embedded `.aed` bytes exactly.
   - [x] Make `--test` require `tests/main.wast`, run every direct
     `tests/*.wast` suite in deterministic PCG32/Fisher-Yates order with an
     emitted replay seed, and ignore nested WAST composition fragments across
@@ -25,6 +31,9 @@
   - [x] Preserve the documented downstream tool surface by packaging both
     `gpui-wasm` and `gpui-wasm-render` in the native `frontplane` flake output.
     (2026-07-22 15:33 EDT; caught by Vibesteroids' pinned runtime gate)
+  - [x] Make the headless renderer resolve bare WAT, directory, and `.aed`
+    inputs through the same bounded virtual application root and asset catalog.
+    (2026-07-22 15:40 EDT; caught by Vibesteroids' real packaged FLAC guest)
   - [x] Expose immutable `assets/` FLAC samples through bounded
     `AE_sample_asset` / `AE_sample_play` imports, with identical bare-WAT,
     directory, archive, and reload admission plus native device playback.
@@ -34,6 +43,9 @@
   - Curiosity poke: non-loopback browsers require a secure context as well as
     COOP/COEP, so remote/tailnet serving needs an explicit TLS/reverse-proxy
     contract rather than silently printing an unusable HTTP URL.
+  - Curiosity poke: platform signing/notarization mutates or wraps appified
+    artifacts, so specify the unsigned deterministic core before promising a
+    byte-identical appify/deappify/appify round trip.
 
 - [ ] Publish the bundled browser demos as a concise, modern GitHub Pages site.
   - [x] Add a deterministic Pages workflow that deploys the exact
@@ -56,6 +68,9 @@
     add `./build_all` for exactly web, macOS/aarch64, Linux/aarch64,
     Windows/aarch64, Linux/x86_64, and Windows/x86_64.
     (2026-07-22 02:57 EDT)
+  - [x] Let single-derivation native builds use every detected CPU thread while
+    preserving bounded multi-derivation scheduling for the six-target matrix.
+    (2026-07-22 15:48 EDT; fake-Nix policy regression covers both paths)
   - [x] Package the Aedicule application/document icon family and native `.wat`
     launch metadata (macOS UTType/document roles, Windows drop-path handling,
     Linux MIME/desktop metadata).
@@ -86,6 +101,10 @@
       private capture-helper dependency, include the top-level runner in the
       sandbox source, and suppress first-fetch Nix progress before classifying
       compiler diagnostics. (2026-07-22 04:24 EDT)
+    - [x] Poll for Chrome's initial debuggable page after `DevToolsActivePort`
+      appears instead of assuming both become ready atomically; cover the CI
+      race with an injected no-sleep unit regression and the real Pages-style
+      Chrome probe. (2026-07-22 16:26 EDT)
   - [ ] Re-run the browser startup probe and obtain Peter's iPhone visual
     acceptance before describing the web demos as playable.
     (Headless Ulam Flower and Vibesteroids startup/input probes passed

@@ -1,12 +1,13 @@
 use std::{
     env, fs,
     io::{self, Read as _, Write as _},
+    path::PathBuf,
     process::ExitCode,
 };
 
 use gpui_wasm::{
     ControlPhase, DEFAULT_PLUGIN_ENV, Event, FALLBACK_WAT, Frontplane, Limits, PluginInit,
-    display_refresh_rate_from_environment, initialize_frontplane, render_svg,
+    PluginSource, display_refresh_rate_from_environment, initialize_frontplane, render_svg,
 };
 
 const DEFAULT_WIDTH: f32 = 1024.0;
@@ -18,7 +19,7 @@ const HELP: &str = "\
 Render a deterministic WAT application frame without opening a window.
 
 Usage:
-  gpui-wasm-render [PLUGIN.wat|-|@stdin] [options]
+  gpui-wasm-render [PLUGIN.wat|APPLICATION_DIRECTORY|APPLICATION.aed|-|@stdin] [options]
 
 Options:
   --ticks N          Advance N fixed simulation ticks before rendering
@@ -69,6 +70,11 @@ enum Action {
     Help,
     About,
     Render(RenderOptions),
+}
+
+enum RenderInput {
+    Text(String),
+    Application(PluginSource),
 }
 
 fn main() -> ExitCode {
@@ -211,10 +217,14 @@ fn run(options: RenderOptions) -> Result<(), String> {
     {
         plugin_init = plugin_init.with_display_refresh(display_refresh);
     }
-    let wat = read_plugin(options.plugin.as_deref())?;
+    let input = read_plugin(options.plugin.as_deref())?;
     let limits = Limits::default();
     let max_ticks_per_call = u64::from(limits.max_ticks_per_call);
-    let mut frontplane = Frontplane::from_wat(&wat, limits).map_err(|error| error.to_string())?;
+    let mut frontplane = match input {
+        RenderInput::Text(wat) => Frontplane::from_wat(&wat, limits),
+        RenderInput::Application(source) => Frontplane::from_application(&source, limits),
+    }
+    .map_err(|error| error.to_string())?;
     initialize_frontplane(&mut frontplane, plugin_init).map_err(|error| error.to_string())?;
 
     for control in options.controls {
@@ -240,21 +250,36 @@ fn run(options: RenderOptions) -> Result<(), String> {
     write_output(&options.output, svg.as_bytes())
 }
 
-fn read_plugin(path: Option<&str>) -> Result<String, String> {
+fn read_plugin(path: Option<&str>) -> Result<RenderInput, String> {
     match path {
         None => match env::var_os(DEFAULT_PLUGIN_ENV) {
-            Some(path) => fs::read_to_string(&path)
-                .map_err(|error| format!("read {}: {error}", path.to_string_lossy())),
-            None => Ok(FALLBACK_WAT.into()),
+            Some(path) => Ok(RenderInput::Application(plugin_source_for_path(
+                PathBuf::from(path),
+            ))),
+            None => Ok(RenderInput::Text(FALLBACK_WAT.into())),
         },
         Some("-" | "@stdin") => {
             let mut wat = String::new();
             io::stdin()
                 .read_to_string(&mut wat)
                 .map_err(|error| format!("read stdin: {error}"))?;
-            Ok(wat)
+            Ok(RenderInput::Text(wat))
         }
-        Some(path) => fs::read_to_string(path).map_err(|error| format!("read {path}: {error}")),
+        Some(path) => Ok(RenderInput::Application(plugin_source_for_path(
+            PathBuf::from(path),
+        ))),
+    }
+}
+
+/// Classifies a renderer path through the same application-container rules as
+/// the GUI CLI so immutable sibling and archived assets remain available.
+fn plugin_source_for_path(path: PathBuf) -> PluginSource {
+    if path.is_dir() {
+        PluginSource::Directory(path)
+    } else if path.extension().is_some_and(|extension| extension == "aed") {
+        PluginSource::Archive(path)
+    } else {
+        PluginSource::File(path)
     }
 }
 

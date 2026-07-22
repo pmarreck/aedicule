@@ -4,7 +4,7 @@ set -u
 
 case "${1:-}" in
 	"")
-		exec nix build
+		exec nix build --max-jobs 1 --cores 0
 		;;
 	--test)
 		exec ./test

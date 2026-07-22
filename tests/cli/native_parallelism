@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+set -u
+
+root=$(cd "$(dirname "$0")/../.." && pwd -P)
+temporary=$(mktemp -d "$TMPDIR/aedicule-native-parallelism.XXXXXX")
+trap 'rm -rf "$temporary"' EXIT
+mkdir -p "$temporary/bin" "$temporary/output/bin"
+touch "$temporary/output/bin/gpui-wasm" "$temporary/output/bin/gpui-wasm-render"
+chmod +x "$temporary/output/bin/gpui-wasm" "$temporary/output/bin/gpui-wasm-render"
+
+cat >"$temporary/bin/nix" <<'FAKE_NIX'
+#!/bin/sh
+printf '%s\n' "$@" >"$AEDICULE_TEST_NIX_INVOCATION"
+printf '%s\n' "$AEDICULE_TEST_NIX_OUTPUT"
+FAKE_NIX
+chmod +x "$temporary/bin/nix"
+
+failures=0
+expected_build=$'build\n--max-jobs\n1\n--cores\n0'
+PATH="$temporary/bin:$PATH" \
+	AEDICULE_TEST_NIX_INVOCATION="$temporary/invocation" \
+	AEDICULE_TEST_NIX_OUTPUT="$temporary/output" \
+	bash "$root/build" >"$temporary/build.stdout" 2>"$temporary/build.stderr"
+status=$?
+if (( status != 0 )) || [[ $(<"$temporary/invocation") != "$expected_build" ]]; then
+	printf './build does not grant one native derivation all available cores\n' >&2
+	failures=$((failures + 1))
+fi
+
+expected_gate=$'build\n.#frontplane\n--no-link\n--print-out-paths\n--max-jobs\n1\n--cores\n0'
+(
+	cd "$root" || exit 1
+	PATH="$temporary/bin:$PATH" \
+		AEDICULE_TEST_NIX_INVOCATION="$temporary/invocation" \
+		AEDICULE_TEST_NIX_OUTPUT="$temporary/output" \
+		bash ./tests/cli/frontplane_tools
+)
+status=$?
+if (( status != 0 )) || [[ $(<"$temporary/invocation") != "$expected_gate" ]]; then
+	printf 'frontplane package gate does not grant one derivation all available cores\n' >&2
+	failures=$((failures + 1))
+fi
+
+exit "$failures"

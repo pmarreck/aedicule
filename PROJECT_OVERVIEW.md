@@ -38,6 +38,15 @@ menus, audio, resource policy, scheduling, storage policy, and guest lifecycle.
 **Guest/application** — an untrusted WAT-authored module containing the
 application brain. It receives no ambient platform authority.
 
+**Application package (`.aed`)** — the portable deterministic guest unit:
+`code.wat`, tests, assets, libraries, and human-facing project files. It does
+not contain a platform runtime.
+
+**Appified delivery** — a future platform-native artifact combining one exact
+`.aed` package with a pinned Aedicule runtime. Appification is a delivery step,
+not a replacement for portable packages; deappification recovers the embedded
+constituents and their build manifest.
+
 **Command frame** — a finite host-owned immutable list of scene, audio, and
 effect requests emitted during a guest lifecycle call.
 

@@ -1,6 +1,14 @@
 use std::{fs, path::PathBuf, process::Command};
 
-use gpui_wasm::DISPLAY_REFRESH_RATE_ENV;
+use gpui_wasm::{DISPLAY_REFRESH_RATE_ENV, package_application};
+
+const SILENT_FLAC: &[u8] = &[
+    102, 76, 97, 67, 0, 0, 0, 34, 16, 0, 16, 0, 0, 0, 15, 0, 0, 15, 1, 244, 2, 240, 0, 0, 0, 8,
+    112, 188, 143, 75, 114, 168, 105, 33, 70, 139, 248, 232, 68, 29, 206, 81, 132, 0, 0, 40, 32, 0,
+    0, 0, 114, 101, 102, 101, 114, 101, 110, 99, 101, 32, 108, 105, 98, 70, 76, 65, 67, 32, 49, 46,
+    53, 46, 48, 32, 50, 48, 50, 53, 48, 50, 49, 49, 0, 0, 0, 0, 255, 248, 100, 24, 0, 7, 84, 0, 0,
+    0, 0, 0, 0, 140, 21,
+];
 
 fn animated_wat() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/animated.wat")
@@ -92,6 +100,71 @@ fn cli_accepts_a_plugin_path_with_spaces_and_writes_the_requested_file() {
     assert!(result.stderr.is_empty(), "{:?}", result.stderr);
     assert!(fs::read_to_string(&output).unwrap().contains("<circle"));
     fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn cli_loads_assets_from_bare_wat_directory_and_aed_application_sources() {
+    let temporary = std::env::temp_dir().join(format!(
+        "aedicule render applications {}",
+        std::process::id()
+    ));
+    let application = temporary.join("application with spaces");
+    fs::create_dir_all(application.join("assets/audio")).unwrap();
+    fs::write(
+        application.join("code.wat"),
+        r#"(module
+            (import "aedicule.v0" "AE_sample_asset"
+                (func $sample (param i32 i32 i32 i32) (result i32)))
+            (import "aedicule.v0" "AE_frame_begin_rgba"
+                (func $begin (param i32) (result i32)))
+            (import "aedicule.v0" "AE_frame_end" (func $end (result i32)))
+            (memory (export "memory") 1)
+            (data (i32.const 0) "assets/audio/satellite-destroyed.flac")
+            (func (export "AE_abi_major") (result i32) i32.const 0)
+            (func (export "AE_abi_minor") (result i32) i32.const 1)
+            (func (export "AE_configure") (result i32)
+                i32.const 1 i32.const 0 i32.const 37 i32.const 0 call $sample)
+            (func (export "AE_init") (param i32 i32 f32 f32) (result i32) i32.const 0)
+            (func (export "AE_event") (param i32 i32 f32 f32) (result i32) i32.const 0)
+            (func (export "AE_tick") (param i32) (result i32) i32.const 0)
+            (func (export "AE_render") (result i32)
+                i32.const 0x336699ff call $begin drop call $end drop i32.const 0)
+            (func (export "AE_state_ptr") (result i32) i32.const 64)
+            (func (export "AE_state_len") (result i32) i32.const 0)
+            (func (export "AE_state_schema") (result i32) i32.const 1))"#,
+    )
+    .unwrap();
+    fs::write(
+        application.join("assets/audio/satellite-destroyed.flac"),
+        SILENT_FLAC,
+    )
+    .unwrap();
+    let archive = temporary.join("application with spaces.aed");
+    package_application(&application, &archive).unwrap();
+
+    for source in [application.join("code.wat"), application.clone(), archive] {
+        let result = render(&[source.to_str().unwrap()]);
+        assert!(
+            result.status.success(),
+            "{}: {:?}",
+            source.display(),
+            result.stderr
+        );
+        assert!(
+            result.stderr.is_empty(),
+            "{}: {:?}",
+            source.display(),
+            result.stderr
+        );
+        assert!(
+            String::from_utf8(result.stdout)
+                .unwrap()
+                .contains("fill=\"#336699\""),
+            "{}",
+            source.display()
+        );
+    }
+    fs::remove_dir_all(temporary).unwrap();
 }
 
 #[test]

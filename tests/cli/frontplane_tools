@@ -5,7 +5,7 @@ set -u
 diagnostics=$(mktemp -d "$TMPDIR/aedicule-frontplane-tools.XXXXXX")
 trap 'rm -rf "$diagnostics"' EXIT
 
-output=$(nix build .#frontplane --no-link --print-out-paths \
+output=$(nix build .#frontplane --no-link --print-out-paths --max-jobs 1 --cores 0 \
 	2>"$diagnostics/build.stderr")
 status=$?
 if (( status != 0 )); then
