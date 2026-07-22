@@ -62,9 +62,9 @@ run_check ./tests/cli/web_i18n
 run_check cargo test --no-default-features --features native-runtime
 run_check cargo test --no-default-features --features portable-runtime
 run_check cargo test --lib --no-default-features --features web web::tests
-run_web_build nix develop .#web --ignore-environment --keep HOME --keep TMPDIR -c \
+run_web_build nix develop .#web --quiet --ignore-environment --keep HOME --keep TMPDIR -c \
 	cargo --quiet --config web/cargo-config.toml build --lib --target wasm32-unknown-unknown --no-default-features --features portable-runtime
-run_web_build nix develop .#web --ignore-environment --keep HOME --keep TMPDIR -c \
+run_web_build nix develop .#web --quiet --ignore-environment --keep HOME --keep TMPDIR -c \
 	cargo --quiet --config web/cargo-config.toml build --bin aedicule-web --target wasm32-unknown-unknown --no-default-features --features web
 run_check ./tests/cli/web_delivery
 run_check cargo test --bin gpui-wasm

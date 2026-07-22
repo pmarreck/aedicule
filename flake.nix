@@ -140,6 +140,7 @@
 									"/assets"
 									"/packaging"
 									"/src"
+									"/test"
 									"/third_party"
 									"/tests"
 									"/web"

@@ -57,5 +57,18 @@ expect_text "$root/test" 'cargo --quiet --config web/cargo-config.toml build --l
 	'browser library compilation emits dependency progress and compatibility notices in the full suite'
 expect_text "$root/test" 'cargo --quiet --config web/cargo-config.toml build --bin aedicule-web' \
 	'browser executable compilation emits dependency progress and compatibility notices in the full suite'
+test_source=$(sed -n '/testSource = builtins.path {/,/applicationCargoDeps =/p' "$root/flake.nix")
+if ! rg -F '"/test"' <<< "$test_source" >/dev/null; then
+	printf '%s\n' \
+		'sandboxed test source cannot inspect the top-level CI runner for private dependencies' >&2
+	failures=$((failures + 1))
+fi
+
+quiet_web_shells=$(rg -F 'nix develop .#web --quiet --ignore-environment' "$root/test" | wc -l)
+if (( quiet_web_shells != 2 )); then
+	printf 'both nested browser shells must suppress first-fetch Nix progress; found %d\n' \
+		"$quiet_web_shells" >&2
+	failures=$((failures + 1))
+fi
 
 exit "$failures"

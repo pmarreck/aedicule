@@ -12,4 +12,19 @@ for executable in "${required[@]}"; do
 	fi
 done
 
+root=$(cd "$(dirname "$0")/../.." && pwd -P)
+private_scan_roots=("$root/tests/cli")
+if [[ -f $root/test ]]; then
+	private_scan_roots+=("$root/test")
+fi
+mapfile -t private_helpers < <(
+	rg -l -g '!development_dependencies' '\$HOME/dotfiles|/home/pmarreck' \
+		"${private_scan_roots[@]}" || true
+)
+if (( ${#private_helpers[@]} != 0 )); then
+	printf 'test scripts depend on private developer paths:\n' >&2
+	printf '  %s\n' "${private_helpers[@]#"$root/"}" >&2
+	failures=$((failures + 1))
+fi
+
 exit "$failures"

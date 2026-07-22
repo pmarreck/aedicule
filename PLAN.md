@@ -17,6 +17,10 @@
     them as GitHub Release assets.
   - [ ] Expand Mechatron Prime and GitHub Actions gates to falsify the complete
     target/archive matrix, then watch both after pushing.
+    - [x] Reproduce and fix clean-runner-only browser-test failures: remove the
+      private capture-helper dependency, include the top-level runner in the
+      sandbox source, and suppress first-fetch Nix progress before classifying
+      compiler diagnostics. (2026-07-22 04:24 EDT)
   - [ ] Re-run the browser startup probe and obtain Peter's iPhone visual
     acceptance before describing the web demos as playable.
     (Headless Ulam Flower and Vibesteroids startup/input probes passed
