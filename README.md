@@ -115,10 +115,16 @@ Open the [browser gallery](https://pmarreck.github.io/aedicule/), play
 [Vibesteroids](https://pmarreck.github.io/aedicule/vibesteroids/) directly, or
 download a native build below.
 
+The [Vibesteroids `.aed` application](https://pmarreck.github.io/aedicule/vibesteroids.aed)
+is also directly downloadable. It contains the current schema-11 guest, its
+deterministic WAST entry point, and the bounded FLAC sample used after Voyager
+is destroyed. Browser sampled-audio playback is not yet claimed; the live web
+demo deliberately retains the independently green pre-sample WAT snapshot.
+
 Download the latest packaged builds from
 [GitHub Releases](https://github.com/pmarreck/aedicule/releases/latest). Every
-release includes immutable Ulam Flower and Vibesteroids demo snapshots plus a
-checksum manifest.
+release includes immutable Ulam Flower and Vibesteroids WAT snapshots, the
+complete Vibesteroids `.aed` application, and a checksum manifest.
 
 | Target | Package |
 | --- | --- |

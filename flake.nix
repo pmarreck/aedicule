@@ -393,6 +393,8 @@
 								$out/share/aedicule/demos/ulam-flower.wat
 							install -Dm644 ${./demos/vibesteroids.wat} \
 								$out/share/aedicule/demos/vibesteroids.wat
+							install -Dm644 ${./demos/vibesteroids.aed} \
+								$out/share/aedicule/demos/vibesteroids.aed
 							install -Dm644 ${./demos/manifest.tsv} \
 								$out/share/aedicule/demos/manifest.tsv
 							install -Dm644 ${./assets/fonts/OFL.txt} \
@@ -417,6 +419,7 @@
 								$out/Tools/install-file-association.ps1
 							cp ${./demos/ulam-flower.wat} $out/Demos/ulam-flower.wat
 							cp ${./demos/vibesteroids.wat} $out/Demos/vibesteroids.wat
+							cp ${./demos/vibesteroids.aed} $out/Demos/vibesteroids.aed
 							cp ${./demos/manifest.tsv} $out/Demos/manifest.tsv
 							install -Dm644 ${./assets/fonts/OFL.txt} \
 								$out/ThirdPartyLicenses/GeistMono-OFL.txt
@@ -443,6 +446,7 @@
 								--replace-fail '@VERSION@' '${version}'
 							cp ${./demos/ulam-flower.wat} $app/Contents/Resources/Demos/ulam-flower.wat
 							cp ${./demos/vibesteroids.wat} $app/Contents/Resources/Demos/vibesteroids.wat
+							cp ${./demos/vibesteroids.aed} $app/Contents/Resources/Demos/vibesteroids.aed
 							cp ${./demos/manifest.tsv} $app/Contents/Resources/Demos/manifest.tsv
 							install -Dm644 ${./assets/fonts/OFL.txt} \
 								$app/Contents/Resources/ThirdPartyLicenses/GeistMono-OFL.txt
@@ -668,6 +672,7 @@
 							cp ${./assets/icons/aedicule-app.png} $out/icon.png
 							cp -R ${ulam}/. $out/ulam-flower/
 							cp -R ${vibesteroids}/. $out/vibesteroids/
+							cp ${./demos/vibesteroids.aed} $out/vibesteroids.aed
 							cp ${./demos/manifest.tsv} $out/manifest.tsv
 						'';
 					delivery-all = pkgs.runCommand "aedicule-delivery-all" {} ''

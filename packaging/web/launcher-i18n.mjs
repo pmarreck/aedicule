@@ -14,6 +14,7 @@ export const english = Object.freeze({
 	vibesteroidsName: "Vibesteroids",
 	vibesteroidsDescription: "Vector arcade action with generated audio.",
 	open: "Launch",
+	vibesteroidsPackage: "Download Vibesteroids .aed",
 	downloads: "Download apps",
 	source: "Source",
 });

@@ -44,6 +44,7 @@ require_text "$root/packaging/web/index.html" './coi-serviceworker.js' 'gallery 
 require_text "$root/README.md" 'https://pmarreck.github.io/aedicule/' 'public demo link'
 require_text "$root/README.md" 'https://pmarreck.github.io/aedicule/ulam-flower/' 'direct Ulam Flower demo link'
 require_text "$root/README.md" 'https://pmarreck.github.io/aedicule/vibesteroids/' 'direct Vibesteroids demo link'
+require_text "$root/packaging/web/index.html" './vibesteroids.aed' 'direct Vibesteroids package download'
 require_text "$root/flake.nix" '"/README.md"' 'README in Nix test source'
 
 exit "$failures"

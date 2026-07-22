@@ -20,6 +20,7 @@ assert.deepEqual(i18n.supportedLocales, [
 assert.deepEqual(Object.keys(i18n.english).sort(), [
 	"downloads", "intro", "open", "source", "title", "ulamDescription",
 	"ulamName", "vibesteroidsDescription", "vibesteroidsName",
+	"vibesteroidsPackage",
 ]);
 assert.equal(i18n.resolveLocale(["fil-PH"]), "fil");
 assert.equal(i18n.resolveLocale(["pt-BR"]), "pt_br");

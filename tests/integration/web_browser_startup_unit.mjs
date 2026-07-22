@@ -3,6 +3,7 @@ import vm from "node:vm";
 
 import {
 	inputObserverSource,
+	removeBrowserProfile,
 	waitForDebuggablePage,
 } from "./web_browser_startup";
 
@@ -23,6 +24,20 @@ const page = await waitForDebuggablePage(9222, 1_000, {
 assert.equal(page, expectedPage);
 assert.equal(listCalls, 3);
 assert.equal(retries, 2);
+
+let removedProfile;
+let removeOptions;
+removeBrowserProfile("/temporary/chrome-profile", (profile, options) => {
+	removedProfile = profile;
+	removeOptions = options;
+});
+assert.equal(removedProfile, "/temporary/chrome-profile");
+assert.deepEqual(removeOptions, {
+	force: true,
+	maxRetries: 8,
+	recursive: true,
+	retryDelay: 25,
+});
 
 const listeners = new Map();
 const browser = {

@@ -425,6 +425,19 @@ async function stopChrome(chrome) {
 	if (chrome.exitCode === null) chrome.kill("SIGKILL");
 }
 
+/**
+ * Removes Chrome's profile with Node's bounded ENOTEMPTY/EBUSY retry support,
+ * covering late helper-process writes after the browser process exits.
+ */
+export function removeBrowserProfile(profile, remove = rmSync) {
+	remove(profile, {
+		force: true,
+		maxRetries: 8,
+		recursive: true,
+		retryDelay: 25,
+	});
+}
+
 async function inspect(options) {
 	const verboseEvents = process.env.AEDICULE_BROWSER_TRACE_EVENTS === "1";
 	const chromePath = resolveChrome(options.chrome);
@@ -565,7 +578,7 @@ async function inspect(options) {
 	} finally {
 		if (socket !== undefined) socket.close();
 		await stopChrome(chrome);
-		rmSync(profile, { recursive: true, force: true });
+		removeBrowserProfile(profile);
 	}
 }
 

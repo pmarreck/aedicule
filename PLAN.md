@@ -78,6 +78,10 @@
   - [x] Include immutable, independently tested Ulam Flower and Vibesteroids
     WAT snapshots in each release without absorbing their source repositories.
     (2026-07-22 02:58 EDT)
+  - [x] Bundle the byte-pinned schema-11 Vibesteroids `.aed` with its FLAC,
+    standard WAST entry point, README, and license in every native delivery and
+    expose the identical application as a direct Pages download while keeping
+    the pre-sample browser guest explicit. (2026-07-22 17:40 EDT)
   - [ ] Produce deterministic archives with manifests/checksums and publish
     them as GitHub Release assets.
     - [x] Audit v0.1.0 with independent Nix rebuilds; remove compile-time
@@ -135,6 +139,10 @@
   - [ ] Permit view-only output transactions and event-driven `0/1` guests.
   - [ ] Deliver the general forms slice through desktop, browser, and headless
     adapters before claiming general-application support.
+  - [ ] Use `PRINTABLE_BINARY_EDIT_PROPOSAL.md` as the second unrelated AVP
+    acceptance client: full-window editable text, user-mediated file handles,
+    bounded reads, atomic raw-byte saves, conflict detection, and browser file
+    capability parity, while keeping printable-binary semantics guest-owned.
   - [ ] Add explicit asynchronous capability profiles one service at a time.
   - [ ] Specify a bounded headless CLI profile (UTF-8 streams, argv/env
     allowlist, exit status), then an additive semantic TUI profile.

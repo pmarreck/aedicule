@@ -132,6 +132,28 @@ fn archive_requires_epub_style_aedicule_mimetype_sentinel() {
 }
 
 #[test]
+fn bundled_vibesteroids_package_is_a_runnable_audio_application() {
+    let package = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("demos/vibesteroids.aed");
+    let source = PluginSource::Archive(package);
+    let wat = String::from_utf8(read_application_file(&source, "code.wat").unwrap()).unwrap();
+    assert!(wat.contains("AE_sample_asset"));
+    assert!(wat.contains("AE_sample_play"));
+    assert!(wat.contains("(func (export \"AE_state_schema\") (result i32) i32.const 11)"));
+    assert_eq!(
+        read_application_file(&source, "assets/audio/satellite-destroyed.flac")
+            .unwrap()
+            .len(),
+        56_711,
+    );
+    assert!(
+        read_application_file(&source, "tests/main.wast")
+            .unwrap()
+            .len()
+            > 1_000_000,
+    );
+}
+
+#[test]
 fn package_paths_cannot_become_windows_drive_relative_extraction_paths() {
     let temporary = temporary_directory("windows-drive-path");
     let application = temporary.join("application");
