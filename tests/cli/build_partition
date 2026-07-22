@@ -37,6 +37,12 @@ else
 		elif [[ ! -f "$frontplane_source/WAT_ABI.md" ]]; then
 			printf 'frontplane source lacks WAT_ABI.md\n' >&2
 			failures=$((failures + 1))
+		elif [[ ! -f "$frontplane_source/assets/fonts/GeistMono-Regular.ttf" ]]; then
+			printf 'frontplane source lacks bundled Geist Mono\n' >&2
+			failures=$((failures + 1))
+		elif [[ ! -f "$frontplane_source/assets/fonts/OFL.txt" ]]; then
+			printf 'frontplane source lacks the Geist Mono license\n' >&2
+			failures=$((failures + 1))
 		elif [[ -e "$frontplane_source/README.md" ]]; then
 			printf 'frontplane source unexpectedly contains README.md\n' >&2
 			failures=$((failures + 1))

@@ -1,0 +1,3 @@
+# Preserve upstream legal text byte-for-byte without treating its historical
+# trailing space as an Aedicule source-formatting defect.
+assets/fonts/OFL.txt -whitespace

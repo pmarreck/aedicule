@@ -105,6 +105,12 @@
       appears instead of assuming both become ready atomically; cover the CI
       race with an injected no-sleep unit regression and the real Pages-style
       Chrome probe. (2026-07-22 16:26 EDT)
+    - [x] Install cross-built release executables directly instead of letting
+      nixpkgs duplicate GPUI's entire target tree after compilation.
+      (2026-07-22 17:00 EDT; reproduced from GitHub's post-build ENOSPC log and
+      covered by the CI-structure gate.)
+      Curiosity poke: verify every target keeps the expected executable suffix
+      and no delivery closure depends on discarded build artifacts.
   - [ ] Re-run the browser startup probe and obtain Peter's iPhone visual
     acceptance before describing the web demos as playable.
     (Headless Ulam Flower and Vibesteroids startup/input probes passed
@@ -137,6 +143,20 @@
     guest may toggle the engine collector after instantiation.
   - Curiosity poke: can a separately owned editor guest falsify the protocol
     before packed document encoding or multiple-window support adds complexity?
+
+- [ ] Make Geist Mono Regular a portable numerical-data face.
+  - [x] Bundle and register the exact OFL-1.1 font on native and web hosts, then
+    expose a versioned integer WAT selector while preserving `AE_text` as the
+    default platform face.
+    (2026-07-22 17:12 EDT; ABI v0.2 adds float and zero-float Q16.16 imports,
+    exact minor-version admission, SVG parity, and release license payloads.)
+    Curiosity poke: reject unknown faces atomically instead of silently
+    substituting a proportional font that can corrupt numerical alignment.
+  - [ ] Specify package-supplied font handles only after `.aed` assets reach the
+    browser adapter with the same validation, size limits, and family identity
+    rules as native delivery.
+    Curiosity poke: internal family-name collisions must not let one guest font
+    unpredictably replace another across hot reloads.
 
 - [ ] Add a zero-float WAT profile with exact integer host controls,
   deterministic trig, and Q16.16 vector paths for Ulam/Uzumaki-class clients.

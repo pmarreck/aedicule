@@ -88,6 +88,13 @@ GUI message remains visible; the terminal line is for launchers, CI, and logs.
 See [WAT_ABI.md](WAT_ABI.md) for the generated client ABI reference and
 [SPEC.md](SPEC.md) for the threat model.
 
+ABI v0.2 adds a portable text-face selector. Existing `AE_text` calls retain
+the platform UI face; `AE_text_font` and its zero-float Q16.16 counterpart can
+select the bundled **Geist Mono Regular** face for aligned numerical data.
+Native, browser, and headless adapters use the same family identity, and every
+delivery carries the font's OFL-1.1 license. Package-supplied custom fonts are
+specified future work, not silently treated as available today.
+
 ## What the POC proves
 
 - Direct WAT can own nontrivial deterministic application state and behavior.
@@ -282,6 +289,7 @@ Known limits:
 | `src/main.rs` | Native GPUI adapter, input, menus, synthesized/sample audio, scheduling, and live reload |
 | `src/bin/gpui-wasm-render.rs` | Deterministic headless SVG adapter |
 | `src/wat_abi.rs` | Declarative source for the generated WAT ABI reference |
+| `assets/fonts/` | Pinned Geist Mono Regular payload, OFL-1.1 license, and provenance |
 | `VIEW_PROTOCOL.md` | Proposed general semantic UI and application-capability architecture |
 | `src/fallback.wat` | Stable neutral ABI-conformance fallback |
 | `WAT_ABI.md` | Generated complete reference for WAT application authors |

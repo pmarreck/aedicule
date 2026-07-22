@@ -19,9 +19,9 @@ v0 capability model is broadly reusable.
 
 **Proof-of-concept status:** successful. Native rendering, timestamped input,
 guest-rate absolute-deadline scheduling, generated audio, bounded packaged FLAC
-samples, deterministic headless SVG, bounded guest execution, snapshots, and
-state-preserving live reload all work on the exercised NixOS path. ABI and
-cross-platform stability remain pre-production.
+samples, portable bundled Geist Mono text, deterministic headless SVG, bounded
+guest execution, snapshots, and state-preserving live reload all work on the
+exercised NixOS path. ABI and cross-platform stability remain pre-production.
 
 **Main branch:** yolo
 
@@ -49,6 +49,11 @@ constituents and their build manifest.
 
 **Command frame** — a finite host-owned immutable list of scene, audio, and
 effect requests emitted during a guest lifecycle call.
+
+**Portable text face** — an integer-selected font whose exact bytes and family
+identity are supplied by Aedicule rather than assumed to exist on the host.
+ABI v0.2 defines the platform default and bundled Geist Mono Regular; custom
+package fonts remain pending browser asset transport and collision-safe IDs.
 
 **Aedicule View Protocol (AVP)** — the proposed platform-neutral semantic UI
 plane. Its immutable keyed unit is a **view document**. The implemented

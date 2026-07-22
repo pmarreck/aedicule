@@ -71,6 +71,10 @@ pub const MAX_SIMULATION_HZ: u32 = 1_000;
 pub const MAX_TICK_RATE_DENOMINATOR: u32 = 1_000_000;
 /// Stable terminal prefix for rejected external WAT sources.
 pub const WAT_REJECTION_DIAGNOSTIC_PREFIX: &str = "AEDICULE_WAT_REJECTED";
+/// Exact OFL-1.1 Geist Mono Regular payload registered by every GUI adapter.
+pub const GEIST_MONO_REGULAR: &[u8] = include_bytes!("../assets/fonts/GeistMono-Regular.ttf");
+/// Stable family identity encoded in the bundled font's OpenType name table.
+pub const GEIST_MONO_FAMILY: &str = "Geist Mono";
 
 /// Immutable virtual-root files admitted by an application I/O adapter before
 /// guest instantiation; only explicit capability imports can observe them.
@@ -1240,6 +1244,27 @@ pub enum ImageFormat {
     RawRgba,
 }
 
+/// Portable WAT-facing text-face selectors; explicit variants prevent a
+/// missing host font from silently changing numerical layout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+pub enum TextFont {
+    PlatformDefault = 0,
+    GeistMonoRegular = 1,
+}
+
+impl TryFrom<i32> for TextFont {
+    type Error = ();
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::PlatformDefault),
+            1 => Ok(Self::GeistMonoRegular),
+            _ => Err(()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImageResource {
     pub id: u32,
@@ -1277,6 +1302,7 @@ pub enum DrawCommand {
         size: f32,
         rgba: u32,
         centered: bool,
+        font: TextFont,
     },
     Path {
         id: u32,
@@ -1395,13 +1421,18 @@ pub fn render_svg(frame: &FrameOutput, logical_width: f32, logical_height: f32) 
                 size,
                 rgba,
                 centered,
+                font,
             } => {
                 let (color, opacity) = svg_color(*rgba);
                 write!(
                     svg,
-                    "<text data-command-id=\"{id}\" x=\"{}\" y=\"{}\" font-family=\"sans-serif\" font-size=\"{}\" fill=\"{color}\"",
+                    "<text data-command-id=\"{id}\" x=\"{}\" y=\"{}\" font-family=\"{}\" font-size=\"{}\" fill=\"{color}\"",
                     svg_number(*x),
                     svg_number(*y),
+                    match font {
+                        TextFont::PlatformDefault => "sans-serif",
+                        TextFont::GeistMonoRegular => GEIST_MONO_FAMILY,
+                    },
                     svg_number(*size),
                 )
                 .unwrap();
@@ -1786,6 +1817,8 @@ pub enum FrontplaneError {
     MissingExport { name: &'static str },
     #[error("ABI major mismatch: host {expected}, plugin {found}")]
     WrongAbi { expected: i32, found: i32 },
+    #[error("ABI minor mismatch: host supports 0..={supported}, plugin requires {found}")]
+    UnsupportedAbiMinor { supported: i32, found: i32 },
     #[error("plugin tick rate {found} Hz is outside the supported 1..={maximum} range")]
     InvalidSimulationHz { found: i32, maximum: u32 },
     #[error(
@@ -2116,7 +2149,13 @@ impl Frontplane {
             });
         }
         let abi_minor_function = frontplane.exports.abi_minor.clone();
-        let _ = frontplane.call_value("AE_abi_minor", abi_minor_function)?;
+        let abi_minor = frontplane.call_value("AE_abi_minor", abi_minor_function)?;
+        if !(0..=ABI_MINOR).contains(&abi_minor) {
+            return Err(FrontplaneError::UnsupportedAbiMinor {
+                supported: ABI_MINOR,
+                found: abi_minor,
+            });
+        }
         Ok(frontplane)
     }
 
@@ -3737,29 +3776,99 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
              size: f32,
              rgba: i32,
              flags: i32| {
-                let max_abs = caller.data().limits.max_coordinate_abs;
-                if !bounded_finite(&[x, y, size], max_abs) || size < 0.0 || flags & !1 != 0 {
+                push_text_command(
+                    &mut caller,
+                    id,
+                    ptr,
+                    len,
+                    x,
+                    y,
+                    size,
+                    rgba,
+                    TextFont::PlatformDefault,
+                    flags,
+                    "text",
+                )
+            },
+        )
+        .map_err(runtime_error)?;
+    linker
+        .func_wrap(
+            WAT_IMPORT_MODULE,
+            "AE_text_font",
+            |mut caller: Caller<'_, HostState>,
+             id: i32,
+             ptr: i32,
+             len: i32,
+             x: f32,
+             y: f32,
+             size: f32,
+             rgba: i32,
+             font: i32,
+             flags: i32| {
+                let Ok(font) = TextFont::try_from(font) else {
                     return caller
                         .data_mut()
-                        .reject(PendingError::InvalidNumber("text"), -5);
-                }
-                let text = match read_string(&mut caller, ptr, len, "text") {
-                    Ok(text) => text,
-                    Err(error) => return caller.data_mut().reject(error, -3),
+                        .reject(PendingError::InvalidNumber("text font"), -5);
                 };
-                push_command(
-                    caller.data_mut(),
-                    id as u32,
-                    DrawCommand::Text {
-                        id: id as u32,
-                        text,
-                        x,
-                        y,
-                        size,
-                        rgba: rgba as u32,
-                        centered: flags & 1 != 0,
-                    },
-                    "text",
+                push_text_command(
+                    &mut caller,
+                    id,
+                    ptr,
+                    len,
+                    x,
+                    y,
+                    size,
+                    rgba,
+                    font,
+                    flags,
+                    "text font",
+                )
+            },
+        )
+        .map_err(runtime_error)?;
+    linker
+        .func_wrap(
+            WAT_IMPORT_MODULE,
+            "AE_text_font_q16",
+            |mut caller: Caller<'_, HostState>,
+             id: i32,
+             ptr: i32,
+             len: i32,
+             x: i32,
+             y: i32,
+             size: i32,
+             rgba: i32,
+             font: i32,
+             flags: i32| {
+                let max_abs = caller.data().limits.max_coordinate_abs;
+                let Some((x, y)) = q16_point(x, y, max_abs) else {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::InvalidNumber("text font"), -5);
+                };
+                let Some(size) = q16_logical(size, max_abs) else {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::InvalidNumber("text font"), -5);
+                };
+                let Ok(font) = TextFont::try_from(font) else {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::InvalidNumber("text font"), -5);
+                };
+                push_text_command(
+                    &mut caller,
+                    id,
+                    ptr,
+                    len,
+                    x,
+                    y,
+                    size,
+                    rgba,
+                    font,
+                    flags,
+                    "text font",
                 )
             },
         )
@@ -3913,6 +4022,49 @@ fn read_string(
     let bytes = read_bytes(caller, pointer, length, max_bytes, operation)?;
     let text = std::str::from_utf8(&bytes).map_err(|_| PendingError::InvalidUtf8(operation))?;
     Ok(text.to_owned())
+}
+
+/// Converts one validated UTF-8 text import into the immutable scene command
+/// shared by floating-point and exact Q16.16 guest profiles.
+#[allow(clippy::too_many_arguments)]
+fn push_text_command(
+    caller: &mut Caller<'_, HostState>,
+    id: i32,
+    pointer: i32,
+    length: i32,
+    x: f32,
+    y: f32,
+    size: f32,
+    rgba: i32,
+    font: TextFont,
+    flags: i32,
+    operation: &'static str,
+) -> i32 {
+    let max_abs = caller.data().limits.max_coordinate_abs;
+    if !bounded_finite(&[x, y, size], max_abs) || size < 0.0 || flags & !1 != 0 {
+        return caller
+            .data_mut()
+            .reject(PendingError::InvalidNumber(operation), -5);
+    }
+    let text = match read_string(caller, pointer, length, operation) {
+        Ok(text) => text,
+        Err(error) => return caller.data_mut().reject(error, -3),
+    };
+    push_command(
+        caller.data_mut(),
+        id as u32,
+        DrawCommand::Text {
+            id: id as u32,
+            text,
+            x,
+            y,
+            size,
+            rgba: rgba as u32,
+            centered: flags & 1 != 0,
+            font,
+        },
+        operation,
+    )
 }
 
 /// Copies a bounded slice out of guest linear memory without exposing borrowed

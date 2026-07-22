@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     cell::RefCell,
     collections::{HashMap, VecDeque},
     env,
@@ -25,12 +26,12 @@ use gpui_component::{
 };
 use gpui_wasm::{
     AudioEvent, ControlLabelPlacement, ControlPhase, DEFAULT_PLUGIN_ENV, Event, FALLBACK_WAT,
-    FileRevision, FrameOutput, Frontplane, HostEffect, Key, LaunchAction, Limits, Metadata,
-    PluginInit, PluginSource, PointerButton, PointerScrollUnit, Rect, RevisionTracker, SampleAsset,
-    SampleAudioEvent, SimulationCall, SimulationScheduler, SliderControl, StateTransfer,
-    SynthFilter, SynthVoice, SynthWaveform, WatRejectionStage, WebServer, depackage_application,
-    discover_web_runtime, display_refresh_rate_from_environment, file_url_to_path,
-    format_wat_rejection_diagnostic, initialize_frontplane, package_application,
+    FileRevision, FrameOutput, Frontplane, GEIST_MONO_REGULAR, HostEffect, Key, LaunchAction,
+    Limits, Metadata, PluginInit, PluginSource, PointerButton, PointerScrollUnit, Rect,
+    RevisionTracker, SampleAsset, SampleAudioEvent, SimulationCall, SimulationScheduler,
+    SliderControl, StateTransfer, SynthFilter, SynthVoice, SynthWaveform, WatRejectionStage,
+    WebServer, depackage_application, discover_web_runtime, display_refresh_rate_from_environment,
+    file_url_to_path, format_wat_rejection_diagnostic, initialize_frontplane, package_application,
     prepare_reload_with_assets, read_application_assets, read_application_file, resolve_launch,
     run_application_tests,
 };
@@ -1627,6 +1628,9 @@ fn run_application(startup: Startup) {
     });
     app.run(move |cx| {
         gpui_component::init(cx);
+        cx.text_system()
+            .add_fonts(vec![Cow::Borrowed(GEIST_MONO_REGULAR)])
+            .expect("register bundled Geist Mono Regular");
         cx.bind_keys([
             KeyBinding::new("ctrl-n", NewApplication, None),
             KeyBinding::new("f1", ShowHelp, None),

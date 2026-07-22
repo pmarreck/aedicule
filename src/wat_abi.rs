@@ -5,7 +5,7 @@
 use std::fmt::Write as _;
 
 pub const ABI_MAJOR: i32 = 0;
-pub const ABI_MINOR: i32 = 1;
+pub const ABI_MINOR: i32 = 2;
 pub const IMPORT_MODULE: &str = "aedicule.v0";
 
 /// One capability import exposed to an Aedicule WAT application.
@@ -173,6 +173,16 @@ pub const WAT_ABI_IMPORTS: &[WatAbiImport] = &[
         summary: "Draws UTF-8 text; `flags & 1` centers it.",
     },
     WatAbiImport {
+        name: "AE_text_font",
+        signature: "(param id i32) (param ptr i32) (param len i32) (param x f32) (param y f32) (param size f32) (param rgba i32) (param font i32) (param flags i32) (result i32)",
+        summary: "Draws UTF-8 text with an explicit portable face: `font = 0` is the platform default, `1` is bundled Geist Mono Regular, and `flags & 1` centers it.",
+    },
+    WatAbiImport {
+        name: "AE_text_font_q16",
+        signature: "(param id i32) (param ptr i32) (param len i32) (param x_q16 i32) (param y_q16 i32) (param size_q16 i32) (param rgba i32) (param font i32) (param flags i32) (result i32)",
+        summary: "Integer-profile counterpart to `AE_text_font`; position and size are signed Q16.16 and the stable face selectors are identical.",
+    },
+    WatAbiImport {
         name: "AE_frame_end",
         signature: "(result i32)",
         summary: "Completes the current frame after all path and transform stacks balance.",
@@ -206,6 +216,10 @@ pub fn wat_abi_markdown() -> String {
     );
 
     document.push_str(
+        "## ABI compatibility\n\nThe major version must match exactly. Aedicule accepts guest minor versions from `0` through its documented host minor so older guests remain runnable; negative or future minor versions are rejected before configuration. A guest must raise its declared minor when it requires an import or behavior introduced by that revision.\n\n",
+    );
+
+    document.push_str(
         "## Input events\n\n`AE_event(kind, code, a, b)` and its integer-profile counterpart `AE_event_i32(kind, code, a, b)` carry host input at an ordered fixed-step boundary. A host may omit an event kind it cannot observe, but it must not invent application semantics. In the integer profile, logical-pixel values use signed Q16.16; IDs, flags, and the display-rate denominator remain ordinary unscaled integers.\n\n| Kind | Event | `code`, `a`, `b` |\n| ---: | --- | --- |\n| 1 | Key down | `code` is a physical-key ID; `a = b = 0` |\n| 2 | Key up | Same key ID; `a = b = 0` |\n| 3 | Pointer move | `code = 0`; `a = x`, `b = y` logical pixels |\n| 4 | Pointer down | `code` is button ID; `a = x`, `b = y` logical pixels |\n| 5 | Pointer up | `code` is button ID; `a = x`, `b = y` logical pixels |\n| 6 | Viewport | `code = 0`; `a = width`, `b = height` logical pixels |\n| 7 | Menu action | `code` is the guest-declared action ID; `a = b = 0` |\n| 8 | Focus | `code = 1` when focused, `0` when unfocused; `a = b = 0` |\n| 9 | Display refresh | `code = numerator_hz`; `a = denominator`, `b = 0` |\n| 10 | Pointer scroll | `code` is unit ID; `a = horizontal delta`, `b = vertical delta` |\n\nPhysical-key IDs are `1` left, `2` right, `3` up, `4` space, `5` P, `6` R, `7` F, `8` K, `9` B, `10` H, `11` Escape, and `12` F1. Pointer button IDs are `1` primary/left, `2` secondary/right, and `3` middle/wheel-click. Native and browser canvas adapters emit down and up edges for all three IDs.\n\nPointer-scroll unit IDs are `1` lines and `2` logical pixels. Positive `a` means leftward motion; positive `b` means upward motion. Hosts preserve both axes and omit zero-delta scroll events.\n\n",
     );
 
@@ -222,7 +236,7 @@ pub fn wat_abi_markdown() -> String {
     }
 
     document.push_str(
-        "## Stable draw IDs\n\nEvery non-composition draw ID is unique **across all primitive kinds within one frame**: a path, line, circle, text, or sprite cannot reuse another primitive's ID. The set resets at the next successful frame begin, so the same semantic object should normally reuse its ID in later frames.\n\n",
+        "## Portable text faces\n\n`AE_text` remains source-compatible and uses the active platform UI face. `AE_text_font` and `AE_text_font_q16` accept stable selector `0` for that platform default or `1` for Aedicule's embedded Geist Mono Regular. Selector `1` is registered from identical OFL-1.1 font bytes in native and browser adapters, so aligned numerical data never depends on host installation. Unknown selectors reject the complete render transaction rather than silently substituting a proportional face. Package-supplied font handles are not part of ABI v0.2; they require bounded `.aed` asset transport and collision-safe family identities in every adapter.\n\n## Stable draw IDs\n\nEvery non-composition draw ID is unique **across all primitive kinds within one frame**: a path, line, circle, text, or sprite cannot reuse another primitive's ID. The set resets at the next successful frame begin, so the same semantic object should normally reuse its ID in later frames.\n\n",
     );
 
     document.push_str(

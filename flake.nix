@@ -127,6 +127,7 @@
 									"/Cargo.lock"
 									"/WAT_ABI.md"
 									"/assets"
+									"/assets/fonts"
 									"/assets/icons"
 									"/assets/icons/Aedicule.ico"
 									"/packaging"
@@ -137,6 +138,7 @@
 									"/web"
 									"/web/cargo-config.toml"
 								]
+								|| pkgs.lib.hasPrefix "/assets/fonts/" relative
 								|| pkgs.lib.hasPrefix "/src/" relative
 								|| pkgs.lib.hasPrefix "/third_party/" relative
 								;
@@ -289,6 +291,8 @@
 							targetLinux = targetPkgs.stdenv.hostPlatform.isLinux;
 							targetLlvmWindows = targetPkgs.stdenv.hostPlatform.isWindows
 								&& (targetPkgs.stdenv.hostPlatform.useLLVM or false);
+							targetRustTarget = targetPkgs.stdenv.hostPlatform.rust.cargoShortTarget;
+							binaryName = "gpui-wasm${targetPkgs.stdenv.hostPlatform.extensions.executable}";
 						in targetPkgs.rustPlatform.buildRustPackage {
 							pname = "aedicule-${targetName}";
 							inherit version;
@@ -315,6 +319,16 @@
 							stripDebugFlags = if targetPkgs.stdenv.hostPlatform.isWindows
 								then [ "--strip-all" ]
 								else [ "-S" "-p" ];
+							# The generic cargo install hook clones the complete release tree
+							# before selecting binaries. GPUI makes that tree several GiB, so
+							# install the one requested cross-target executable directly.
+							installPhase = ''
+								runHook preInstall
+								binaryName="${binaryName}"
+								binary="target/${targetRustTarget}/release/${binaryName}"
+								install -Dm755 "$binary" "$out/bin/$binaryName"
+								runHook postInstall
+							'';
 							buildInputs = targetPkgs.lib.optionals targetLinux
 								(linuxLibraries targetPkgs);
 						};
@@ -381,6 +395,8 @@
 								$out/share/aedicule/demos/vibesteroids.wat
 							install -Dm644 ${./demos/manifest.tsv} \
 								$out/share/aedicule/demos/manifest.tsv
+							install -Dm644 ${./assets/fonts/OFL.txt} \
+								$out/share/licenses/aedicule/GeistMono-OFL.txt
 							${pkgs.lib.optionalString (system == "x86_64-linux" && targetName == "linux-x86_64") ''
 								env -i HOME=$TMPDIR PATH=${pkgs.bash}/bin:${pkgs.coreutils}/bin \
 									${pkgs.bash}/bin/bash $out/bin/aedicule --help >/dev/null
@@ -402,6 +418,8 @@
 							cp ${./demos/ulam-flower.wat} $out/Demos/ulam-flower.wat
 							cp ${./demos/vibesteroids.wat} $out/Demos/vibesteroids.wat
 							cp ${./demos/manifest.tsv} $out/Demos/manifest.tsv
+							install -Dm644 ${./assets/fonts/OFL.txt} \
+								$out/ThirdPartyLicenses/GeistMono-OFL.txt
 						'';
 					mkMacosDelivery = raw:
 						pkgs.runCommand "aedicule-delivery-macos-aarch64" {
@@ -426,6 +444,8 @@
 							cp ${./demos/ulam-flower.wat} $app/Contents/Resources/Demos/ulam-flower.wat
 							cp ${./demos/vibesteroids.wat} $app/Contents/Resources/Demos/vibesteroids.wat
 							cp ${./demos/manifest.tsv} $app/Contents/Resources/Demos/manifest.tsv
+							install -Dm644 ${./assets/fonts/OFL.txt} \
+								$app/Contents/Resources/ThirdPartyLicenses/GeistMono-OFL.txt
 						'';
 					archiveName = targetName: extension:
 						"aedicule-${version}-${targetName}.${extension}";
@@ -597,6 +617,8 @@
 							install -Dm644 ${./web/coi-serviceworker.js} $out/coi-serviceworker.js
 							install -Dm644 ${./packaging/web/manifest.webmanifest} $out/manifest.webmanifest
 							install -Dm644 ${./assets/icons/aedicule-app.png} $out/icon.png
+							install -Dm644 ${./assets/fonts/OFL.txt} \
+								$out/ThirdPartyLicenses/GeistMono-OFL.txt
 							cp bindgen/aedicule_web.js bindgen/aedicule_web_bg.wasm $out/
 						'';
 					};

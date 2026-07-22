@@ -1,7 +1,7 @@
 //! Browser GPUI entrypoint for the portable, fuel-metered Aedicule runtime.
 
 #[cfg(target_family = "wasm")]
-use std::cell::OnceCell;
+use std::{borrow::Cow, cell::OnceCell};
 
 #[cfg_attr(not(target_family = "wasm"), allow(unused_imports))]
 use gpui::{
@@ -12,7 +12,7 @@ use gpui::{
 };
 #[cfg_attr(not(target_family = "wasm"), allow(unused_imports))]
 use gpui_wasm::{
-    Event, PluginInit, PointerButton, PointerScrollUnit,
+    Event, GEIST_MONO_REGULAR, PluginInit, PointerButton, PointerScrollUnit,
     gpui_canvas::paint_frame,
     web::{BROWSER_WAT_GLOBAL, BrowserRuntime, required_browser_wat},
 };
@@ -257,6 +257,9 @@ fn main() {
         .expect("Aedicule browser code.wat initializes and renders");
 
     let application = gpui_platform::single_threaded_web().run_embedded(move |cx: &mut App| {
+        cx.text_system()
+            .add_fonts(vec![Cow::Borrowed(GEIST_MONO_REGULAR)])
+            .expect("register bundled Geist Mono Regular");
         let bounds = Bounds::centered(None, size(px(1024.0), px(768.0)), cx);
         cx.open_window(
             WindowOptions {

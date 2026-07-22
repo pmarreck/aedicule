@@ -1,4 +1,4 @@
-use gpui_wasm::{Affine, DrawCommand, FrameOutput, Point, Rect, render_svg};
+use gpui_wasm::{Affine, DrawCommand, FrameOutput, Point, Rect, TextFont, render_svg};
 
 #[test]
 fn svg_export_is_a_complete_deterministic_visual_artifact() {
@@ -39,6 +39,7 @@ fn svg_export_is_a_complete_deterministic_visual_artifact() {
                 size: 18.0,
                 rgba: 0xffffffff,
                 centered: true,
+                font: TextFont::PlatformDefault,
             },
             DrawCommand::Sprite {
                 id: 4,

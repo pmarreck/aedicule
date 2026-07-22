@@ -4,10 +4,11 @@
 //! frame, which lets native and browser frontplanes share identical painting.
 
 use gpui::{
-    App, Bounds, Hsla, PathBuilder, SharedString, TextAlign, TextRun, Window, point, px, rgba,
+    App, Bounds, Font, Hsla, PathBuilder, SharedString, TextAlign, TextRun, Window, font, point,
+    px, rgba,
 };
 
-use crate::{Affine, DrawCommand, FrameOutput, PathSegment};
+use crate::{Affine, DrawCommand, FrameOutput, GEIST_MONO_FAMILY, PathSegment, TextFont};
 
 #[derive(Clone, Copy)]
 struct Matrix(Affine);
@@ -125,6 +126,7 @@ pub fn paint_frame(
                 size,
                 rgba: color,
                 centered,
+                font: text_font,
                 ..
             } => {
                 let matrix = *matrices.last().unwrap();
@@ -132,7 +134,7 @@ pub fn paint_frame(
                 let text = SharedString::from(text.clone());
                 let run = TextRun {
                     len: text.len(),
-                    font: window.text_style().font(),
+                    font: resolve_text_font(*text_font, window.text_style().font()),
                     color: Hsla::from(rgba(*color)),
                     background_color: None,
                     underline: None,
@@ -202,6 +204,33 @@ pub fn paint_frame(
                 }
             }
         }
+    }
+}
+
+/// Maps the adapter-neutral WAT selector to a registered GPUI face while
+/// retaining the active platform text style for legacy `AE_text` commands.
+fn resolve_text_font(text_font: TextFont, platform_default: Font) -> Font {
+    match text_font {
+        TextFont::PlatformDefault => platform_default,
+        TextFont::GeistMonoRegular => font(GEIST_MONO_FAMILY),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bundled_monospace_selector_is_independent_of_the_platform_default() {
+        let platform = font("Example Proportional UI");
+        assert_eq!(
+            resolve_text_font(TextFont::PlatformDefault, platform.clone()),
+            platform
+        );
+        assert_eq!(
+            resolve_text_font(TextFont::GeistMonoRegular, font("ignored")).family,
+            GEIST_MONO_FAMILY
+        );
     }
 }
 

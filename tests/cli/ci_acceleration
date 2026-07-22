@@ -61,4 +61,10 @@ require_text "$release" './check_reproducible "${{ matrix.target }}"' 'release w
 require_text "$release" 'actions/upload-artifact@v4' 'release workflow'
 require_text "$release" 'actions/download-artifact@v5' 'release workflow'
 
+# nixpkgs' default cargo install hook copies the complete cross-compilation
+# target tree to release-tmp. GPUI's dependency graph can exhaust a clean
+# runner after the actual compilation has already succeeded, so cross targets
+# must install only the requested executable.
+require_text "$root/flake.nix" 'install -Dm755 "$binary" "$out/bin/$binaryName"' 'cross-target packaging'
+
 exit "$failures"
