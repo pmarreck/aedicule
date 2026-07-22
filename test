@@ -62,6 +62,8 @@ run_check ./tests/cli/macos_reproducibility
 run_check ./tests/cli/reproducible_releases
 run_check ./tests/cli/web_i18n
 run_check ./tests/cli/github_pages
+run_check ./tests/cli/ci_acceleration
+run_check ./tests/cli/rust_dependency_cache
 run_check cargo test --no-default-features --features native-runtime
 run_check cargo test --no-default-features --features portable-runtime
 run_check cargo test --lib --no-default-features --features web web::tests

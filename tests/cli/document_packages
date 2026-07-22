@@ -8,7 +8,7 @@ failures=0
 require_text() {
 	file=$1
 	needle=$2
-	if [[ ! -f "$root/$file" ]] || ! rg -F "$needle" "$root/$file" >/dev/null; then
+	if [[ ! -f "$root/$file" ]] || ! rg -F -- "$needle" "$root/$file" >/dev/null; then
 		printf '%s does not declare %s\n' "$file" "$needle" >&2
 		failures=$((failures + 1))
 	fi
@@ -46,6 +46,12 @@ require_text packaging/web/manifest.webmanifest '"name": "Aedicule"'
 require_text web/index.html 'rel="icon"'
 require_text web/index.html 'rel="manifest"'
 require_text flake.nix 'cp ${./demos/manifest.tsv} $out/manifest.tsv'
+require_text flake.nix 'cp -R ${self.packages.${system}.webRuntime}/. $out/share/aedicule/web/'
+require_text flake.nix 'cp -R ${self.packages.${system}.webRuntime}/. $out/Web/'
+require_text flake.nix 'cp -R ${self.packages.${system}.webRuntime}/. $app/Contents/Resources/Web/'
+require_text flake.nix '--set AEDICULE_WEB_RUNTIME ${self.packages.${system}.webRuntime}'
+require_text src/web_server.rs 'Cross-Origin-Embedder-Policy: require-corp'
+require_text src/web_server.rs 'Cross-Origin-Opener-Policy: same-origin'
 
 library_scan_loops=$(rg -F 'for libraryDirectory in "$storePath/lib" "$storePath/lib64"; do' \
 	"$root/flake.nix" | wc -l)

@@ -1,5 +1,33 @@
 # Plan
 
+- [ ] Make `.aed` the portable application unit without sacrificing the bare
+  WAT edit/run loop.
+  - [x] Specify and test deterministic stored-ZIP packaging, safe depackaging,
+    and byte-identical application lookup across WAT, directory, and archive.
+    (2026-07-22 13:57 EDT)
+  - [x] Add `--package` / `--depackage` CLI actions with derived output names,
+    spaces in paths, clean diagnostics, and no source-tree mutation.
+    (2026-07-22 13:57 EDT)
+  - [x] Make `--test` require `tests/main.wast`, run every direct
+    `tests/*.wast` suite in deterministic PCG32/Fisher-Yates order with an
+    emitted replay seed, and ignore nested WAST composition fragments across
+    bare-WAT virtual roots, directories, and `.aed` archives.
+    (2026-07-22 13:57 EDT)
+  - [ ] Add `--scaffold PROJECT` with a runnable guest, `aedicule.toml`, a
+    passing `tests/main.wast`, documented empty asset/lib roots, and strict
+    refusal to overwrite or invent licensing.
+  - [x] Add a loopback-safe `--web` adapter that serves any application source
+    through the pinned browser runtime, prints its URL, and emits COOP/COEP.
+    (2026-07-22 13:57 EDT)
+  - [x] Carry the browser runtime in native deliveries and test runtime
+    discovery without host-specific paths.
+    (2026-07-22 13:57 EDT)
+  - [ ] Expose declared package assets to WAT through the separately specified
+    bounded image/sample ABI; do not grant arbitrary virtual-filesystem reads.
+  - Curiosity poke: non-loopback browsers require a secure context as well as
+    COOP/COEP, so remote/tailnet serving needs an explicit TLS/reverse-proxy
+    contract rather than silently printing an unusable HTTP URL.
+
 - [ ] Publish the bundled browser demos as a concise, modern GitHub Pages site.
   - [x] Add a deterministic Pages workflow that deploys the exact
     `delivery-web` output from `yolo`.
@@ -76,6 +104,11 @@
   - [ ] Deliver the general forms slice through desktop, browser, and headless
     adapters before claiming general-application support.
   - [ ] Add explicit asynchronous capability profiles one service at a time.
+  - [ ] Specify a bounded headless CLI profile (UTF-8 streams, argv/env
+    allowlist, exit status), then an additive semantic TUI profile.
+  - [ ] Specify pre-instantiation Wasm-GC policy in application metadata;
+    linear-memory guests and short-lived CLI apps default disabled, and no
+    guest may toggle the engine collector after instantiation.
   - Curiosity poke: can a separately owned editor guest falsify the protocol
     before packed document encoding or multiple-window support adds complexity?
 

@@ -97,7 +97,7 @@ fn explicit_file_directory_watch_and_embedded_modes_resolve_predictably() {
     assert_eq!(
         resolve_launch(arguments(&[app_directory.to_str().unwrap()]), &directory).unwrap(),
         LaunchAction::Run {
-            source: PluginSource::File(app_directory.join("code.wat")),
+            source: PluginSource::Directory(app_directory),
             watch: false,
             seed: None,
         }
@@ -119,6 +119,99 @@ fn explicit_file_directory_watch_and_embedded_modes_resolve_predictably() {
         }
     );
     fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn package_depackage_and_web_actions_derive_predictable_paths() {
+    let directory = temporary_directory("package-actions");
+    let app = directory.join("Vibesteroids source");
+    let package = directory.join("Vibesteroids source.aed");
+
+    assert_eq!(
+        resolve_launch(arguments(&["--package", app.to_str().unwrap()]), &directory,).unwrap(),
+        LaunchAction::Package {
+            source: app.clone(),
+            output: package.clone(),
+        }
+    );
+    assert_eq!(
+        resolve_launch(
+            arguments(&["--depackage", package.to_str().unwrap()]),
+            &directory,
+        )
+        .unwrap(),
+        LaunchAction::Depackage {
+            source: package.clone(),
+            output: app.clone(),
+        }
+    );
+    assert_eq!(
+        resolve_launch(
+            arguments(&[
+                "--web",
+                package.to_str().unwrap(),
+                "--port",
+                "0",
+                "--bind",
+                "127.0.0.1",
+            ]),
+            &directory,
+        )
+        .unwrap(),
+        LaunchAction::Web {
+            source: PluginSource::Archive(package),
+            bind: "127.0.0.1".to_owned(),
+            port: 0,
+        }
+    );
+
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn test_action_accepts_bare_wat_directory_and_archive_sources() {
+    let temporary = temporary_directory("test-action");
+    let application = temporary.join("application");
+    fs::create_dir_all(&application).unwrap();
+    let wat = application.join("code.wat");
+    fs::write(&wat, b"(module)").unwrap();
+    let archive = temporary.join("application.aed");
+
+    assert_eq!(
+        resolve_launch(
+            arguments(&["--test", "--seed", "1", wat.to_str().unwrap()]),
+            &temporary,
+        )
+        .unwrap(),
+        LaunchAction::Test {
+            source: PluginSource::File(wat),
+            seed: Some(1),
+        }
+    );
+    assert_eq!(
+        resolve_launch(
+            arguments(&["--test", application.to_str().unwrap()]),
+            &temporary
+        )
+        .unwrap(),
+        LaunchAction::Test {
+            source: PluginSource::Directory(application),
+            seed: None,
+        }
+    );
+    assert_eq!(
+        resolve_launch(
+            arguments(&["--test", archive.to_str().unwrap()]),
+            &temporary
+        )
+        .unwrap(),
+        LaunchAction::Test {
+            source: PluginSource::Archive(archive),
+            seed: None,
+        }
+    );
+
+    fs::remove_dir_all(temporary).unwrap();
 }
 
 #[test]
@@ -151,6 +244,14 @@ fn deterministic_seed_is_validated_and_later_values_override_earlier_ones() {
             source: PluginSource::File(directory.join("game.wat")),
             watch: false,
             seed: Some(99),
+        }
+    );
+    assert_eq!(
+        resolve_launch(arguments(&["--seed", "0x5eedcafe"]), &directory).unwrap(),
+        LaunchAction::Run {
+            source: PluginSource::Embedded,
+            watch: false,
+            seed: Some(0x5eed_cafe),
         }
     );
     assert!(resolve_launch(arguments(&["--seed"]), &directory).is_err());

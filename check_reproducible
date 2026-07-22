@@ -5,7 +5,7 @@ set -u
 root=$(cd "$(dirname "$0")" && pwd -P)
 cd "$root" || exit 1
 
-targets=(
+all_targets=(
 	webRuntime
 	frontplane-macos-aarch64
 	frontplane-linux-aarch64
@@ -13,7 +13,29 @@ targets=(
 	frontplane-linux-x86_64
 	frontplane-windows-x86_64
 )
+targets=("${all_targets[@]}")
 failures=0
+
+if (( $# > 1 )); then
+	printf 'usage: %s [web|macos-aarch64|linux-aarch64|windows-aarch64|linux-x86_64|windows-x86_64]\n' \
+		"${0##*/}" >&2
+	exit 2
+fi
+
+if (( $# == 1 )); then
+	case $1 in
+		web) targets=(webRuntime) ;;
+		macos-aarch64) targets=(frontplane-macos-aarch64) ;;
+		linux-aarch64) targets=(frontplane-linux-aarch64) ;;
+		windows-aarch64) targets=(frontplane-windows-aarch64) ;;
+		linux-x86_64) targets=(frontplane-linux-x86_64) ;;
+		windows-x86_64) targets=(frontplane-windows-x86_64) ;;
+		*)
+			printf 'unsupported delivery target: %s\n' "$1" >&2
+			exit 2
+			;;
+	esac
+fi
 
 system=$(nix eval --impure --raw --expr builtins.currentSystem)
 status=$?

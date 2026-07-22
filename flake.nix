@@ -7,9 +7,10 @@
 			url = "github:nix-community/fenix";
 			inputs.nixpkgs.follows = "nixpkgs";
 		};
+		crane.url = "github:ipetkov/crane";
 	};
 
-	outputs = { self, nixpkgs, fenix }:
+	outputs = { self, nixpkgs, fenix, crane }:
 		let
 			version = "0.1.1";
 			systems = [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" ];
@@ -111,9 +112,10 @@
 					linux = pkgs.stdenv.isLinux;
 					luajitWithPackages = luajitWithPackagesFor pkgs;
 					libcrypto = "${pkgs.openssl.out}/lib/libcrypto${pkgs.stdenv.hostPlatform.extensions.sharedLibrary}";
+					cargoBuildSourceName = "gpui-wasm-build-source";
 					frontplaneSource = builtins.path {
 						path = ./.;
-						name = "gpui-wasm-frontplane-source";
+						name = cargoBuildSourceName;
 						filter = path: type:
 							let
 								root = toString ./.;
@@ -141,7 +143,7 @@
 					};
 					testSource = builtins.path {
 						path = ./.;
-						name = "gpui-wasm-test-source";
+						name = cargoBuildSourceName;
 						filter = path: type:
 							let
 								root = toString ./.;
@@ -152,6 +154,7 @@
 									"/build.rs"
 									"/Cargo.toml"
 									"/Cargo.lock"
+									"/README.md"
 									"/WAT_ABI.md"
 									"/build_all"
 									"/check_reproducible"
@@ -176,11 +179,53 @@
 								|| pkgs.lib.hasPrefix "/tests/" relative
 								|| pkgs.lib.hasPrefix "/web/" relative;
 					};
+					nativeCrane = crane.mkLib pkgs;
+					cargoDependencySource = nativeCrane.mkDummySrc {
+						src = frontplaneSource;
+						# These two local compatibility crates are dependencies, not
+						# application source. Preserve their implementations while Crane
+						# replaces ordinary crate targets with stable dummy sources.
+						extraDummyScript = ''
+							chmod u+w $out/third_party/ztracing/src/lib.rs
+							chmod u+w $out/third_party/ztracing_macro/src/lib.rs
+							cp -R ${./third_party/ztracing/src}/. $out/third_party/ztracing/src/
+							cp -R ${./third_party/ztracing_macro/src}/. \
+								$out/third_party/ztracing_macro/src/
+						'';
+					};
 					applicationCargoDeps = pkgs.rustPlatform.fetchCargoVendor {
 						name = "aedicule-cargo-deps";
-						src = frontplaneSource;
-						hash = "sha256-iY/RKX2noJ3dddy4c8hB1kq2Nsa/8YDzSGpvlVSR0vo=";
+						src = cargoDependencySource;
+						hash = "sha256-YJn9MXVe+BnRfII6aamLRRHWTE9n4avYw9xFPgXF+Ag=";
 					};
+					nativeCommonArgs = {
+						pname = "gpui-wasm";
+						inherit version;
+						src = frontplaneSource;
+						dummySrc = cargoDependencySource;
+						# Keep nixpkgs' fixed-output Cargo vendor layout while Crane splits
+						# dependency compilation from source compilation. The dummy source
+						# makes this dependency derivation stable across Rust-only edits.
+						cargoVendorDir = null;
+						cargoDeps = applicationCargoDeps;
+						cargoExtraArgs = "--bin gpui-wasm";
+						strictDeps = true;
+						nativeBuildInputs = with pkgs; [
+							rustPlatform.cargoSetupHook
+							pkg-config
+							cmake
+							clang
+						];
+						buildInputs = pkgs.lib.optionals linux (linuxLibraries pkgs);
+					};
+					nativeCargoArtifacts = nativeCrane.buildDepsOnly (
+						(builtins.removeAttrs nativeCommonArgs [ "src" ]) // {
+						# The package and warning gates need release artifacts; test-only
+						# dependencies are a smaller delta compiled by the test derivation.
+						doCheck = false;
+						buildPhaseCargoCommand = "cargoWithProfile build --bin gpui-wasm";
+						}
+					);
 					gpuiWebFont = path: hash: pkgs.fetchurl {
 						url = "https://raw.githubusercontent.com/pmarreck/zed/7e34550622005f62cd337d465cb5fd25c2ce8bd7/assets/fonts/${path}";
 						inherit hash;
@@ -284,7 +329,8 @@
 						in pkgs.runCommand "aedicule-delivery-${targetName}" {
 							nativeBuildInputs = [ pkgs.patchelf ];
 						} ''
-							mkdir -p $out/bin $out/lib $out/libexec
+							mkdir -p $out/bin $out/lib $out/libexec $out/share/aedicule/web
+							cp -R ${self.packages.${system}.webRuntime}/. $out/share/aedicule/web/
 							while IFS= read -r storePath; do
 								for libraryDirectory in "$storePath/lib" "$storePath/lib64"; do
 									if [[ -d "$libraryDirectory" ]]; then
@@ -340,7 +386,8 @@
 						'';
 					mkWindowsDelivery = targetName: raw:
 						pkgs.runCommand "aedicule-delivery-${targetName}" {} ''
-							mkdir -p $out/Demos $out/Tools
+							mkdir -p $out/Demos $out/Tools $out/Web
+							cp -R ${self.packages.${system}.webRuntime}/. $out/Web/
 							cp ${raw}/bin/gpui-wasm.exe $out/Aedicule.exe
 							while IFS= read -r -d $'\0' runtimeDll; do
 								cp -L "$runtimeDll" $out/
@@ -359,7 +406,8 @@
 							nativeBuildInputs = [ pkgs.imagemagick pkgs.libicns ];
 						} ''
 							app=$out/Aedicule.app
-							mkdir -p $app/Contents/MacOS $app/Contents/Resources/Demos icon-work/app icon-work/document
+							mkdir -p $app/Contents/MacOS $app/Contents/Resources/Demos $app/Contents/Resources/Web icon-work/app icon-work/document
+							cp -R ${self.packages.${system}.webRuntime}/. $app/Contents/Resources/Web/
 							cp ${raw}/bin/gpui-wasm $app/Contents/MacOS/aedicule
 							chmod +x $app/Contents/MacOS/aedicule
 							for size in 16 32 48 128 256 512 1024; do
@@ -456,28 +504,25 @@
 					releaseWindowsX86_64 = mkZipRelease "windows-x86_64" "Aedicule"
 						self.packages.${system}.delivery-windows-x86_64;
 				in {
-					frontplane = pkgs.rustPlatform.buildRustPackage {
-						pname = "gpui-wasm";
-						inherit version;
-						src = frontplaneSource;
-						cargoDeps = applicationCargoDeps;
+					cargo-artifacts-native = nativeCargoArtifacts;
+					frontplane = nativeCrane.buildPackage (nativeCommonArgs // {
+						cargoArtifacts = nativeCargoArtifacts;
 						doCheck = false;
-						nativeBuildInputs = with pkgs; [ pkg-config cmake clang ]
-							++ pkgs.lib.optionals linux [ makeWrapper ];
-						buildInputs = pkgs.lib.optionals linux (linuxLibraries pkgs);
+						nativeBuildInputs = nativeCommonArgs.nativeBuildInputs
+							++ pkgs.lib.optionals linux [ pkgs.makeWrapper ];
 						postFixup = pkgs.lib.optionalString linux ''
 							wrapProgram $out/bin/gpui-wasm \
-								--prefix LD_LIBRARY_PATH : ${pkgs.lib.makeLibraryPath (linuxLibraries pkgs)}
+								--prefix LD_LIBRARY_PATH : ${pkgs.lib.makeLibraryPath (linuxLibraries pkgs)} \
+								--set AEDICULE_WEB_RUNTIME ${self.packages.${system}.webRuntime}
 							'';
 						meta.mainProgram = "gpui-wasm";
-					};
-					test = pkgs.rustPlatform.buildRustPackage {
+					});
+					test = nativeCrane.buildPackage (nativeCommonArgs // {
 						pname = "gpui-wasm-tests";
-						inherit version;
 						src = testSource;
-						cargoDeps = applicationCargoDeps;
+						cargoArtifacts = nativeCargoArtifacts;
 						doCheck = true;
-						nativeBuildInputs = [
+						nativeBuildInputs = nativeCommonArgs.nativeBuildInputs ++ [
 							pkgs.actionlint
 							pkgs.pkg-config
 							pkgs.cmake
@@ -496,6 +541,8 @@
 								tests/cli/document_packages tests/cli/demo_snapshots \
 								tests/cli/macos_reproducibility tests/cli/reproducible_releases \
 								tests/cli/web_i18n tests/cli/github_pages \
+								tests/cli/ci_acceleration \
+								tests/cli/rust_dependency_cache \
 								packaging/macos/canonicalize_uuid check_reproducible
 							cargo test --no-default-features --features native-runtime
 							cargo test --bin gpui-wasm
@@ -510,13 +557,15 @@
 							./tests/cli/reproducible_releases
 							./tests/cli/web_i18n
 							./tests/cli/github_pages
+							./tests/cli/ci_acceleration
+							./tests/cli/rust_dependency_cache
 							runHook postCheck
 						'';
 						installPhase = ''
 							mkdir -p $out
-						touch $out/passed
+							touch $out/passed
 						'';
-					};
+					});
 					webRuntime = (webRustPlatformFor system).buildRustPackage {
 						pname = "aedicule-web-runtime";
 						inherit version;

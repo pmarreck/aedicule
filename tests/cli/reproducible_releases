@@ -93,6 +93,34 @@ else
 		printf 'check_reproducible stopped before checking the complete target set\n' >&2
 		failures=$((failures + 1))
 	fi
+
+	: >"$log"
+	PATH="$fake_bin:$PATH" AEDICULE_REPRO_LOG="$log" \
+		"$root/check_reproducible" windows-aarch64 >"$stdout" 2>"$stderr"
+	status=$?
+	expected_one=$'nix\teval\t--impure\t--raw\t--expr\tbuiltins.currentSystem\n'
+	expected_one+=$'nix\tbuild\t.#frontplane-windows-aarch64\t--no-link\n'
+	expected_one+=$'nix\teval\t--raw\t.#packages.x86_64-linux.frontplane-windows-aarch64.drvPath\n'
+	expected_one+=$'nix-store\t--realise\t--check\t-K\t/nix/store/test-frontplane-windows-aarch64.drv'
+	if (( status != 0 )); then
+		printf 'check_reproducible rejected a supported single target\n' >&2
+		failures=$((failures + 1))
+	elif [[ $(<"$log") != "$expected_one" ]]; then
+		printf 'check_reproducible did not isolate the requested target operation set\n' >&2
+		failures=$((failures + 1))
+	fi
+
+	: >"$log"
+	PATH="$fake_bin:$PATH" AEDICULE_REPRO_LOG="$log" \
+		"$root/check_reproducible" amiga-m68k >"$stdout" 2>"$stderr"
+	status=$?
+	if (( status == 0 )); then
+		printf 'check_reproducible accepted an unsupported delivery target\n' >&2
+		failures=$((failures + 1))
+	elif [[ -s $log ]]; then
+		printf 'check_reproducible invoked Nix for an unsupported delivery target\n' >&2
+		failures=$((failures + 1))
+	fi
 fi
 
 if ! rg -F './check_reproducible' "$root/.github/workflows/release.yml" >/dev/null; then

@@ -1,6 +1,6 @@
 ;; Vibesteroids behavioral conversion for the gpui-frontplane-v0 ABI.
 ;;
-;; Schema 9 stores every gameplay scalar as an integer. Spatial quantities use
+;; Schema 10 stores every gameplay scalar as an integer. Spatial quantities use
 ;; signed decimal fixed point with SCALE = 1,000,000. IEEE-754 values exist
 ;; only at the host ABI boundary: viewport scalars enter through $from_host,
 ;; and completed draw scalars leave through $to_host. They never feed back.
@@ -39,6 +39,8 @@
 ;; 15568: temporary power kind:i32 (0 laser, 1 doubled fire rate)
 ;; 16384: 192 overflow player bullets x 48 bytes, preserving legacy addresses
 ;; 25600: hazardous blast active/attribution:i32, x/y:i64, elapsed ticks:i32
+;; 25632: derelict satellite: active/direction:i32, x/y/vx/vy/dx/dy/radius:i64,
+;;        spin/ping/pulse/spawn-countdown:i32
 (module
 	(import "aedicule.v0" "AE_title" (func $title (param i32 i32) (result i32)))
 	(import "aedicule.v0" "AE_menu_item" (func $menu_item (param i32 i32 i32 i32 i32) (result i32)))
@@ -130,6 +132,19 @@
 	(global $state_seed_address i32 (i32.const 1136))
 	(global $state_blossom_rotation_address i32 (i32.const 1144))
 	(global $state_bullet_maximum_distance_address i32 (i32.const 1152))
+	(global $state_satellite_active_address i32 (i32.const 26656))
+	(global $state_satellite_direction_address i32 (i32.const 26660))
+	(global $state_satellite_x_address i32 (i32.const 26664))
+	(global $state_satellite_y_address i32 (i32.const 26672))
+	(global $state_satellite_vx_address i32 (i32.const 26680))
+	(global $state_satellite_vy_address i32 (i32.const 26688))
+	(global $state_satellite_dx_address i32 (i32.const 26696))
+	(global $state_satellite_dy_address i32 (i32.const 26704))
+	(global $state_satellite_radius_address i32 (i32.const 26712))
+	(global $state_satellite_spin_address i32 (i32.const 26720))
+	(global $state_satellite_ping_countdown_address i32 (i32.const 26724))
+	(global $state_satellite_pulse_ticks_address i32 (i32.const 26728))
+	(global $state_satellite_spawn_countdown_address i32 (i32.const 26732))
 	(global $flag_rotate_left i32 (i32.const 1))
 	(global $flag_rotate_right i32 (i32.const 2))
 	(global $flag_thrust i32 (i32.const 4))
@@ -168,7 +183,7 @@
 	(func (export "AE_abi_minor") (result i32) i32.const 0)
 	(func (export "AE_state_ptr") (result i32) global.get $state_base_address)
 	(func (export "AE_state_len") (result i32) i32.const 32768)
-	(func (export "AE_state_schema") (result i32) i32.const 9)
+	(func (export "AE_state_schema") (result i32) i32.const 10)
 	(func (export "AE_tick_rate") (param i32 i32) (result i32 i32)
 		global.get $tick_numerator i32.wrap_i64
 		global.get $tick_denominator i32.wrap_i64)
@@ -324,6 +339,21 @@
 		i32.const 110000 i32.const 65000 i32.const 35000
 		i32.const 850000 global.get $filter_none i32.const 0 i32.const 0
 		call $declare_swept_voice)
+	(func $configure_satellite_ping_sound
+		;; Deep-space sonar: one pitch-stable sine transient and two progressively
+		;; quieter delayed reflections imply reverb without host-side effects.
+		i32.const 13 global.get $wave_sine i32.const 0 i32.const 420
+		i32.const 520000 i32.const 520000 i32.const 520000
+		i32.const 220000 global.get $filter_none i32.const 0 i32.const 0
+		call $declare_swept_voice
+		i32.const 13 global.get $wave_sine i32.const 160 i32.const 520
+		i32.const 520000 i32.const 520000 i32.const 520000
+		i32.const 85000 global.get $filter_none i32.const 0 i32.const 0
+		call $declare_swept_voice
+		i32.const 13 global.get $wave_sine i32.const 340 i32.const 620
+		i32.const 520000 i32.const 520000 i32.const 520000
+		i32.const 35000 global.get $filter_none i32.const 0 i32.const 0
+		call $declare_swept_voice)
 
 	(func (export "AE_configure") (result i32)
 		call $configure_menu
@@ -339,6 +369,7 @@
 		call $configure_package_collection_sound
 		call $configure_package_loss_sound
 		call $configure_hazardous_blast_sound
+		call $configure_satellite_ping_sound
 		i32.const 0)
 
 	;; FLOAT ADAPTER BEGIN
@@ -727,7 +758,8 @@
 		call $regenerate_stars
 		call $spawn_wave
 		i32.const 16512 call $random_spawn_ticks i32.store
-		i32.const 16516 call $random_spawn_ticks i32.store)
+		i32.const 16516 call $random_spawn_ticks i32.store
+		global.get $state_satellite_spawn_countdown_address call $random_spawn_ticks i32.store)
 
 	(func (export "AE_init") (param $seed_low i32) (param $seed_high i32)
 		(param $width f32) (param $height f32) (result i32)
@@ -1019,7 +1051,8 @@
 	;; Snapshots the 32 pre-fire asteroid slots, then lets one finite beam pierce
 	;; all members without recursively targeting children created by splitting.
 	(func $fire_laser
-		(local $index i32) (local $address i32) (local $snapshot i32) (local $package_snapshot i32)
+		(local $index i32) (local $address i32) (local $snapshot i32)
+		(local $package_snapshot i32) (local $satellite_snapshot i32)
 		(local $end_x i64) (local $end_y i64)
 		i32.const 16528 global.get $state_ship_x_address i64.load i64.store
 		i32.const 16536 global.get $state_ship_y_address i64.load i64.store
@@ -1027,6 +1060,7 @@
 		i32.const 16544 local.get $end_x i64.store i32.const 16552 local.get $end_y i64.store
 		i32.const 16524 i32.const 4 call $ticks_from_sixty i32.store
 		i32.const 16464 i32.load local.set $package_snapshot
+		global.get $state_satellite_active_address i32.load local.set $satellite_snapshot
 		(block $snapshot_done (loop $snapshot_loop
 			local.get $index i32.const 32 i32.ge_u br_if $snapshot_done
 			local.get $index call $asteroid_address i32.load
@@ -1061,6 +1095,15 @@
 			i32.const 16040 i64.load i32.const 16048 i64.load i32.const 16064 i64.load
 			call $segment_circle_hit
 			(if (then i32.const 1 call $destroy_ufo))))
+		local.get $satellite_snapshot global.get $state_satellite_active_address i32.load i32.and
+		(if (then
+			i32.const 16528 i64.load i32.const 16536 i64.load
+			local.get $end_x local.get $end_y
+			global.get $state_satellite_x_address i64.load
+			global.get $state_satellite_y_address i64.load
+			global.get $state_satellite_radius_address i64.load
+			call $segment_circle_hit
+			(if (then i32.const 1 call $destroy_satellite))))
 		 global.get $state_last_fire_address global.get $state_tick_address i32.load i32.store
 		i32.const 7 f32.const 1 f32.const 1 i32.const 0 call $audio drop)
 
@@ -1561,6 +1604,111 @@
 			i32.const 16512 call $random_spawn_ticks i32.store
 			local.get $score_hit (if (then i32.const 2000 call $add_score)))))
 
+	;; Retires the reactor-bearing craft through one path so player attribution
+	;; controls only collateral asteroid score, never an intrinsic bounty.
+	(func $destroy_satellite (param $score_hit i32)
+		global.get $state_satellite_active_address i32.load
+		(if (then
+			global.get $state_satellite_x_address i64.load
+			global.get $state_satellite_y_address i64.load i32.const 30
+			global.get $state_satellite_vx_address i64.load
+			global.get $state_satellite_vy_address i64.load call $spawn_particles
+			global.get $state_satellite_x_address i64.load
+			global.get $state_satellite_y_address i64.load local.get $score_hit call $start_hazardous_blast
+			global.get $state_satellite_active_address i32.const 0 i32.store
+			global.get $state_satellite_spawn_countdown_address call $random_spawn_ticks i32.store)))
+
+	;; Creates a slow Voyager-like traversal from a seeded horizontal edge, with
+	;; an independently seeded rotation sign and no appearance notification.
+	(func $spawn_satellite
+		(local $direction i32) (local $spin i32) (local $height_range i64)
+		call $rand_u32 i32.const 1 i32.and
+		(if (result i32) (then i32.const 1) (else i32.const -1)) local.set $direction
+		call $rand_u32 i32.const 1 i32.and
+		(if (result i32) (then i32.const 1) (else i32.const -1)) local.set $spin
+		global.get $state_satellite_active_address i32.const 1 i32.store
+		global.get $state_satellite_direction_address local.get $direction i32.store
+		global.get $state_satellite_x_address
+		local.get $direction i32.const 1 i32.eq
+		(if (result i64)
+			(then i64.const -80000000)
+			(else global.get $state_width_address i64.load i64.const 80000000 i64.add))
+		i64.store
+		global.get $state_height_address i64.load i64.const 200000000 i64.sub local.set $height_range
+		local.get $height_range i64.const 0 i64.lt_s (if (then i64.const 0 local.set $height_range))
+		global.get $state_satellite_y_address
+		call $rand_unit local.get $height_range call $fixed_mul i64.const 100000000 i64.add i64.store
+		global.get $state_satellite_vx_address
+		local.get $direction i64.extend_i32_s i64.const 42000000 i64.mul i64.store
+		global.get $state_satellite_vy_address call $rand_signed i64.const 12000000 call $fixed_mul i64.store
+		global.get $state_satellite_dx_address i64.const 1000000 i64.store
+		global.get $state_satellite_dy_address i64.const 0 i64.store
+		global.get $state_satellite_radius_address i64.const 60000000 i64.store
+		global.get $state_satellite_spin_address local.get $spin i32.store
+		global.get $state_satellite_ping_countdown_address i32.const 90 call $ticks_from_sixty i32.store
+		global.get $state_satellite_pulse_ticks_address i32.const 0 i32.store)
+
+	;; Defers a due Voyager while fifteen or more asteroids are active, then
+	;; retries every fixed tick without imposing a once-per-level appearance cap.
+	(func $update_satellite_schedule
+		(local $y i64) (local $bottom i64) (local $angle i64)
+		(local $sine i64) (local $cosine i64) (local $dx i64) (local $dy i64)
+		(local $next_dx i64) (local $next_dy i64)
+		global.get $state_satellite_active_address i32.load
+		(if
+			(then
+				global.get $state_satellite_x_address global.get $state_satellite_x_address i64.load
+				global.get $state_satellite_vx_address i64.load call $per_tick i64.add i64.store
+				global.get $state_satellite_y_address global.get $state_satellite_y_address i64.load
+				global.get $state_satellite_vy_address i64.load call $per_tick i64.add local.tee $y i64.store
+				global.get $state_height_address i64.load i64.const 80000000 i64.sub local.set $bottom
+				local.get $y i64.const 80000000 i64.lt_s
+				(if (then
+					global.get $state_satellite_y_address i64.const 80000000 i64.store
+					global.get $state_satellite_vy_address
+					global.get $state_satellite_vy_address i64.load call $fixed_abs i64.store))
+				local.get $y local.get $bottom i64.gt_s
+				(if (then
+					global.get $state_satellite_y_address local.get $bottom i64.store
+					global.get $state_satellite_vy_address i64.const 0
+					global.get $state_satellite_vy_address i64.load call $fixed_abs i64.sub i64.store))
+				global.get $state_satellite_spin_address i32.load i64.extend_i32_s
+				i64.const 180000 i64.mul call $per_tick local.tee $angle call $small_sine local.set $sine
+				local.get $angle call $small_cosine local.set $cosine
+				global.get $state_satellite_dx_address i64.load local.set $dx
+				global.get $state_satellite_dy_address i64.load local.set $dy
+				local.get $dx local.get $cosine call $fixed_mul
+				local.get $dy local.get $sine call $fixed_mul i64.sub local.set $next_dx
+				local.get $dx local.get $sine call $fixed_mul
+				local.get $dy local.get $cosine call $fixed_mul i64.add local.set $next_dy
+				global.get $state_satellite_dx_address local.get $next_dx i64.store
+				global.get $state_satellite_dy_address local.get $next_dy i64.store
+				global.get $state_satellite_pulse_ticks_address
+				global.get $state_satellite_pulse_ticks_address i32.load i32.const 1 i32.add i32.store
+				global.get $state_satellite_ping_countdown_address i32.load i32.const 1 i32.le_s
+				(if
+					(then
+						i32.const 13 f32.const 0.28 f32.const 1 i32.const 0 call $audio drop
+						global.get $state_satellite_ping_countdown_address
+						i32.const 180 call $ticks_from_sixty i32.store)
+					(else
+						global.get $state_satellite_ping_countdown_address
+						global.get $state_satellite_ping_countdown_address i32.load i32.const 1 i32.sub i32.store))
+				global.get $state_satellite_x_address i64.load i64.const -90000000 i64.lt_s
+				global.get $state_satellite_x_address i64.load global.get $state_width_address i64.load
+				i64.const 90000000 i64.add i64.gt_s i32.or
+				(if (then
+					global.get $state_satellite_active_address i32.const 0 i32.store
+					global.get $state_satellite_spawn_countdown_address call $random_spawn_ticks i32.store)))
+			(else
+				global.get $state_satellite_spawn_countdown_address i32.load i32.const 0 i32.gt_s
+				(if (then
+					global.get $state_satellite_spawn_countdown_address
+					global.get $state_satellite_spawn_countdown_address i32.load i32.const 1 i32.sub i32.store))
+				global.get $state_satellite_spawn_countdown_address i32.load i32.eqz
+				call $asteroid_count i32.const 15 i32.lt_u i32.and
+				(if (then call $spawn_satellite)))))
+
 	;; Creates an independently scheduled package with slow horizontal travel and
 	;; a seeded vertical drift component, distinct from the faster hostile UFO.
 	(func $spawn_package
@@ -1730,6 +1878,29 @@
 						br $done))))
 				local.get $index i32.const 1 i32.add local.set $index br $again)))))
 
+	;; Gives an ordinary player projectile score attribution for the reactor
+	;; blast while consuming the bullet before later special-target scans.
+	(func $check_player_bullet_satellite_collision
+		(local $index i32) (local $bullet i32)
+		global.get $state_satellite_active_address i32.load
+		(if (then
+			(block $done (loop $again
+				local.get $index global.get $player_bullet_capacity i32.ge_u br_if $done
+				local.get $index call $bullet_address local.set $bullet
+				local.get $bullet i32.load
+				(if (then
+					local.get $bullet i32.const 8 i32.add i64.load
+					local.get $bullet i32.const 16 i32.add i64.load
+					global.get $state_satellite_x_address i64.load
+					global.get $state_satellite_y_address i64.load
+					global.get $state_satellite_radius_address i64.load i64.const 5000000 i64.add
+					call $distance_lt
+					(if (then
+						local.get $bullet i32.const 0 i32.store
+						i32.const 1 call $destroy_satellite
+						br $done))))
+				local.get $index i32.const 1 i32.add local.set $index br $again)))))
+
 	;; Resolves hostile shots against shielding asteroids, then packages, then the
 	;; ship; no impact awards score and each bullet has exactly one victim.
 	(func $check_enemy_bullet_collisions
@@ -1808,7 +1979,28 @@
 				global.get $state_ship_x_address i64.load global.get $state_ship_y_address i64.load
 				i32.const 16064 i64.load i64.const 10000000 i64.add call $distance_lt
 				(if (then
-					i32.const 0 call $destroy_ufo)))))))
+						i32.const 0 call $destroy_ufo)))))))
+
+	;; Asteroid contact ruptures the reactor without player attribution. The
+	;; blast itself snapshots the impact rock, so no separate pre-hit is needed.
+	(func $check_satellite_collisions
+		(local $index i32) (local $asteroid i32)
+		global.get $state_satellite_active_address i32.load
+		(if (then
+			(block $done (loop $asteroids
+				local.get $index i32.const 32 i32.ge_u br_if $done
+				local.get $index call $asteroid_address local.set $asteroid
+				local.get $asteroid i32.load
+				(if (then
+					global.get $state_satellite_x_address i64.load
+					global.get $state_satellite_y_address i64.load
+					local.get $asteroid i32.const 16 i32.add i64.load
+					local.get $asteroid i32.const 24 i32.add i64.load
+					global.get $state_satellite_radius_address i64.load
+					local.get $asteroid i32.const 48 i32.add i64.load i64.add
+					call $distance_lt
+					(if (then i32.const 0 call $destroy_satellite br $done))))
+				local.get $index i32.const 1 i32.add local.set $index br $asteroids)))))
 
 	(func $respawn_radius (result i64)
 		global.get $state_lifecycle_ticks_address i32.load i32.const 300 call $ticks_from_sixty i32.ge_s
@@ -1896,10 +2088,13 @@
 					call $check_bullet_collisions))))
 		call $update_ufo_schedule
 		call $update_package_schedule
+		call $update_satellite_schedule
 		call $check_player_bullet_package_collision
 		call $check_player_bullet_ufo_collision
+		call $check_player_bullet_satellite_collision
 		call $check_enemy_bullet_collisions
 		call $check_ufo_collisions
+		call $check_satellite_collisions
 		call $check_package_collection
 		call $advance_lifecycle
 		call $asteroid_count i32.eqz global.get $state_lifecycle_address i32.load i32.const 3 i32.ne i32.and
@@ -1938,6 +2133,9 @@
 		i32.const 16464 i32.load (if (then
 			i32.const 16472 i32.const 16472 i64.load local.get $dx i64.add i64.store
 			i32.const 16480 i32.const 16480 i64.load local.get $dy i64.add i64.store))
+		global.get $state_satellite_active_address i32.load (if (then
+			global.get $state_satellite_x_address global.get $state_satellite_x_address i64.load local.get $dx i64.add i64.store
+			global.get $state_satellite_y_address global.get $state_satellite_y_address i64.load local.get $dy i64.add i64.store))
 		i32.const 16524 i32.load i32.const 0 i32.gt_s (if (then
 			i32.const 16528 i32.const 16528 i64.load local.get $dx i64.add i64.store
 			i32.const 16536 i32.const 16536 i64.load local.get $dy i64.add i64.store
@@ -2174,6 +2372,136 @@
 			f32.const 0.85 f32.const 0 i32.const 0x9bb8d199 i32.const 1 call $circle drop
 			local.get $index i32.const 1 i32.add local.set $index br $again)))
 
+	;; Reproduces the approved compact Voyager silhouette from local-space vector
+	;; primitives. Both bent science-boom rails remain one continuous path, while
+	;; the fixed-clock glow pulse and orientation enter only through snapshot state.
+	(func $draw_satellite
+		(local $phase i32) (local $half i32) (local $duration i32)
+		(local $glow_extra i64) (local $glow_radius i64)
+		global.get $state_satellite_active_address i32.load i32.eqz (if (then return))
+		i32.const 60 call $ticks_from_sixty local.set $half
+		i32.const 120 call $ticks_from_sixty local.set $duration
+		global.get $state_satellite_pulse_ticks_address i32.load local.get $duration i32.rem_u local.set $phase
+		local.get $phase local.get $half i32.le_u
+		(if (then
+			local.get $phase i64.extend_i32_u i64.const 4000000 i64.mul
+			local.get $half i64.extend_i32_u i64.div_u local.set $glow_extra)
+		(else
+			local.get $duration local.get $phase i32.sub i64.extend_i32_u i64.const 4000000 i64.mul
+			local.get $half i64.extend_i32_u i64.div_u local.set $glow_extra))
+		i64.const 52000000 local.get $glow_extra i64.add local.set $glow_radius
+		global.get $state_satellite_dx_address i64.load call $to_host
+		global.get $state_satellite_dy_address i64.load call $to_host
+		i64.const 0 global.get $state_satellite_dy_address i64.load i64.sub call $to_host
+		global.get $state_satellite_dx_address i64.load call $to_host
+		global.get $state_satellite_x_address i64.load call $to_host
+		global.get $state_satellite_y_address i64.load call $to_host call $transform_push drop
+		i32.const 932 f32.const 0 f32.const 0 local.get $glow_radius call $to_host
+		f32.const 0 i32.const 0x4ddff21c i32.const 1 call $circle drop
+		i32.const 933 f32.const 0 f32.const 0 local.get $glow_radius i64.const 5000000 i64.sub call $to_host
+		f32.const 1 i32.const 0x4ddff244 i32.const 0 call $circle drop
+
+		;; Dish bowl plus broken upper rim.
+		i32.const 934 call $path_begin drop
+		f32.const -26 f32.const -8 call $path_move drop
+		f32.const -23 f32.const -4 call $path_line drop
+		f32.const -18 f32.const 0 call $path_line drop
+		f32.const -10 f32.const 3 call $path_line drop
+		f32.const 0 f32.const 4 call $path_line drop
+		f32.const 10 f32.const 3 call $path_line drop
+		f32.const 18 f32.const 0 call $path_line drop
+		f32.const 23 f32.const -4 call $path_line drop
+		f32.const 26 f32.const -8 call $path_line drop
+		call $path_close drop f32.const 2 i32.const 0x102133ff i32.const 0x9bb8d1ff i32.const 0 call $path_end drop
+		i32.const 935 call $path_begin drop
+		f32.const -26 f32.const -8 call $path_move drop
+		f32.const -23 f32.const -12 call $path_line drop
+		f32.const -18 f32.const -16 call $path_line drop
+		f32.const -10 f32.const -19 call $path_line drop
+		f32.const 0 f32.const -20 call $path_line drop
+		f32.const 10 f32.const -19 call $path_line drop
+		f32.const 18 f32.const -16 call $path_line drop
+		f32.const 2 i32.const 0 i32.const 0xb7cfdfff i32.const 0 call $path_end drop
+		i32.const 936 call $path_begin drop
+		f32.const 23 f32.const -12 call $path_move drop
+		f32.const 26 f32.const -8 call $path_line drop
+		f32.const 2 i32.const 0 i32.const 0xb7cfdfff i32.const 0 call $path_end drop
+
+		;; Equipment bus, continuous bent science boom, and RTG boom.
+		i32.const 937 call $path_begin drop
+		f32.const -15 f32.const 2 call $path_move drop
+		f32.const -6 f32.const -5 call $path_line drop
+		f32.const 6 f32.const -5 call $path_line drop
+		f32.const 16 f32.const 2 call $path_line drop
+		f32.const 17 f32.const 12 call $path_line drop
+		f32.const 9 f32.const 20 call $path_line drop
+		f32.const -3 f32.const 23 call $path_line drop
+		f32.const -13 f32.const 18 call $path_line drop
+		f32.const -18 f32.const 9 call $path_line drop
+		call $path_close drop f32.const 2 i32.const 0x152436ff i32.const 0x9bb8d1ff i32.const 0 call $path_end drop
+		i32.const 938 call $path_begin drop
+		f32.const 14 f32.const 9 call $path_move drop
+		f32.const 43 f32.const -7 call $path_line drop
+		f32.const 49 f32.const -6 call $path_line drop
+		f32.const 54 f32.const -10 call $path_line drop
+		f32.const 72 f32.const -20 call $path_line drop
+		f32.const 2 i32.const 0 i32.const 0x7893acff i32.const 0 call $path_end drop
+		i32.const 939 call $path_begin drop
+		f32.const 16 f32.const 12 call $path_move drop
+		f32.const 44 f32.const -4 call $path_line drop
+		f32.const 50 f32.const -3 call $path_line drop
+		f32.const 55 f32.const -8 call $path_line drop
+		f32.const 74 f32.const -18 call $path_line drop
+		f32.const 1.4 i32.const 0 i32.const 0x53687dff i32.const 0 call $path_end drop
+		i32.const 940 call $path_begin drop
+		f32.const -12 f32.const 11 call $path_move drop
+		f32.const -32 f32.const 18 call $path_line drop
+		f32.const -61 f32.const 23 call $path_line drop
+		f32.const 2 i32.const 0 i32.const 0x7893acff i32.const 0 call $path_end drop
+
+		;; Three still-warm RTGs remain attached to the historical long boom.
+		i32.const 941 call $path_begin drop
+		f32.const -29 f32.const 14 call $path_move drop
+		f32.const -25 f32.const 20 call $path_line drop
+		f32.const -34 f32.const 23 call $path_line drop
+		f32.const -38 f32.const 17 call $path_line drop
+		call $path_close drop f32.const 1.5 i32.const 0x172536ff i32.const 0x8eb0c9ff i32.const 0 call $path_end drop
+		i32.const 942 call $path_begin drop
+		f32.const -41 f32.const 17 call $path_move drop
+		f32.const -37 f32.const 23 call $path_line drop
+		f32.const -46 f32.const 26 call $path_line drop
+		f32.const -50 f32.const 20 call $path_line drop
+		call $path_close drop f32.const 1.5 i32.const 0x172536ff i32.const 0x8eb0c9ff i32.const 0 call $path_end drop
+		i32.const 943 call $path_begin drop
+		f32.const -53 f32.const 19 call $path_move drop
+		f32.const -49 f32.const 25 call $path_line drop
+		f32.const -58 f32.const 27 call $path_line drop
+		f32.const -62 f32.const 22 call $path_line drop
+		call $path_close drop f32.const 1.5 i32.const 0x172536ff i32.const 0x8eb0c9ff i32.const 0 call $path_end drop
+		i32.const 944 f32.const -31 f32.const 19 f32.const 1.7 f32.const 0.5 i32.const 0xff9b3dff i32.const 1 call $circle drop
+		i32.const 945 f32.const -43 f32.const 22 f32.const 1.7 f32.const 0.5 i32.const 0xe8792bff i32.const 1 call $circle drop
+		i32.const 946 f32.const -55 f32.const 24.5 f32.const 1.7 f32.const 0.5 i32.const 0xbb5724ff i32.const 1 call $circle drop
+
+		;; Gold record, cracked panel, dish feed/supports, end joint, and cable.
+		i32.const 947 f32.const 9 f32.const 11 f32.const 4 f32.const 1 i32.const 0xb88731ff i32.const 1 call $circle drop
+		i32.const 948 call $path_begin drop
+		f32.const 3 f32.const 2 call $path_move drop
+		f32.const -1 f32.const 8 call $path_line drop
+		f32.const 4 f32.const 12 call $path_line drop
+		f32.const 0 f32.const 19 call $path_line drop
+		f32.const 1.3 i32.const 0 i32.const 0x53687dff i32.const 0 call $path_end drop
+		i32.const 949 f32.const 0 f32.const -18 f32.const 2.3 f32.const 1 i32.const 0x5c7185ff i32.const 0 call $circle drop
+		i32.const 950 f32.const -12 f32.const 2 f32.const 0 f32.const -17 f32.const 1 i32.const 0x7893acff call $line drop
+		i32.const 951 f32.const 12 f32.const 2 f32.const 0 f32.const -17 f32.const 1 i32.const 0x7893acff call $line drop
+		i32.const 952 f32.const 0 f32.const -6 f32.const 0 f32.const -17 f32.const 1.2 i32.const 0x8eb0c9ff call $line drop
+		i32.const 953 f32.const 74 f32.const -18 f32.const 2.5 f32.const 1 i32.const 0x8eb0c9ff i32.const 0 call $circle drop
+		i32.const 954 call $path_begin drop
+		f32.const 21 f32.const -5 call $path_move drop
+		f32.const 26 f32.const -1 call $path_line drop
+		f32.const 23 f32.const 4 call $path_line drop
+		f32.const 1.3 i32.const 0 i32.const 0xff8a3dff i32.const 0 call $path_end drop
+		call $transform_pop drop)
+
 	;; Emits a low hull and raised dome so the enemy reads as a classic disc UFO
 	;; using only stable vector-command IDs from the generic Aedicule ABI.
 	(func $draw_ufo
@@ -2288,13 +2616,31 @@
 				i32.const 2027 f32.const 68 f32.const 95 f32.const 56 f32.const 106 f32.const 3 local.get $color call $line drop))
 		local.get $key local.get $ptr i32.const 11 f32.const 88 f32.const 87 f32.const 20 local.get $color i32.const 0 call $text drop)
 
+	;; Maps the approved 768px Help composition into the live panel's available
+	;; vertical span, preserving exact reference geometry on taller viewports.
+	(func $help_y (param $reference i64) (result f32)
+		(local $span i64)
+		global.get $state_height_address i64.load i64.const 78000000 i64.sub local.set $span
+		local.get $span i64.const 0 i64.lt_s (if (then i64.const 0 local.set $span))
+		local.get $span i64.const 690000000 i64.gt_s
+		(if (then i64.const 690000000 local.set $span))
+		i64.const 62000000
+		local.get $reference i64.const 62 i64.sub local.get $span i64.mul i64.const 690 i64.div_s
+		i64.add call $to_host)
+
 	;; Draws the approved two-column Help panel after the world, using a filled
 	;; vector backdrop so every keyboard and pointer row remains legible.
 	(func $draw_help_overlay
-		(local $center i64) (local $left i64) (local $right i64) (local $far_x i64) (local $bottom i64)
+		(local $center i64) (local $keyboard_input i64) (local $keyboard_action i64)
+		(local $pointer_input i64) (local $pointer_action i64)
+		(local $far_x i64) (local $bottom i64)
 		global.get $state_width_address i64.load i64.const 2 i64.div_s local.set $center
-		global.get $state_width_address i64.load i64.const 280000 call $fixed_mul local.set $left
-		global.get $state_width_address i64.load i64.const 650000 call $fixed_mul local.set $right
+		global.get $state_width_address i64.load i64.const 98 i64.mul i64.const 1024 i64.div_u local.set $keyboard_input
+		global.get $state_width_address i64.load i64.const 285 i64.mul i64.const 1024 i64.div_u local.set $keyboard_action
+		global.get $state_width_address i64.load i64.const 470 i64.mul i64.const 1024 i64.div_u local.set $pointer_input
+		global.get $state_width_address i64.load i64.const 610 i64.mul i64.const 1024 i64.div_u local.set $pointer_action
+		local.get $pointer_action local.get $pointer_input i64.const 130000000 i64.add i64.lt_s
+		(if (then local.get $pointer_input i64.const 130000000 i64.add local.set $pointer_action))
 		global.get $state_width_address i64.load i64.const 40000000 i64.sub local.set $far_x
 		global.get $state_height_address i64.load i64.const 16000000 i64.sub local.set $bottom
 		i32.const 2009 call $path_begin drop
@@ -2307,33 +2653,46 @@
 		i32.const 2011 local.get $far_x call $to_host f32.const 62 local.get $far_x call $to_host local.get $bottom call $to_host f32.const 2 i32.const 0x5ee7ffff call $line drop
 		i32.const 2012 local.get $far_x call $to_host local.get $bottom call $to_host f32.const 40 local.get $bottom call $to_host f32.const 2 i32.const 0x5ee7ffff call $line drop
 		i32.const 2013 f32.const 40 local.get $bottom call $to_host f32.const 40 f32.const 62 f32.const 2 i32.const 0x5ee7ffff call $line drop
-		i32.const 2014 f32.const 88 f32.const 150 global.get $state_width_address i64.load i64.const 88000000 i64.sub call $to_host f32.const 150 f32.const 1 i32.const 0x31536bff call $line drop
-		i32.const 40 i32.const 224 i32.const 8 local.get $center call $to_host f32.const 125 f32.const 36 i32.const 0x5ee7ffff i32.const 1 call $text drop
-		i32.const 54 i32.const 560 i32.const 8 local.get $left call $to_host f32.const 190 f32.const 18 i32.const 0xffcf5cff i32.const 1 call $text drop
-		i32.const 55 i32.const 568 i32.const 7 local.get $right call $to_host f32.const 190 f32.const 18 i32.const 0xffcf5cff i32.const 1 call $text drop
-		i32.const 41 i32.const 240 i32.const 21 local.get $left call $to_host f32.const 230 f32.const 17 i32.const 0xffffffff i32.const 1 call $text drop
-		i32.const 42 i32.const 264 i32.const 21 local.get $left call $to_host f32.const 266 f32.const 17 i32.const 0xffffffff i32.const 1 call $text drop
-		i32.const 43 i32.const 288 i32.const 19 local.get $left call $to_host f32.const 302 f32.const 17 i32.const 0xffffffff i32.const 1 call $text drop
-		i32.const 44 i32.const 312 i32.const 24 local.get $left call $to_host f32.const 338 f32.const 17 i32.const 0xffffffff i32.const 1 call $text drop
-		i32.const 45 i32.const 340 i32.const 23 local.get $left call $to_host f32.const 374 f32.const 17 i32.const 0xffffffff i32.const 1 call $text drop
-		i32.const 46 i32.const 368 i32.const 28 local.get $left call $to_host f32.const 410 f32.const 17 i32.const 0xffffffff i32.const 1 call $text drop
-		i32.const 47 i32.const 400 i32.const 20 local.get $left call $to_host f32.const 446 f32.const 17 i32.const 0xffffffff i32.const 1 call $text drop
-		i32.const 48 i32.const 424 i32.const 22 local.get $left call $to_host f32.const 482 f32.const 17 i32.const 0xffffffff i32.const 1 call $text drop
-		i32.const 49 i32.const 448 i32.const 19 local.get $left call $to_host f32.const 518 f32.const 17 i32.const 0xffffffff i32.const 1 call $text drop
-		i32.const 56 i32.const 576 i32.const 16 local.get $right call $to_host f32.const 230 f32.const 17 i32.const 0xffffffff i32.const 1 call $text drop
-		i32.const 57 i32.const 592 i32.const 17 local.get $right call $to_host f32.const 266 f32.const 17 i32.const 0xffffffff i32.const 1 call $text drop
-		i32.const 58 i32.const 616 i32.const 19 local.get $right call $to_host f32.const 302 f32.const 17 i32.const 0xffffffff i32.const 1 call $text drop
-		i32.const 59 i32.const 640 i32.const 20 local.get $right call $to_host f32.const 338 f32.const 17 i32.const 0xffffffff i32.const 1 call $text drop
-		i32.const 2030 local.get $center call $to_host f32.const 585 f32.const 6 f32.const 0 i32.const 0xff5cf4ff i32.const 1 call $circle drop
-		i32.const 2031 local.get $center i64.const 18000000 i64.sub call $to_host f32.const 585 local.get $center i64.const 7000000 i64.sub call $to_host f32.const 585 f32.const 2 i32.const 0xff5cf4ff call $line drop
-		i32.const 2032 local.get $center i64.const 7000000 i64.add call $to_host f32.const 585 local.get $center i64.const 18000000 i64.add call $to_host f32.const 585 f32.const 2 i32.const 0xff5cf4ff call $line drop
-		i32.const 2033 local.get $center call $to_host f32.const 567 local.get $center call $to_host f32.const 578 f32.const 2 i32.const 0xff5cf4ff call $line drop
-		i32.const 2034 local.get $center call $to_host f32.const 592 local.get $center call $to_host f32.const 603 f32.const 2 i32.const 0xff5cf4ff call $line drop
-		i32.const 2035 local.get $center i64.const 13000000 i64.sub call $to_host f32.const 572 local.get $center i64.const 5000000 i64.sub call $to_host f32.const 580 f32.const 2 i32.const 0xff5cf4ff call $line drop
-		i32.const 2036 local.get $center i64.const 5000000 i64.add call $to_host f32.const 590 local.get $center i64.const 13000000 i64.add call $to_host f32.const 598 f32.const 2 i32.const 0xff5cf4ff call $line drop
-		i32.const 2037 local.get $center i64.const 13000000 i64.sub call $to_host f32.const 598 local.get $center i64.const 5000000 i64.sub call $to_host f32.const 590 f32.const 2 i32.const 0xff5cf4ff call $line drop
-		i32.const 2038 local.get $center i64.const 5000000 i64.add call $to_host f32.const 580 local.get $center i64.const 13000000 i64.add call $to_host f32.const 572 f32.const 2 i32.const 0xff5cf4ff call $line drop
-		i32.const 53 i32.const 512 i32.const 26 local.get $center call $to_host f32.const 636 f32.const 17 i32.const 0xffcf5cff i32.const 1 call $text drop)
+		i32.const 2014 f32.const 88 i64.const 150 call $help_y global.get $state_width_address i64.load i64.const 88000000 i64.sub call $to_host i64.const 150 call $help_y f32.const 1 i32.const 0x31536bff call $line drop
+		i32.const 40 i32.const 224 i32.const 8 local.get $center call $to_host i64.const 125 call $help_y f32.const 36 i32.const 0x5ee7ffff i32.const 1 call $text drop
+		i32.const 54 i32.const 560 i32.const 8 local.get $keyboard_input call $to_host i64.const 190 call $help_y f32.const 18 i32.const 0xffcf5cff i32.const 0 call $text drop
+		i32.const 55 i32.const 568 i32.const 7 local.get $pointer_input call $to_host i64.const 190 call $help_y f32.const 18 i32.const 0xffcf5cff i32.const 0 call $text drop
+		i32.const 41 i32.const 240 i32.const 12 local.get $keyboard_input call $to_host i64.const 230 call $help_y f32.const 17 i32.const 0xffffffff i32.const 0 call $text drop
+		i32.const 62 i32.const 255 i32.const 6 local.get $keyboard_action call $to_host i64.const 230 call $help_y f32.const 17 i32.const 0x9bb8d1ff i32.const 0 call $text drop
+		i32.const 42 i32.const 264 i32.const 2 local.get $keyboard_input call $to_host i64.const 266 call $help_y f32.const 17 i32.const 0xffffffff i32.const 0 call $text drop
+		i32.const 63 i32.const 279 i32.const 6 local.get $keyboard_action call $to_host i64.const 266 call $help_y f32.const 17 i32.const 0x9bb8d1ff i32.const 0 call $text drop
+		i32.const 43 i32.const 288 i32.const 5 local.get $keyboard_input call $to_host i64.const 302 call $help_y f32.const 17 i32.const 0xffffffff i32.const 0 call $text drop
+		i32.const 64 i32.const 303 i32.const 4 local.get $keyboard_action call $to_host i64.const 302 call $help_y f32.const 17 i32.const 0x9bb8d1ff i32.const 0 call $text drop
+		i32.const 44 i32.const 312 i32.const 1 local.get $keyboard_input call $to_host i64.const 338 call $help_y f32.const 17 i32.const 0xffffffff i32.const 0 call $text drop
+		i32.const 65 i32.const 327 i32.const 9 local.get $keyboard_action call $to_host i64.const 338 call $help_y f32.const 17 i32.const 0x9bb8d1ff i32.const 0 call $text drop
+		i32.const 45 i32.const 340 i32.const 1 local.get $keyboard_input call $to_host i64.const 374 call $help_y f32.const 17 i32.const 0xffffffff i32.const 0 call $text drop
+		i32.const 66 i32.const 355 i32.const 8 local.get $keyboard_action call $to_host i64.const 374 call $help_y f32.const 17 i32.const 0x9bb8d1ff i32.const 0 call $text drop
+		i32.const 46 i32.const 368 i32.const 1 local.get $keyboard_input call $to_host i64.const 410 call $help_y f32.const 17 i32.const 0xffffffff i32.const 0 call $text drop
+		i32.const 67 i32.const 383 i32.const 13 local.get $keyboard_action call $to_host i64.const 410 call $help_y f32.const 17 i32.const 0x9bb8d1ff i32.const 0 call $text drop
+		i32.const 47 i32.const 400 i32.const 7 local.get $keyboard_input call $to_host i64.const 446 call $help_y f32.const 17 i32.const 0xffffffff i32.const 0 call $text drop
+		i32.const 68 i32.const 415 i32.const 5 local.get $keyboard_action call $to_host i64.const 446 call $help_y f32.const 17 i32.const 0x9bb8d1ff i32.const 0 call $text drop
+		i32.const 48 i32.const 424 i32.const 1 local.get $keyboard_input call $to_host i64.const 482 call $help_y f32.const 17 i32.const 0xffffffff i32.const 0 call $text drop
+		i32.const 69 i32.const 439 i32.const 7 local.get $keyboard_action call $to_host i64.const 482 call $help_y f32.const 17 i32.const 0x9bb8d1ff i32.const 0 call $text drop
+		i32.const 49 i32.const 448 i32.const 6 local.get $keyboard_input call $to_host i64.const 518 call $help_y f32.const 17 i32.const 0xffffffff i32.const 0 call $text drop
+		i32.const 70 i32.const 463 i32.const 4 local.get $keyboard_action call $to_host i64.const 518 call $help_y f32.const 17 i32.const 0x9bb8d1ff i32.const 0 call $text drop
+		i32.const 56 i32.const 576 i32.const 4 local.get $pointer_input call $to_host i64.const 230 call $help_y f32.const 17 i32.const 0xffffffff i32.const 0 call $text drop
+		i32.const 71 i32.const 589 i32.const 3 local.get $pointer_action call $to_host i64.const 230 call $help_y f32.const 17 i32.const 0x9bb8d1ff i32.const 0 call $text drop
+		i32.const 57 i32.const 592 i32.const 9 local.get $pointer_input call $to_host i64.const 266 call $help_y f32.const 17 i32.const 0xffffffff i32.const 0 call $text drop
+		i32.const 72 i32.const 605 i32.const 4 local.get $pointer_action call $to_host i64.const 266 call $help_y f32.const 17 i32.const 0x9bb8d1ff i32.const 0 call $text drop
+		i32.const 58 i32.const 616 i32.const 10 local.get $pointer_input call $to_host i64.const 302 call $help_y f32.const 17 i32.const 0xffffffff i32.const 0 call $text drop
+		i32.const 73 i32.const 629 i32.const 6 local.get $pointer_action call $to_host i64.const 302 call $help_y f32.const 17 i32.const 0x9bb8d1ff i32.const 0 call $text drop
+		i32.const 59 i32.const 640 i32.const 6 local.get $pointer_input call $to_host i64.const 338 call $help_y f32.const 17 i32.const 0xffffffff i32.const 0 call $text drop
+		i32.const 74 i32.const 653 i32.const 7 local.get $pointer_action call $to_host i64.const 338 call $help_y f32.const 17 i32.const 0x9bb8d1ff i32.const 0 call $text drop
+		i32.const 2030 local.get $center call $to_host i64.const 585 call $help_y f32.const 6 f32.const 0 i32.const 0xff5cf4ff i32.const 1 call $circle drop
+		i32.const 2031 local.get $center i64.const 18000000 i64.sub call $to_host i64.const 585 call $help_y local.get $center i64.const 7000000 i64.sub call $to_host i64.const 585 call $help_y f32.const 2 i32.const 0xff5cf4ff call $line drop
+		i32.const 2032 local.get $center i64.const 7000000 i64.add call $to_host i64.const 585 call $help_y local.get $center i64.const 18000000 i64.add call $to_host i64.const 585 call $help_y f32.const 2 i32.const 0xff5cf4ff call $line drop
+		i32.const 2033 local.get $center call $to_host i64.const 567 call $help_y local.get $center call $to_host i64.const 578 call $help_y f32.const 2 i32.const 0xff5cf4ff call $line drop
+		i32.const 2034 local.get $center call $to_host i64.const 592 call $help_y local.get $center call $to_host i64.const 603 call $help_y f32.const 2 i32.const 0xff5cf4ff call $line drop
+		i32.const 2035 local.get $center i64.const 13000000 i64.sub call $to_host i64.const 572 call $help_y local.get $center i64.const 5000000 i64.sub call $to_host i64.const 580 call $help_y f32.const 2 i32.const 0xff5cf4ff call $line drop
+		i32.const 2036 local.get $center i64.const 5000000 i64.add call $to_host i64.const 590 call $help_y local.get $center i64.const 13000000 i64.add call $to_host i64.const 598 call $help_y f32.const 2 i32.const 0xff5cf4ff call $line drop
+		i32.const 2037 local.get $center i64.const 13000000 i64.sub call $to_host i64.const 598 call $help_y local.get $center i64.const 5000000 i64.sub call $to_host i64.const 590 call $help_y f32.const 2 i32.const 0xff5cf4ff call $line drop
+		i32.const 2038 local.get $center i64.const 5000000 i64.add call $to_host i64.const 580 call $help_y local.get $center i64.const 13000000 i64.add call $to_host i64.const 572 call $help_y f32.const 2 i32.const 0xff5cf4ff call $line drop
+		i32.const 53 i32.const 512 i32.const 26 local.get $center call $to_host i64.const 636 call $help_y f32.const 17 i32.const 0xffcf5cff i32.const 1 call $text drop)
 
 	;; Draws the blast as a triangular 1.2-second pulse with alternating hot
 	;; orange cores, giving deterministic expansion, contraction, and flicker.
@@ -2388,6 +2747,7 @@
 			global.get $state_height_address i64.load i64.const 333333 call $fixed_mul i64.const 58000000 i64.add call $to_host
 			f32.const 18 i32.const 0x58ff7200 local.get $alpha i32.or i32.const 1 call $text drop))
 		call $draw_stars
+		call $draw_satellite
 		call $draw_ufo
 		call $draw_package
 		call $draw_laser

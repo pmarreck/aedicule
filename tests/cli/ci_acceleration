@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+
+set -u
+
+root=$(cd "$(dirname "$0")/../.." && pwd -P)
+expected_targets=$'linux-aarch64\nlinux-x86_64\nmacos-aarch64\nweb\nwindows-aarch64\nwindows-x86_64'
+failures=0
+
+matrix_targets() {
+	local workflow=$1 line values
+	line=$(rg -m1 '^[[:space:]]+target: \[[^]]+\]$' "$workflow" 2>/dev/null)
+	values=${line#*[}
+	values=${values%]*}
+	printf '%s\n' "$values" | tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | LC_ALL=C sort
+}
+
+require_text() {
+	local workflow=$1 needle=$2 description=$3
+	if ! rg -F -- "$needle" "$workflow" >/dev/null 2>&1; then
+		printf '%s lacks %s\n' "$description" "$needle" >&2
+		failures=$((failures + 1))
+	fi
+}
+
+reject_text() {
+	local workflow=$1 needle=$2 description=$3
+	if rg -F -- "$needle" "$workflow" >/dev/null 2>&1; then
+		printf '%s still contains %s\n' "$description" "$needle" >&2
+		failures=$((failures + 1))
+	fi
+}
+
+for relative in .github/workflows/ci.yml .github/workflows/release.yml; do
+	workflow="$root/$relative"
+	description=${relative##*/}
+	if [[ ! -s $workflow ]]; then
+		printf '%s is missing\n' "$relative" >&2
+		failures=$((failures + 1))
+		continue
+	fi
+
+	actual_targets=$(matrix_targets "$workflow")
+	if [[ $actual_targets != "$expected_targets" ]]; then
+		printf '%s does not classify the exact six-target matrix\n' "$description" >&2
+		failures=$((failures + 1))
+	fi
+	require_text "$workflow" 'nix build ".#release-${{ matrix.target }}"' "$description"
+	reject_text "$workflow" 'nix build .#release-all' "$description"
+	if ! actionlint "$workflow"; then
+		failures=$((failures + 1))
+	fi
+done
+
+ci="$root/.github/workflows/ci.yml"
+require_text "$ci" 'name: Test complete suite' 'CI workflow'
+require_text "$ci" 'name: Build ${{ matrix.target }}' 'CI workflow'
+reject_text "$ci" 'run: nix build --print-build-logs' 'CI workflow'
+
+release="$root/.github/workflows/release.yml"
+require_text "$release" './check_reproducible "${{ matrix.target }}"' 'release workflow'
+require_text "$release" 'actions/upload-artifact@v4' 'release workflow'
+require_text "$release" 'actions/download-artifact@v5' 'release workflow'
+
+exit "$failures"

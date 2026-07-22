@@ -6,17 +6,21 @@ on:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  archives:
-    name: Build and publish six targets
+  targets:
+    name: Build ${{ matrix.target }}
     runs-on: ubuntu-latest
     timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [web, macos-aarch64, linux-aarch64, windows-aarch64, linux-x86_64, windows-x86_64]
 
     steps:
       - name: Check out source
@@ -27,14 +31,49 @@ jobs:
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build deterministic release archives
-        run: nix build .#release-all --out-link result-all --print-build-logs
+      - name: Build deterministic target archive
+        run: nix build ".#release-${{ matrix.target }}" --out-link "result-${{ matrix.target }}" --print-build-logs
 
-      - name: Independently rebuild all six delivery targets
-        run: ./check_reproducible
+      - name: Independently rebuild target
+        run: ./check_reproducible "${{ matrix.target }}"
 
-      - name: Verify release checksums
-        run: cd result-all && sha256sum --check SHA256SUMS
+      - name: Stage target archive
+        run: |
+          mkdir release-artifact
+          cp -L "result-${{ matrix.target }}"/aedicule-* release-artifact/
+
+      - name: Upload target archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}
+          path: release-artifact/
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publish six-target release
+    needs: targets
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Download target archives
+        uses: actions/download-artifact@v5
+        with:
+          pattern: release-*
+          path: result-all
+          merge-multiple: true
+
+      - name: Assemble and verify release manifest
+        run: |
+          cp delivery-targets result-all/delivery-targets
+          cp demos/manifest.tsv result-all/demo-manifest.tsv
+          (cd result-all && sha256sum aedicule-* > SHA256SUMS)
+          (cd result-all && sha256sum --check SHA256SUMS)
 
       - name: Publish GitHub Release
         env:

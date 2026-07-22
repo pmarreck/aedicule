@@ -15,8 +15,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  nix:
-    name: Nix build and tests (x86_64-linux)
+  test:
+    name: Test complete suite
     runs-on: ubuntu-latest
     timeout-minutes: 180
 
@@ -29,16 +29,32 @@ jobs:
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build optimized package
-        run: nix build --print-build-logs
-
       - name: Run complete test suite
         run: ./test
 
-      - name: Build complete release matrix
-        run: nix build .#release-all --out-link result-all --print-build-logs
+  targets:
+    name: Build ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [web, macos-aarch64, linux-aarch64, windows-aarch64, linux-x86_64, windows-x86_64]
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31.11.0
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build deterministic target archive
+        run: nix build ".#release-${{ matrix.target }}" --out-link "result-${{ matrix.target }}" --print-build-logs
 
       - name: Stage exact GitHub Pages delivery
+        if: matrix.target == 'web'
         run: |
           nix build .#delivery-web --out-link result-web --print-build-logs
           mkdir pages-site
@@ -46,14 +62,15 @@ jobs:
           install -Dm644 /dev/null pages-site/.nojekyll
 
       - name: Prove headerless Pages browser startup
+        if: matrix.target == 'web'
         run: ./tests/integration/web_browser_startup --static-root pages-site/ulam-flower
 
       - name: Configure GitHub Pages
-        if: github.event_name == 'push' && github.ref == 'refs/heads/yolo'
+        if: matrix.target == 'web' && github.event_name == 'push' && github.ref == 'refs/heads/yolo'
         uses: actions/configure-pages@v5
 
       - name: Upload GitHub Pages artifact
-        if: github.event_name == 'push' && github.ref == 'refs/heads/yolo'
+        if: matrix.target == 'web' && github.event_name == 'push' && github.ref == 'refs/heads/yolo'
         uses: actions/upload-pages-artifact@v4
         with:
           path: pages-site
@@ -61,7 +78,7 @@ jobs:
   pages:
     name: Deploy browser demos
     if: github.event_name == 'push' && github.ref == 'refs/heads/yolo'
-    needs: nix
+    needs: [test, targets]
     runs-on: ubuntu-latest
     permissions:
       pages: write

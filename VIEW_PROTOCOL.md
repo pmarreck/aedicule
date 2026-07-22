@@ -254,6 +254,21 @@ host handles. Candidate capability profiles are:
 - print/export; and
 - explicit timers.
 
+A separate headless-process profile should make CLI applications first-class:
+bounded UTF-8 stdin/stdout/stderr streams, argv, an explicit environment
+allowlist, exit status, and the same deterministic clock/storage capabilities
+used by other adapters. A later TUI profile can add terminal-size and input
+events plus a semantic screen document; it must not grant an ambient terminal
+file descriptor or smuggle arbitrary process authority through ANSI output.
+
+WebAssembly GC is engine configuration, not a mutable guest service. Existing
+Aedicule guests use linear memory, which a Wasm-GC collector does not manage.
+A future package manifest or Wasm custom section may request `disabled`,
+`null`, or a collecting implementation before validation/instantiation; the
+guest cannot toggle collectors after startup. Short-lived CLI applications
+should default to disabled unless their validated module actually uses Wasm-GC
+types.
+
 Every service is denied unless both the guest manifest and host policy grant
 it. Results return as ordered events. Handles are guest-scoped, unforgeable at
 the ABI boundary, bounded, revoked on reload unless deliberately transferred,
@@ -318,7 +333,8 @@ tests are ready to move in the same green savepoint.
 5. **Application shell:** arbitrary menus, scrolling collections, dialogs,
    tabs/splits, and window lifecycle.
 6. **Services:** add explicit async capability handles for assets, storage,
-   files, clipboard, HTTP, timers, and export one profile at a time.
+   files, clipboard, HTTP, timers, and export one profile at a time; add the
+   bounded CLI process profile before extending it into a TUI adapter.
 7. **Falsification:** build a small editor or structured-data application in a
    separate WAT repository before claiming general-purpose readiness.
 

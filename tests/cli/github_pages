@@ -42,5 +42,8 @@ require_file "$root/web/coi-serviceworker.js" 'cross-origin-isolation service wo
 require_text "$root/web/index.html" './coi-serviceworker.js' 'demo isolation bootstrap'
 require_text "$root/packaging/web/index.html" './coi-serviceworker.js' 'gallery isolation bootstrap'
 require_text "$root/README.md" 'https://pmarreck.github.io/aedicule/' 'public demo link'
+require_text "$root/README.md" 'https://pmarreck.github.io/aedicule/ulam-flower/' 'direct Ulam Flower demo link'
+require_text "$root/README.md" 'https://pmarreck.github.io/aedicule/vibesteroids/' 'direct Vibesteroids demo link'
+require_text "$root/flake.nix" '"/README.md"' 'README in Nix test source'
 
 exit "$failures"

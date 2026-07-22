@@ -2,11 +2,12 @@ use std::{
     cell::RefCell,
     collections::{HashMap, VecDeque},
     env,
+    io::Write as _,
     num::{NonZeroU16, NonZeroU32},
     path::{Path, PathBuf},
     process::ExitCode,
     rc::Rc,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use gpui::{
@@ -27,8 +28,10 @@ use gpui_wasm::{
     FileRevision, FrameOutput, Frontplane, HostEffect, Key, LaunchAction, Limits, Metadata,
     PluginInit, PluginSource, PointerButton, PointerScrollUnit, Rect, RevisionTracker,
     SimulationCall, SimulationScheduler, SliderControl, StateTransfer, SynthFilter, SynthVoice,
-    SynthWaveform, WatRejectionStage, display_refresh_rate_from_environment, file_url_to_path,
-    format_wat_rejection_diagnostic, initialize_frontplane, prepare_reload, resolve_launch,
+    SynthWaveform, WatRejectionStage, WebServer, depackage_application, discover_web_runtime,
+    display_refresh_rate_from_environment, file_url_to_path, format_wat_rejection_diagnostic,
+    initialize_frontplane, package_application, prepare_reload, read_application_file,
+    resolve_launch, run_application_tests,
 };
 use rodio::{DeviceSinkBuilder, MixerDeviceSink, buffer::SamplesBuffer};
 use smol::Timer;
@@ -65,6 +68,9 @@ struct Strings {
     help: &'static str,
     about: &'static str,
     cli_error: &'static str,
+    test_seed: &'static str,
+    test_pass: &'static str,
+    tests_passed: &'static str,
 }
 
 const EN: Strings = Strings {
@@ -90,12 +96,22 @@ const EN: Strings = Strings {
 Run a capability-bounded WAT application in the native GPUI frontplane.
 
 Usage:
-  gpui-wasm [OPTIONS] [PLUGIN.wat|APPLICATION_DIRECTORY]
+  gpui-wasm [OPTIONS] [PLUGIN.wat|APPLICATION_DIRECTORY|APPLICATION.aed]
+  gpui-wasm --package DIRECTORY [OUTPUT.aed]
+  gpui-wasm --depackage APPLICATION.aed [OUTPUT_DIRECTORY]
+  gpui-wasm --test [--seed N] SOURCE
+  gpui-wasm --web SOURCE [--bind ADDRESS] [--port PORT]
 
 Options:
   --watch       Reload after content changes; defaults to ./code.wat
   --embedded    Force the stable ABI conformance fallback
-  --seed N      Set the deterministic unsigned 64-bit application seed
+  --package     Create a deterministic .aed from an application directory
+  --depackage   Safely expand an .aed into a new directory
+  --test        Run direct tests/*.wast suites without opening a window
+  --web         Serve an application through the bundled browser runtime
+  --bind ADDR   Web listener address; defaults to 127.0.0.1
+  --port PORT   Web listener port; defaults to 8080 (0 selects an open port)
+  --seed N      Set an application/test seed (decimal or 0x-prefixed)
   -h, --help    Show this help
   --about       Show version and build platform
 
@@ -107,6 +123,9 @@ accepted.
 ",
     about: "generic native GPUI frontplane for capability-bounded WAT applications",
     cli_error: "gpui-wasm",
+    test_seed: "test seed",
+    test_pass: "PASS",
+    tests_passed: "passed",
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -433,6 +452,7 @@ fn render_synth_program_fixed(
 // FIXED_AUDIO_END
 
 struct ExternalSource {
+    source: PluginSource,
     path: PathBuf,
     watch: bool,
     revisions: RevisionTracker,
@@ -698,12 +718,13 @@ impl FrontplaneView {
         let Some(source) = self.source.as_mut() else {
             return false;
         };
+        let application = source.source.clone();
         let path = source.path.clone();
         let revision = FileRevision::read(&path);
         if !source.revisions.observe(&revision) {
             return false;
         }
-        self.apply_revision(&path, revision, cx);
+        self.apply_revision(&application, &path, revision, cx);
         true
     }
 
@@ -711,31 +732,27 @@ impl FrontplaneView {
         let Some(source) = self.source.as_mut() else {
             return;
         };
+        let application = source.source.clone();
         let path = source.path.clone();
         let revision = FileRevision::read(&path);
         source.revisions.observe(&revision);
-        self.apply_revision(&path, revision, cx);
+        self.apply_revision(&application, &path, revision, cx);
         cx.notify();
     }
 
     /// Compiles and validates a changed file as a separate candidate, swapping
     /// only after state transfer and the candidate's first frame both succeed.
-    fn apply_revision(&mut self, path: &Path, revision: FileRevision, cx: &mut Context<Self>) {
-        let bytes = match revision {
-            FileRevision::Missing => {
-                self.set_reload_error(path, EN.missing_source, None);
-                return;
-            }
-            FileRevision::Unreadable(error) => {
-                self.set_reload_error(path, EN.unreadable_source, Some(&error));
-                return;
-            }
-            FileRevision::Content(bytes) => bytes,
-        };
-        let source = match String::from_utf8(bytes) {
+    fn apply_revision(
+        &mut self,
+        application: &PluginSource,
+        path: &Path,
+        revision: FileRevision,
+        cx: &mut Context<Self>,
+    ) {
+        let source = match application_source_text(application, path, &revision) {
             Ok(source) => source,
             Err(error) => {
-                self.set_reload_error(path, EN.invalid_utf8, Some(&error.to_string()));
+                self.set_reload_error(path, EN.reload_failed, Some(&error));
                 return;
             }
         };
@@ -764,22 +781,27 @@ impl FrontplaneView {
         let Some(path) = self.open_documents.borrow_mut().pop_front() else {
             return false;
         };
-        let revision = FileRevision::read(&path);
-        let result = source_text(&path, &revision).and_then(|source| {
-            load_frontplane(&source, self.plugin_init).map_err(|error| error.to_string())
-        });
+        let application = plugin_source_for_path(path.clone());
+        let revision_path =
+            plugin_revision_path(&application).expect("open-document application is external");
+        let revision = FileRevision::read(&revision_path);
+        let result =
+            application_source_text(&application, &revision_path, &revision).and_then(|source| {
+                load_frontplane(&source, self.plugin_init).map_err(|error| error.to_string())
+            });
         match result {
             Ok((frontplane, frame)) => {
                 let mut revisions = RevisionTracker::default();
                 revisions.observe(&revision);
                 self.source = Some(ExternalSource {
-                    path,
+                    source: application,
+                    path: revision_path,
                     watch: false,
                     revisions,
                 });
                 self.install_frontplane(frontplane, frame, EN.reload_restarted, cx);
             }
-            Err(error) => self.set_reload_error(&path, EN.reload_failed, Some(&error)),
+            Err(error) => self.set_reload_error(&revision_path, EN.reload_failed, Some(&error)),
         }
         true
     }
@@ -1413,18 +1435,24 @@ fn startup(source: PluginSource, watch: bool, seed: Option<u64>) -> Result<Start
                 plugin_init,
             }
         }
-        PluginSource::File(path) => {
+        application @ (PluginSource::File(_)
+        | PluginSource::Directory(_)
+        | PluginSource::Archive(_)) => {
+            let path = plugin_revision_path(&application)
+                .expect("external application has a revision path");
             let revision = FileRevision::read(&path);
             let mut revisions = RevisionTracker::default();
             revisions.observe(&revision);
-            let result = source_text(&path, &revision).and_then(|source| {
-                load_frontplane(&source, plugin_init).map_err(|error| error.to_string())
-            });
+            let result =
+                application_source_text(&application, &path, &revision).and_then(|source| {
+                    load_frontplane(&source, plugin_init).map_err(|error| error.to_string())
+                });
             match result {
                 Ok((frontplane, frame)) => Startup {
                     frontplane,
                     frame,
                     source: Some(ExternalSource {
+                        source: application,
                         path,
                         watch,
                         revisions,
@@ -1447,6 +1475,7 @@ fn startup(source: PluginSource, watch: bool, seed: Option<u64>) -> Result<Start
                         frontplane,
                         frame,
                         source: Some(ExternalSource {
+                            source: application,
                             path,
                             watch,
                             revisions,
@@ -1460,17 +1489,47 @@ fn startup(source: PluginSource, watch: bool, seed: Option<u64>) -> Result<Start
     })
 }
 
-fn source_text(path: &Path, revision: &FileRevision) -> Result<String, String> {
-    match revision {
+fn plugin_source_for_path(path: PathBuf) -> PluginSource {
+    if path.is_dir() {
+        PluginSource::Directory(path)
+    } else if path.extension().is_some_and(|extension| extension == "aed") {
+        PluginSource::Archive(path)
+    } else {
+        PluginSource::File(path)
+    }
+}
+
+fn plugin_revision_path(source: &PluginSource) -> Option<PathBuf> {
+    match source {
+        PluginSource::Embedded => None,
+        PluginSource::File(path) | PluginSource::Archive(path) => Some(path.clone()),
+        PluginSource::Directory(root) => Some(root.join(gpui_wasm::DEFAULT_PLUGIN_FILE)),
+    }
+}
+
+/// Resolves external containers through one virtual-root reader while using a
+/// content revision as the transactional trigger for reload decisions.
+fn application_source_text(
+    application: &PluginSource,
+    path: &Path,
+    revision: &FileRevision,
+) -> Result<String, String> {
+    let bytes = match revision {
         FileRevision::Missing => Err(format!("{}: {}", EN.missing_source, path.display())),
         FileRevision::Unreadable(error) => Err(format!(
             "{}: {}: {error}",
             EN.unreadable_source,
             path.display()
         )),
-        FileRevision::Content(bytes) => String::from_utf8(bytes.clone())
-            .map_err(|error| format!("{}: {}: {error}", EN.invalid_utf8, path.display())),
-    }
+        FileRevision::Content(bytes) => Ok(match application {
+            PluginSource::Archive(_) => {
+                read_application_file(application, gpui_wasm::DEFAULT_PLUGIN_FILE)?
+            }
+            _ => bytes.clone(),
+        }),
+    }?;
+    String::from_utf8(bytes)
+        .map_err(|error| format!("{}: {}: {error}", EN.invalid_utf8, path.display()))
 }
 
 fn window_title(metadata: &Metadata) -> String {
@@ -1525,6 +1584,16 @@ fn run_application(startup: Startup) {
     });
 }
 
+/// Produces a per-invocation order seed; the printed hexadecimal value is the
+/// stable replay interface, while tests inject an explicit seed instead.
+fn fresh_test_seed() -> u64 {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos() as u64;
+    nanos ^ u64::from(std::process::id()).rotate_left(32)
+}
+
 fn main() -> ExitCode {
     if cfg!(debug_assertions) && env::var_os("MUTE_DEBUG_STATUS").is_none() {
         eprintln!("\x1b[33mDEBUG BUILD!\x1b[0m");
@@ -1571,6 +1640,51 @@ fn main() -> ExitCode {
                 return ExitCode::from(2);
             }
         },
+        LaunchAction::Package { source, output } => {
+            if let Err(error) = package_application(&source, &output) {
+                eprintln!("{}: {error}", EN.cli_error);
+                return ExitCode::from(2);
+            }
+            println!("{}", output.display());
+        }
+        LaunchAction::Depackage { source, output } => {
+            if let Err(error) = depackage_application(&source, &output) {
+                eprintln!("{}: {error}", EN.cli_error);
+                return ExitCode::from(2);
+            }
+            println!("{}", output.display());
+        }
+        LaunchAction::Test { source, seed } => {
+            let seed = seed.unwrap_or_else(fresh_test_seed);
+            println!("{}: 0x{seed:016x}", EN.test_seed);
+            match run_application_tests(&source, seed) {
+                Ok(report) => {
+                    let passed = report.passed.len();
+                    for name in report.passed {
+                        println!("{} {name}", EN.test_pass);
+                    }
+                    println!("{passed} {}", EN.tests_passed);
+                }
+                Err(error) => {
+                    eprintln!("{}: {error}", EN.cli_error);
+                    return ExitCode::FAILURE;
+                }
+            }
+        }
+        LaunchAction::Web { source, bind, port } => {
+            let result = discover_web_runtime().and_then(|runtime| {
+                let server = WebServer::bind(&source, &runtime, &bind, port)?;
+                println!("{}", server.url()?);
+                std::io::stdout()
+                    .flush()
+                    .map_err(|error| format!("flush web URL: {error}"))?;
+                server.serve()
+            });
+            if let Err(error) = result {
+                eprintln!("{}: {error}", EN.cli_error);
+                return ExitCode::FAILURE;
+            }
+        }
     }
     ExitCode::SUCCESS
 }

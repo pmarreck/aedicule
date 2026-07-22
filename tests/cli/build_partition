@@ -11,28 +11,37 @@ else
 	frontplane_drv=$(nix eval --raw ".#packages.$system.frontplane.drvPath" 2>"$TMPDIR/gpui-wasm-build-partition-eval.err")
 	status=$?
 	if (( status != 0 )); then
+		printf 'could not evaluate the frontplane derivation\n' >&2
 		failures=$((failures + 1))
 	else
 		default_drv=$(nix eval --raw ".#packages.$system.default.drvPath" 2>"$TMPDIR/gpui-wasm-default-partition-eval.err")
 		status=$?
 		if (( status != 0 )) || [[ "$default_drv" != "$frontplane_drv" ]]; then
+			printf 'default package is not the native frontplane derivation\n' >&2
 			failures=$((failures + 1))
 		fi
-		frontplane_source=$(nix-store --query --references "$frontplane_drv" | rg -- '-gpui-wasm-frontplane-source$')
+		frontplane_source=$(nix-store --query --references "$frontplane_drv" | rg -- '-gpui-wasm-build-source$')
 		status=$?
 		if (( status != 0 )); then
+			printf 'frontplane derivation does not reference its filtered build source\n' >&2
 			failures=$((failures + 1))
 		elif [[ ! -f "$frontplane_source/src/fallback.wat" ]]; then
+			printf 'frontplane source lacks src/fallback.wat\n' >&2
 			failures=$((failures + 1))
 		elif [[ -e "$frontplane_source/plugins" ]]; then
+			printf 'frontplane source unexpectedly contains plugins/\n' >&2
 			failures=$((failures + 1))
 		elif [[ ! -f "$frontplane_source/build.rs" ]]; then
+			printf 'frontplane source lacks build.rs\n' >&2
 			failures=$((failures + 1))
 		elif [[ ! -f "$frontplane_source/WAT_ABI.md" ]]; then
+			printf 'frontplane source lacks WAT_ABI.md\n' >&2
 			failures=$((failures + 1))
 		elif [[ -e "$frontplane_source/README.md" ]]; then
+			printf 'frontplane source unexpectedly contains README.md\n' >&2
 			failures=$((failures + 1))
 		elif [[ -e "$frontplane_source/LICENSE" ]]; then
+			printf 'frontplane source unexpectedly contains LICENSE\n' >&2
 			failures=$((failures + 1))
 		fi
 	fi

@@ -27,7 +27,20 @@ use wasmi as runtime;
 #[cfg(feature = "native-runtime")]
 use wasmtime as runtime;
 
+#[cfg(feature = "native-runtime")]
+mod application_test;
+mod package;
 mod wat_abi;
+#[cfg(feature = "native-runtime")]
+mod web_server;
+
+#[cfg(feature = "native-runtime")]
+pub use application_test::{ApplicationTestReport, run_application_tests};
+pub use package::{
+    AED_MIME_TYPE, depackage_application, package_application, read_application_file,
+};
+#[cfg(feature = "native-runtime")]
+pub use web_server::{WebServer, discover_web_runtime};
 
 /// Bounded, device-independent decoding for packaged digitized-audio clips.
 pub mod wav;
@@ -572,6 +585,8 @@ fn duration_from_nanos(nanos: u128) -> Duration {
 pub enum PluginSource {
     Embedded,
     File(PathBuf),
+    Directory(PathBuf),
+    Archive(PathBuf),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -579,6 +594,23 @@ pub enum LaunchAction {
     Run {
         source: PluginSource,
         watch: bool,
+        seed: Option<u64>,
+    },
+    Package {
+        source: PathBuf,
+        output: PathBuf,
+    },
+    Depackage {
+        source: PathBuf,
+        output: PathBuf,
+    },
+    Web {
+        source: PluginSource,
+        bind: String,
+        port: u16,
+    },
+    Test {
+        source: PluginSource,
         seed: Option<u64>,
     },
     Help,
@@ -635,10 +667,22 @@ pub fn resolve_launch(
     working_directory: &Path,
     packaged_default: Option<&Path>,
 ) -> Result<LaunchAction, String> {
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum Mode {
+        Run,
+        Package,
+        Depackage,
+        Web,
+        Test,
+    }
+
     let mut source = None;
+    let mut mode = Mode::Run;
     let mut watch = false;
     let mut seed = None;
-    let mut positional_count = 0;
+    let mut bind = "127.0.0.1".to_owned();
+    let mut port = 8080;
+    let mut positionals = Vec::new();
     let mut positional_only = false;
     let mut arguments = arguments.into_iter();
 
@@ -656,8 +700,53 @@ pub fn resolve_launch(
                     continue;
                 }
                 Some("--embedded") => {
+                    mode = Mode::Run;
                     source = Some(PluginSource::Embedded);
                     watch = false;
+                    continue;
+                }
+                Some("--package") => {
+                    mode = Mode::Package;
+                    source = None;
+                    watch = false;
+                    continue;
+                }
+                Some("--depackage") => {
+                    mode = Mode::Depackage;
+                    source = None;
+                    watch = false;
+                    continue;
+                }
+                Some("--web") => {
+                    mode = Mode::Web;
+                    source = None;
+                    watch = false;
+                    continue;
+                }
+                Some("--test") => {
+                    mode = Mode::Test;
+                    source = None;
+                    watch = false;
+                    continue;
+                }
+                Some("--bind") => {
+                    bind = arguments
+                        .next()
+                        .ok_or_else(|| "--bind requires an address".to_owned())?
+                        .into_string()
+                        .map_err(|_| "--bind must be valid UTF-8".to_owned())?;
+                    continue;
+                }
+                Some("--port") => {
+                    let value = arguments.next().ok_or_else(|| {
+                        "--port requires an integer from 0 through 65535".to_owned()
+                    })?;
+                    let text = value
+                        .to_str()
+                        .ok_or_else(|| "--port must be valid UTF-8 digits".to_owned())?;
+                    port = text.parse::<u16>().map_err(|_| {
+                        "--port requires an integer from 0 through 65535".to_owned()
+                    })?;
                     continue;
                 }
                 Some("--seed") => {
@@ -667,10 +756,7 @@ pub fn resolve_launch(
                     let text = value
                         .to_str()
                         .ok_or_else(|| "--seed must be valid UTF-8 digits".to_owned())?;
-                    seed = Some(
-                        text.parse::<u64>()
-                            .map_err(|_| "--seed requires an unsigned integer".to_owned())?,
-                    );
+                    seed = Some(parse_seed(text)?);
                     continue;
                 }
                 Some("--") => {
@@ -684,18 +770,87 @@ pub fn resolve_launch(
             }
         }
 
-        positional_count += 1;
-        if positional_count > 1 {
-            return Err("only one WAT file or application directory may be specified".into());
-        }
-        let mut path = PathBuf::from(argument);
+        positionals.push(PathBuf::from(argument));
+    }
+
+    let absolute = |path: PathBuf| {
         if path.is_relative() {
-            path = working_directory.join(path);
+            working_directory.join(path)
+        } else {
+            path
         }
+    };
+    let plugin_source = |path: PathBuf| {
+        let path = absolute(path);
         if path.is_dir() {
-            path.push(DEFAULT_PLUGIN_FILE);
+            PluginSource::Directory(path)
+        } else if path.extension().is_some_and(|extension| extension == "aed") {
+            PluginSource::Archive(path)
+        } else {
+            PluginSource::File(path)
         }
-        source = Some(PluginSource::File(path));
+    };
+
+    match mode {
+        Mode::Package => {
+            if !(1..=2).contains(&positionals.len()) {
+                return Err(
+                    "--package requires a source directory and optional output .aed path".into(),
+                );
+            }
+            let source = absolute(positionals.remove(0));
+            let output = positionals
+                .pop()
+                .map(absolute)
+                .unwrap_or_else(|| source.with_extension("aed"));
+            return Ok(LaunchAction::Package { source, output });
+        }
+        Mode::Depackage => {
+            if !(1..=2).contains(&positionals.len()) {
+                return Err(
+                    "--depackage requires a source .aed and optional output directory".into(),
+                );
+            }
+            let source = absolute(positionals.remove(0));
+            let output = positionals
+                .pop()
+                .map(absolute)
+                .unwrap_or_else(|| source.with_extension(""));
+            return Ok(LaunchAction::Depackage { source, output });
+        }
+        Mode::Web => {
+            if positionals.len() != 1 {
+                return Err(
+                    "--web requires exactly one WAT, application directory, or .aed path".into(),
+                );
+            }
+            return Ok(LaunchAction::Web {
+                source: plugin_source(positionals.remove(0)),
+                bind,
+                port,
+            });
+        }
+        Mode::Test => {
+            if positionals.len() != 1 {
+                return Err(
+                    "--test requires exactly one WAT, application directory, or .aed path".into(),
+                );
+            }
+            return Ok(LaunchAction::Test {
+                source: plugin_source(positionals.remove(0)),
+                seed,
+            });
+        }
+        Mode::Run => {}
+    }
+
+    if positionals.len() > 1 {
+        return Err(
+            "only one WAT file, .aed package, or application directory may be specified".into(),
+        );
+    }
+    if let Some(path) = positionals.pop() {
+        source = Some(plugin_source(path));
     }
 
     let source = source.unwrap_or_else(|| {
@@ -713,6 +868,17 @@ pub fn resolve_launch(
         watch,
         seed,
     })
+}
+
+fn parse_seed(text: &str) -> Result<u64, String> {
+    let parsed = text
+        .strip_prefix("0x")
+        .or_else(|| text.strip_prefix("0X"))
+        .map_or_else(
+            || text.parse::<u64>(),
+            |digits| u64::from_str_radix(digits, 16),
+        );
+    parsed.map_err(|_| "--seed requires an unsigned decimal or 0x-prefixed integer".to_owned())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

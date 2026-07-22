@@ -102,8 +102,10 @@ See [WAT_ABI.md](WAT_ABI.md) for the generated client ABI reference and
 
 ## Try it
 
-Play [Ulam Flower and Vibesteroids in the browser](https://pmarreck.github.io/aedicule/),
-or download a native build below.
+Open the [browser gallery](https://pmarreck.github.io/aedicule/), play
+[Ulam Flower](https://pmarreck.github.io/aedicule/ulam-flower/) or
+[Vibesteroids](https://pmarreck.github.io/aedicule/vibesteroids/) directly, or
+download a native build below.
 
 Download the latest packaged builds from
 [GitHub Releases](https://github.com/pmarreck/aedicule/releases/latest). Every

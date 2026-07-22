@@ -87,8 +87,10 @@ else
 fi
 
 require_text .mechatron-prime/targets 'packages.x86_64-linux.release-all'
-require_text .github/workflows/ci.yml 'nix build .#release-all'
-require_text .github/workflows/release.yml 'nix build .#release-all'
+require_text .github/workflows/ci.yml 'nix build ".#release-${{ matrix.target }}"'
+require_text .github/workflows/release.yml 'nix build ".#release-${{ matrix.target }}"'
+reject_text .github/workflows/ci.yml 'nix build .#release-all'
+reject_text .github/workflows/release.yml 'nix build .#release-all'
 require_text .github/workflows/release.yml 'gh release create'
 require_text flake.nix 'mkZipRelease "macos-aarch64" "Aedicule"'
 require_text README.md './build_all'

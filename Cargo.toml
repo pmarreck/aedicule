@@ -18,7 +18,7 @@ embed-resource = "3.0.11"
 
 [features]
 default = ["gui", "native-runtime"]
-native-runtime = ["dep:wasmtime"]
+native-runtime = ["dep:wasmtime", "dep:wasmtime-wast"]
 portable-runtime = ["dep:wasmi"]
 web = [
 	"portable-runtime",
@@ -40,9 +40,13 @@ gui = [
 ]
 
 [dependencies]
+async_zip = { version = "0.0.18", default-features = false }
+futures-lite = "2.6.1"
 thiserror = "2.0.16"
+unicode-normalization = "0.1.25"
 wat = "1.253.0"
-wasmtime = { version = "46.0.1", default-features = false, features = ["cranelift", "runtime", "std"], optional = true }
+wasmtime = { version = "46.0.1", default-features = false, features = ["cranelift", "runtime", "std", "gc-null"], optional = true }
+wasmtime-wast = { version = "46.0.1", optional = true }
 wasmi = { version = "1.1.0", default-features = false, features = ["std", "extra-checks"], optional = true }
 
 anyhow = { version = "1.0.100", optional = true }
