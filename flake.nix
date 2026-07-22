@@ -167,6 +167,7 @@
 									"/flake.nix"
 									"/assets"
 									"/packaging"
+									"/run"
 									"/src"
 									"/test"
 									"/third_party"

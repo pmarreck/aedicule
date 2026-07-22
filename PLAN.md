@@ -115,6 +115,11 @@
       covered by the CI-structure gate.)
       Curiosity poke: verify every target keeps the expected executable suffix
       and no delivery closure depends on discarded build artifacts.
+    - [x] Hard-cut every runtime, package, launcher, and delivery artifact to
+      the canonical `aedicule` / `aedicule-render` executable names, and include
+      the launcher in the isolated Nix test source so Mechatron exercises the
+      repository-wide legacy-name classifier.
+      (2026-07-22 19:08 EDT; exact `checks.x86_64-linux.test` target passed.)
   - [ ] Re-run the browser startup probe and obtain Peter's iPhone visual
     acceptance before describing the web demos as playable.
     (Headless Ulam Flower and Vibesteroids startup/input probes passed
