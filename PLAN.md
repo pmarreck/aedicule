@@ -120,6 +120,10 @@
       the launcher in the isolated Nix test source so Mechatron exercises the
       repository-wide legacy-name classifier.
       (2026-07-22 19:08 EDT; exact `checks.x86_64-linux.test` target passed.)
+    - [x] Retry whole-tree headless-Chrome profile removal after late helper
+      writes outlive Node's internal recursive-delete retry window.
+      (2026-07-22 19:17 EDT; deterministic injected-race regression, real
+      Pages-style WebGPU/input probe, and complete suite passed.)
   - [ ] Re-run the browser startup probe and obtain Peter's iPhone visual
     acceptance before describing the web demos as playable.
     (Headless Ulam Flower and Vibesteroids startup/input probes passed

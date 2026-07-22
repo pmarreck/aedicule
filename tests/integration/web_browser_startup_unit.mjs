@@ -27,9 +27,20 @@ assert.equal(retries, 2);
 
 let removedProfile;
 let removeOptions;
-removeBrowserProfile("/temporary/chrome-profile", (profile, options) => {
-	removedProfile = profile;
-	removeOptions = options;
+let removeAttempts = 0;
+let removeRetries = 0;
+await removeBrowserProfile("/temporary/chrome-profile", {
+	remove: (profile, options) => {
+		removedProfile = profile;
+		removeOptions = options;
+		removeAttempts += 1;
+		if (removeAttempts < 3) {
+			const error = new Error("late Chrome helper recreated the profile");
+			error.code = "ENOTEMPTY";
+			throw error;
+		}
+	},
+	retry: async () => { removeRetries += 1; },
 });
 assert.equal(removedProfile, "/temporary/chrome-profile");
 assert.deepEqual(removeOptions, {
@@ -38,6 +49,8 @@ assert.deepEqual(removeOptions, {
 	recursive: true,
 	retryDelay: 25,
 });
+assert.equal(removeAttempts, 3);
+assert.equal(removeRetries, 2);
 
 const listeners = new Map();
 const browser = {
