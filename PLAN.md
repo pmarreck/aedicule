@@ -42,6 +42,13 @@
     delivery, convert fixed PCM only at the WebAudio boundary, and prove a real
     packaged Vibesteroids request in headless Chrome without audible test
     output. (2026-07-22 22:43 EDT)
+  - [x] Re-audit the complete portable-application slice against current
+    artifacts: the real Vibesteroids directory depackages/repackages to the
+    identical `b22e5002…` `.aed`, its 1+ MiB WAST suite passes with an emitted
+    replay seed, bare/directory/archive inputs render byte-identical SVG, both
+    public Pages and dynamic `--web` fetch the exact schema-11 WAT and FLAC,
+    and the full test/build/six-target/reproducibility gates pass.
+    (2026-07-23 08:44 EDT.)
   - [ ] Expose packaged image assets by virtual name without granting arbitrary
     virtual-filesystem reads, then add browser image-adapter parity.
   - Curiosity poke: non-loopback browsers require a secure context as well as
