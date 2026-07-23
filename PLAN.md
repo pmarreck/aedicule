@@ -1,5 +1,24 @@
 # Plan
 
+- [ ] Reduce the complete-suite feedback loop from the measured 62m37s cold
+  GitHub run to a bounded build phase plus fast warm test execution.
+  - [x] Keep headless native/portable runtime tests from compiling GPUI merely
+    because GUI test support is an unconditional development dependency.
+    (2026-07-23 19:50 EDT: `cargo tree` proves the headless graph contains no
+    GPUI; GUI-only tests activate `gui-test-support` explicitly.)
+  - [x] Retain useful Aedicule test backtraces while omitting full debug data
+    from third-party dependency artifacts, and remove redundant compilation
+    profiles from the complete-suite runner. (2026-07-23 19:50 EDT: cold local
+    suite passed in 10m46s and the first unchanged warm run passed in 41.3s;
+    a second trace-isolated warm run passed in 25.6s.)
+  - [ ] Cache only reusable Cargo dependencies between trusted `yolo` CI runs,
+    with the Nix toolchain included in the cache key and the cache kept below
+    GitHub's repository quota. (Implementation and structural gates complete
+    2026-07-23 19:50 EDT; cold population and following warm CI measurements
+    remain.)
+  - Curiosity poke: measure both cold compile time and warm assertion time so a
+    cache hit cannot conceal a pathological clean build.
+
 - [ ] Publish a versioned, self-contained `GUIDE_FOR_LLMS.md` for writing and
   maintaining Aedicule guests without access to the host source.
   - [x] Compose the checked-in guide during the build from an authored teaching

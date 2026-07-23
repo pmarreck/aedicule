@@ -54,6 +54,21 @@ done
 ci="$root/.github/workflows/ci.yml"
 require_text "$ci" 'name: Test complete suite' 'CI workflow'
 require_text "$ci" 'name: Build ${{ matrix.target }}' 'CI workflow'
+require_text "$ci" \
+	'uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1' \
+	'CI workflow'
+require_text "$ci" \
+	'uses: DeterminateSystems/magic-nix-cache-action@55718cd9ebf1737a061487d5ada21abf31e99a98' \
+	'CI workflow'
+require_text "$ci" 'cmd-format: nix develop -c {0}' 'CI workflow'
+require_text "$ci" \
+	"save-if: \${{ github.event_name == 'push' && github.ref == 'refs/heads/yolo' }}" \
+	'CI workflow'
+test_job=$(sed -n '/^  test:$/,/^  targets:$/p' "$ci")
+if ! rg -F 'id-token: write' <<< "$test_job" >/dev/null; then
+	printf 'CI test job lacks narrowly-scoped id-token permission for its Nix cache\n' >&2
+	failures=$((failures + 1))
+fi
 reject_text "$ci" 'run: nix build --print-build-logs' 'CI workflow'
 
 release="$root/.github/workflows/release.yml"

@@ -105,9 +105,8 @@ run_web_build nix develop .#web --quiet --ignore-environment --keep HOME --keep 
 run_web_build nix develop .#web --quiet --ignore-environment --keep HOME --keep TMPDIR -c \
 	cargo --quiet --config web/cargo-config.toml build --bin aedicule-web --target wasm32-unknown-unknown --no-default-features --features web
 run_check ./tests/cli/web_delivery
-run_check cargo test --bin aedicule
-run_check cargo test --test gui_cli
-run_check cargo check
+run_check cargo test --no-default-features --features gui-test-support --bin aedicule
+run_check cargo test --no-default-features --features gui-test-support --test gui_cli
 run_check run_packaged_audio_browser
 run_check ./tests/cli/build_partition
 

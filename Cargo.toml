@@ -40,6 +40,7 @@ gui = [
 	"dep:rodio",
 	"dep:smol",
 ]
+gui-test-support = ["gui", "gpui/test-support"]
 
 [dependencies]
 async_zip = { version = "0.0.18", default-features = false }
@@ -70,7 +71,6 @@ smol = { version = "2.0.2", optional = true }
 ahash = { version = "0.8.12", features = ["runtime-rng"] }
 
 [dev-dependencies]
-gpui = { git = "https://github.com/zed-industries/zed", rev = "1d217ee39d381ac101b7cf49d3d22451ac1093fe", features = ["test-support"] }
 wasmprinter = "0.251.0"
 
 [[bin]]
@@ -90,6 +90,12 @@ required-features = ["web"]
 [profile.release]
 opt-level = 3
 lto = "thin"
+
+[profile.test]
+debug = "line-tables-only"
+
+[profile.test.package."*"]
+debug = false
 
 [patch."https://github.com/zed-industries/zed"]
 gpui = { git = "https://github.com/pmarreck/zed", rev = "0124f0b857296ab7beca7575e908214ce13158d3" }

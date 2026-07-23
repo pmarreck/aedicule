@@ -13,6 +13,43 @@ if ! rg -F 'develop+=(--keep CARGO_TARGET_DIR)' "$root/test" >/dev/null; then
 	failures=$((failures + 1))
 fi
 
+dev_dependencies=$(
+	sed -n '/^\[dev-dependencies\]$/,/^\[/p' "$root/Cargo.toml"
+)
+if rg -q '^gpui = ' <<< "$dev_dependencies"; then
+	printf 'headless runtime tests still activate GPUI through dev-dependencies\n' >&2
+	failures=$((failures + 1))
+fi
+
+if ! rg -F 'gui-test-support = ["gui", "gpui/test-support"]' \
+	"$root/Cargo.toml" >/dev/null; then
+	printf 'GUI test support is not isolated behind its explicit feature\n' >&2
+	failures=$((failures + 1))
+fi
+
+if ! rg -F -- '--features gui-test-support' "$root/test" >/dev/null; then
+	printf 'full suite does not activate explicit GUI test support\n' >&2
+	failures=$((failures + 1))
+fi
+
+if ! rg -F \
+	'cargo test --no-default-features --features gui-test-support --bin aedicule' \
+	"$root/flake.nix" >/dev/null; then
+	printf 'isolated Nix test gate does not activate explicit GUI test support\n' >&2
+	failures=$((failures + 1))
+fi
+
+if ! rg -U '\[profile\.test\.package\."\*"\]\ndebug = false' \
+	"$root/Cargo.toml" >/dev/null; then
+	printf 'test dependencies still emit full debug information\n' >&2
+	failures=$((failures + 1))
+fi
+
+if rg -F 'run_check cargo check' "$root/test" >/dev/null; then
+	printf 'full suite still recompiles the default graph for a redundant cargo check\n' >&2
+	failures=$((failures + 1))
+fi
+
 system=$(nix eval --impure --raw --expr builtins.currentSystem 2>/dev/null)
 status=$?
 if (( status != 0 )); then

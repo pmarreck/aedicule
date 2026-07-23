@@ -19,6 +19,9 @@ jobs:
     name: Test complete suite
     runs-on: ubuntu-latest
     timeout-minutes: 180
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
       - name: Check out source
@@ -28,6 +31,20 @@ jobs:
         uses: cachix/install-nix-action@v31.11.0
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Restore reusable Nix build products
+        uses: DeterminateSystems/magic-nix-cache-action@55718cd9ebf1737a061487d5ada21abf31e99a98
+        with:
+          diagnostic-endpoint: ""
+          use-flakehub: false
+
+      - name: Restore reusable Rust dependencies
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          cmd-format: nix develop -c {0}
+          cache-bin: "false"
+          cache-on-failure: "true"
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/yolo' }}
 
       - name: Run complete test suite
         run: ./test

@@ -601,9 +601,9 @@
 								packaging/macos/canonicalize_uuid packaging/macos/validate_macho \
 								check_reproducible publish
 							cargo test --no-default-features --features native-runtime
-							cargo test --bin aedicule
+							cargo test --no-default-features --features gui-test-support --bin aedicule
 							cargo rustc --release --bin aedicule -- -D warnings
-							cargo test --test gui_cli
+							cargo test --no-default-features --features gui-test-support --test gui_cli
 							${pkgs.lib.optionalString (system == "x86_64-linux") ''
 								tests/integration/web_packaged_audio target/release/aedicule \
 									${self.packages.${system}.webRuntime} demos/vibesteroids.aed
