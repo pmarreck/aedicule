@@ -4,9 +4,9 @@
 use std::time::Duration;
 
 use crate::{
-    ApplicationAssets, Event, FrameOutput, Frontplane, FrontplaneError, Limits, Metadata,
-    PluginInit, SimulationCall, SimulationScheduler, UiSnapshot, initialize_frontplane,
-    wav::AUDIO_FIXED_SCALE,
+    ApplicationAssets, Event, FrameOutput, Frontplane, FrontplaneError, GuestSuspension, Limits,
+    Metadata, PausePhase, PluginInit, SampleAudioEvent, SimulationCall, SimulationScheduler,
+    SuspensionDisposition, UiSnapshot, initialize_frontplane, wav::AUDIO_FIXED_SCALE,
 };
 
 const MAX_TICKS_PER_BROWSER_FRAME: u32 = 8;
@@ -38,6 +38,17 @@ pub struct BrowserDeliveredEventCounts {
     pub pointer: u64,
 }
 
+/// Reports whether one browser edge entered the fixed-step queue, was consumed,
+/// or completed a host-owned suspension transition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BrowserInputOutcome {
+    Queued,
+    Rendered,
+    Consumed,
+    Paused,
+    Resumed,
+}
+
 /// Requires a non-empty WAT document supplied by the delivery bootstrap.
 ///
 /// A web bundle must never silently substitute the host's fallback guest:
@@ -57,6 +68,9 @@ pub struct BrowserRuntime {
     scheduler: SimulationScheduler,
     frame: FrameOutput,
     delivered_events: BrowserDeliveredEventCounts,
+    suspension: GuestSuspension,
+    paused_at: Option<Duration>,
+    pending_sample_audio: Vec<SampleAudioEvent>,
 }
 
 impl BrowserRuntime {
@@ -85,64 +99,145 @@ impl BrowserRuntime {
             MAX_TICKS_PER_BROWSER_FRAME,
             origin,
         );
+        let suspension = GuestSuspension::new(frontplane.metadata().pause_triggers.iter().copied());
         Ok(Self {
             frontplane,
             scheduler,
             frame,
             delivered_events: BrowserDeliveredEventCounts::default(),
+            suspension,
+            paused_at: None,
+            pending_sample_audio: Vec::new(),
         })
     }
 
-    /// Stamps browser input in the same monotonic timeline that classifies the
-    /// next simulation boundary; the event is delivered during `advance_to`.
-    pub fn queue_event(&mut self, timestamp: Duration, event: Event) {
+    /// Lets scheduler-ordering tests enqueue ordinary input without exposing a
+    /// production bypass around host-owned suspension classification.
+    #[cfg(test)]
+    fn queue_event(&mut self, timestamp: Duration, event: Event) {
         self.scheduler.queue_event(timestamp, event);
+    }
+
+    /// Converts configured raw triggers into semantic pause phases while
+    /// preserving ordinary input scheduling for guests that declare none.
+    pub fn handle_input(
+        &mut self,
+        timestamp: Duration,
+        event: Event,
+    ) -> Result<BrowserInputOutcome, FrontplaneError> {
+        match self.suspension.handle(event) {
+            SuspensionDisposition::Deliver(event) => {
+                self.scheduler.queue_event(timestamp, event);
+                Ok(BrowserInputOutcome::Queued)
+            }
+            SuspensionDisposition::Maintenance(event) => {
+                self.deliver_event(event)?;
+                self.frame = self.frontplane.render()?;
+                self.discard_transition_outputs();
+                Ok(BrowserInputOutcome::Rendered)
+            }
+            SuspensionDisposition::Consumed => Ok(BrowserInputOutcome::Consumed),
+            SuspensionDisposition::Pause => {
+                self.advance_scheduler_to(timestamp)?;
+                for event in self.scheduler.drain_events_through(timestamp) {
+                    self.deliver_event(event)?;
+                }
+                self.collect_runtime_outputs();
+                self.deliver_event(Event::Pause(PausePhase::Paused))?;
+                self.frame = self.frontplane.render()?;
+                self.discard_transition_outputs();
+                self.paused_at = Some(timestamp);
+                Ok(BrowserInputOutcome::Paused)
+            }
+            SuspensionDisposition::Resume { reconciliation } => {
+                let paused_at = self
+                    .paused_at
+                    .take()
+                    .expect("resume disposition follows a completed pause");
+                self.scheduler.resume_after_pause(paused_at, timestamp);
+                for event in reconciliation {
+                    self.deliver_event(event)?;
+                }
+                self.deliver_event(Event::Pause(PausePhase::Resumed))?;
+                self.frame = self.frontplane.render()?;
+                self.collect_runtime_outputs();
+                Ok(BrowserInputOutcome::Resumed)
+            }
+        }
     }
 
     /// Executes one animation-frame sample. Unsupported browser audio and
     /// effects are drained until their dedicated adapters exist, preserving the
     /// runtime's bounded output queues without inventing JavaScript behavior.
     pub fn advance_to(&mut self, now: Duration) -> Result<bool, FrontplaneError> {
+        if self.suspension.is_suspended() {
+            return Ok(false);
+        }
+        self.advance_scheduler_to(now)
+    }
+
+    fn advance_scheduler_to(&mut self, now: Duration) -> Result<bool, FrontplaneError> {
         let pump = self.scheduler.pump(now);
         for call in pump.calls {
             match call {
-                SimulationCall::Event(event) => {
-                    match &event {
-                        Event::Control { .. } => {
-                            self.delivered_events.controls =
-                                self.delivered_events.controls.saturating_add(1);
-                        }
-                        Event::MenuAction(_) => {
-                            self.delivered_events.menu_actions =
-                                self.delivered_events.menu_actions.saturating_add(1);
-                        }
-                        Event::PointerMove { .. }
-                        | Event::PointerDown { .. }
-                        | Event::PointerUp { .. }
-                        | Event::PointerScroll { .. } => {
-                            self.delivered_events.pointer =
-                                self.delivered_events.pointer.saturating_add(1);
-                        }
-                        _ => {}
-                    }
-                    self.frontplane.event(event)?;
-                    self.delivered_events.total = self.delivered_events.total.saturating_add(1);
-                }
+                SimulationCall::Event(event) => self.deliver_event(event)?,
                 SimulationCall::Tick(ticks) => self.frontplane.tick(ticks)?,
             }
         }
         if pump.render {
             self.frame = self.frontplane.render()?;
         }
-        self.frontplane.drain_audio();
-        self.frontplane.drain_effects();
+        self.collect_runtime_outputs();
         Ok(pump.render || pump.dropped_ticks > 0)
+    }
+
+    fn deliver_event(&mut self, event: Event) -> Result<(), FrontplaneError> {
+        match &event {
+            Event::Control { .. } => {
+                self.delivered_events.controls = self.delivered_events.controls.saturating_add(1);
+            }
+            Event::MenuAction(_) => {
+                self.delivered_events.menu_actions =
+                    self.delivered_events.menu_actions.saturating_add(1);
+            }
+            Event::PointerMove { .. }
+            | Event::PointerDown { .. }
+            | Event::PointerUp { .. }
+            | Event::PointerScroll { .. } => {
+                self.delivered_events.pointer = self.delivered_events.pointer.saturating_add(1);
+            }
+            _ => {}
+        }
+        self.frontplane.event(event)?;
+        self.delivered_events.total = self.delivered_events.total.saturating_add(1);
+        Ok(())
+    }
+
+    fn collect_runtime_outputs(&mut self) {
+        self.frontplane.drain_audio();
+        self.pending_sample_audio
+            .extend(self.frontplane.drain_sample_audio());
+        self.frontplane.drain_effects();
+    }
+
+    fn discard_transition_outputs(&mut self) {
+        self.frontplane.drain_audio();
+        self.frontplane.drain_sample_audio();
+        self.frontplane.drain_effects();
     }
 
     /// Exposes only the last complete validated command frame to GPUI's paint
     /// callback, keeping guest execution outside paint replay.
     pub fn frame(&self) -> &FrameOutput {
         &self.frame
+    }
+
+    pub fn is_suspended(&self) -> bool {
+        self.suspension.is_suspended()
+    }
+
+    pub fn pause_is_enabled(&self) -> bool {
+        self.suspension.is_enabled()
     }
 
     /// Exposes immutable configure-time declarations to the browser adapter so
@@ -172,7 +267,7 @@ impl BrowserRuntime {
     /// Resolves transactional sample events against immutable admitted metadata
     /// and converts fixed PCM only at the browser-device boundary.
     pub fn drain_sample_audio(&mut self) -> Vec<BrowserSamplePlayback> {
-        let events = self.frontplane.drain_sample_audio();
+        let events = std::mem::take(&mut self.pending_sample_audio);
         events
             .into_iter()
             .map(|event| {
@@ -207,7 +302,7 @@ mod tests {
 
     use crate::{ApplicationAssets, DrawCommand, Event, PluginInit};
 
-    use super::{BrowserRuntime, required_browser_wat};
+    use super::{BrowserInputOutcome, BrowserRuntime, required_browser_wat};
 
     const POINTER_WAT: &str = r#"
         (module
@@ -270,6 +365,59 @@ mod tests {
             (func (export "AE_state_ptr") (result i32) i32.const 0)
             (func (export "AE_state_len") (result i32) i32.const 0)
             (func (export "AE_state_schema") (result i32) i32.const 1))
+	"#;
+
+    const PAUSE_WAT: &str = r#"
+		(module
+			(import "aedicule.v0" "AE_pause_trigger"
+				(func $pause_trigger (param i32 i32 i32) (result i32)))
+			(import "aedicule.v0" "AE_frame_begin_rgba"
+				(func $frame_begin (param i32) (result i32)))
+			(import "aedicule.v0" "AE_circle"
+				(func $circle (param i32 f32 f32 f32 f32 i32 i32) (result i32)))
+			(import "aedicule.v0" "AE_frame_end" (func $frame_end (result i32)))
+			(memory (export "memory") 1)
+			(global $ticks (mut i32) (i32.const 0))
+			(global $phase (mut i32) (i32.const 0))
+			(global $left_balance (mut i32) (i32.const 0))
+			(func (export "AE_abi_major") (result i32) i32.const 0)
+			(func (export "AE_abi_minor") (result i32) i32.const 3)
+			(func (export "AE_configure") (result i32)
+				i32.const 1 i32.const 5 i32.const 0 call $pause_trigger)
+			(func (export "AE_init") (param i32 i32 f32 f32) (result i32) i32.const 0)
+			(func (export "AE_event")
+				(param $kind i32) (param $code i32) (param f32 f32) (result i32)
+				local.get $kind i32.const 15 i32.eq
+				if local.get $code global.set $phase end
+				local.get $kind i32.const 1 i32.eq
+				local.get $code i32.const 1 i32.eq i32.and
+				if
+					global.get $left_balance i32.const 1 i32.add global.set $left_balance
+				end
+				local.get $kind i32.const 2 i32.eq
+				local.get $code i32.const 1 i32.eq i32.and
+				if
+					global.get $left_balance i32.const 1 i32.sub global.set $left_balance
+				end
+				i32.const 0)
+			(func (export "AE_tick") (param $count i32) (result i32)
+				global.get $ticks local.get $count i32.add global.set $ticks
+				i32.const 0)
+			(func (export "AE_tick_rate") (param i32 i32) (result i32 i32)
+				i32.const 10 i32.const 1)
+			(func (export "AE_render") (result i32)
+				i32.const 0x101820ff call $frame_begin drop
+				i32.const 1
+				global.get $ticks f32.convert_i32_u
+				global.get $phase f32.convert_i32_u
+				global.get $left_balance i32.const 1 i32.add f32.convert_i32_u
+				f32.const 1 i32.const -1 i32.const 1
+				call $circle drop
+				call $frame_end drop
+				i32.const 0)
+			(func (export "AE_state_ptr") (result i32) i32.const 0)
+			(func (export "AE_state_len") (result i32) i32.const 0)
+			(func (export "AE_state_schema") (result i32) i32.const 1))
 	"#;
 
     const SILENT_FLAC: &[u8] = &[
@@ -369,6 +517,97 @@ mod tests {
             panic!("expected a keyboard-and-tick-controlled circle");
         };
         assert_eq!((*x, *y), (50.0, 10.0));
+    }
+
+    #[test]
+    fn pause_stops_browser_ticks_renders_once_and_resumes_without_time_debt() {
+        let mut runtime =
+            BrowserRuntime::new(PAUSE_WAT, PluginInit::new(7, 1024.0, 768.0), Duration::ZERO)
+                .unwrap();
+
+        assert_eq!(
+            runtime
+                .handle_input(Duration::from_millis(150), Event::KeyDown(crate::Key::P))
+                .unwrap(),
+            BrowserInputOutcome::Paused
+        );
+        let Some(DrawCommand::Circle { x, y, .. }) = runtime.frame().commands.first() else {
+            panic!("expected pause-state probe");
+        };
+        assert_eq!((*x, *y), (1.0, 1.0));
+
+        assert!(!runtime.advance_to(Duration::from_secs(20)).unwrap());
+        let Some(DrawCommand::Circle { x, y, .. }) = runtime.frame().commands.first() else {
+            panic!("expected cached paused frame");
+        };
+        assert_eq!((*x, *y), (1.0, 1.0));
+
+        assert_eq!(
+            runtime
+                .handle_input(Duration::from_secs(20), Event::KeyUp(crate::Key::P))
+                .unwrap(),
+            BrowserInputOutcome::Consumed
+        );
+        assert_eq!(
+            runtime
+                .handle_input(Duration::from_millis(20_001), Event::KeyDown(crate::Key::P),)
+                .unwrap(),
+            BrowserInputOutcome::Resumed
+        );
+        let Some(DrawCommand::Circle { x, y, .. }) = runtime.frame().commands.first() else {
+            panic!("expected resumed-state probe");
+        };
+        assert_eq!((*x, *y), (1.0, 2.0));
+
+        assert!(!runtime.advance_to(Duration::from_millis(20_050)).unwrap());
+        assert!(runtime.advance_to(Duration::from_millis(20_051)).unwrap());
+        let Some(DrawCommand::Circle { x, y, .. }) = runtime.frame().commands.first() else {
+            panic!("expected post-resume tick");
+        };
+        assert_eq!((*x, *y), (2.0, 2.0));
+    }
+
+    #[test]
+    fn pause_barrier_delivers_prior_queued_input_and_reconciles_its_release() {
+        let mut runtime =
+            BrowserRuntime::new(PAUSE_WAT, PluginInit::new(7, 1024.0, 768.0), Duration::ZERO)
+                .unwrap();
+        assert_eq!(
+            runtime
+                .handle_input(
+                    Duration::from_millis(40),
+                    Event::KeyDown(crate::Key::ArrowLeft),
+                )
+                .unwrap(),
+            BrowserInputOutcome::Queued
+        );
+        assert_eq!(
+            runtime
+                .handle_input(Duration::from_millis(50), Event::KeyDown(crate::Key::P))
+                .unwrap(),
+            BrowserInputOutcome::Paused
+        );
+        let Some(DrawCommand::Circle { radius, .. }) = runtime.frame().commands.first() else {
+            panic!("expected pause input-state probe");
+        };
+        assert_eq!(*radius, 2.0);
+
+        runtime
+            .handle_input(
+                Duration::from_millis(60),
+                Event::KeyUp(crate::Key::ArrowLeft),
+            )
+            .unwrap();
+        runtime
+            .handle_input(Duration::from_millis(70), Event::KeyUp(crate::Key::P))
+            .unwrap();
+        runtime
+            .handle_input(Duration::from_millis(80), Event::KeyDown(crate::Key::P))
+            .unwrap();
+        let Some(DrawCommand::Circle { radius, .. }) = runtime.frame().commands.first() else {
+            panic!("expected resumed input-state probe");
+        };
+        assert_eq!(*radius, 1.0);
     }
 
     #[test]

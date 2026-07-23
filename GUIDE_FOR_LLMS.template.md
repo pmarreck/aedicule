@@ -81,6 +81,14 @@ Pointer scroll preserves both axes and distinguishes line units from logical-pix
 
 Native and browser adapters currently deliver the documented keyboard and pointer set. Browser touch is presently lowered through pointer behavior; stable touch identity, multiple contacts, pressure, and cancellation do not yet have a finalized guest ABI.
 
+### Host-scheduled pause
+
+Pause is opt-in. During `AE_configure`, call `AE_pause_trigger(1, KEY_ID, 0)` for each stable physical key that should toggle suspension. Declare ABI minor `3` or newer when using it. If a guest declares no pause trigger, Aedicule does not alter or deduplicate its raw input lifecycle.
+
+Aedicule consumes both raw edges of each declared trigger. Do not also handle that key as gameplay input. Instead, handle event kind `15`: code `1` means the scheduler and guest-audio bus have just paused, code `2` means they have resumed, and code `3` tells a hot-reload candidate that it is replacing an already-paused guest. Update only pause presentation/state in these events; ticks stop while paused, and the host requests one render for each phase.
+
+Held/repeated triggers do not immediately undo a pause. A fresh down after release resumes. Aedicule reconciles releases and focus cancellation observed while suspended before delivering code `2`, preserves the exact rational tick phase, and never converts paused wall time into catch-up ticks. Viewport/display changes and transactional reload remain live without advancing simulation.
+
 ### Atomic rendering
 
 One `AE_render` call produces one all-or-nothing frame:

@@ -13,12 +13,13 @@ use std::{
 
 use aedicule::{
     AudioEvent, ControlLabelPlacement, ControlPhase, DEFAULT_PLUGIN_ENV, Event, FALLBACK_WAT,
-    FileRevision, FrameOutput, Frontplane, GEIST_MONO_REGULAR, HostEffect, Key, LaunchAction,
-    Limits, Metadata, PluginInit, PluginSource, PointerButton, PointerScrollUnit, Rect,
-    RevisionTracker, SampleAsset, SampleAudioEvent, SimulationCall, SimulationScheduler,
-    SliderControl, StateTransfer, SynthFilter, SynthVoice, SynthWaveform, WatRejectionStage,
-    WebServer, depackage_application, discover_web_runtime, display_refresh_rate_from_environment,
-    file_url_to_path, format_wat_rejection_diagnostic, initialize_frontplane, package_application,
+    FileRevision, FrameOutput, Frontplane, GEIST_MONO_REGULAR, GuestSuspension, HostEffect, Key,
+    LaunchAction, Limits, Metadata, PausePhase, PluginInit, PluginSource, PointerButton,
+    PointerScrollUnit, Rect, RevisionTracker, SampleAsset, SampleAudioEvent, SimulationCall,
+    SimulationScheduler, SliderControl, StateTransfer, SuspensionDisposition, SynthFilter,
+    SynthVoice, SynthWaveform, WatRejectionStage, WebServer, depackage_application,
+    discover_web_runtime, display_refresh_rate_from_environment, file_url_to_path,
+    format_wat_rejection_diagnostic, initialize_frontplane, package_application,
     prepare_reload_with_assets, read_application_assets, read_application_file, resolve_launch,
     run_application_tests,
 };
@@ -36,7 +37,12 @@ use gpui_component::{
     h_flex,
     slider::{Slider, SliderEvent, SliderState},
 };
-use rodio::{DeviceSinkBuilder, MixerDeviceSink, Source as _, buffer::SamplesBuffer};
+use rodio::{
+    DeviceSinkBuilder, MixerDeviceSink, Player, Source as _,
+    buffer::SamplesBuffer,
+    mixer::{Mixer, mixer},
+    source::Zero,
+};
 use smol::Timer;
 
 actions!(
@@ -273,9 +279,12 @@ fn open_path_prompt_options(kind: OpenPathKind) -> PathPromptOptions {
 
 struct AudioOutput {
     sink: Option<MixerDeviceSink>,
+    guest_mixer: Option<Mixer>,
+    guest_player: Option<Player>,
     programs: HashMap<u32, Vec<SynthVoice>>,
     samples: HashMap<u32, HostSample>,
     last_played: HashMap<u32, Instant>,
+    paused_at: Option<Instant>,
 }
 
 #[derive(Clone)]
@@ -291,15 +300,19 @@ impl AudioOutput {
         });
         let mut output = Self {
             sink,
+            guest_mixer: None,
+            guest_player: None,
             programs: HashMap::new(),
             samples: HashMap::new(),
             last_played: HashMap::new(),
+            paused_at: None,
         };
         output.replace_metadata(metadata);
         output
     }
 
     fn replace_metadata(&mut self, metadata: &Metadata) {
+        self.reset_transport();
         self.programs.clear();
         self.samples.clear();
         self.last_played.clear();
@@ -315,8 +328,49 @@ impl AudioOutput {
         }
     }
 
+    /// Replaces the guest-only mixer bus, deterministically cancelling old
+    /// sources on successful reload without touching host chrome audio.
+    fn reset_transport(&mut self) {
+        self.guest_player = None;
+        self.guest_mixer = None;
+        let Some(sink) = self.sink.as_ref() else {
+            return;
+        };
+        let channels = sink.config().channel_count();
+        let sample_rate = sink.config().sample_rate();
+        let (guest_mixer, guest_source) = mixer(channels, sample_rate);
+        guest_mixer.add(Zero::new(channels, sample_rate));
+        let guest_player = Player::connect_new(sink.mixer());
+        guest_player.append(guest_source);
+        if self.paused_at.is_some() {
+            guest_player.pause();
+        }
+        self.guest_mixer = Some(guest_mixer);
+        self.guest_player = Some(guest_player);
+    }
+
+    fn pause_at(&mut self, now: Instant) {
+        if self.paused_at.replace(now).is_none()
+            && let Some(player) = &self.guest_player
+        {
+            player.pause();
+        }
+    }
+
+    fn resume_at(&mut self, now: Instant) {
+        let Some(paused_at) = self.paused_at.take() else {
+            return;
+        };
+        shift_audio_cooldowns(&mut self.last_played, now.duration_since(paused_at));
+        if let Some(player) = &self.guest_player {
+            player.play();
+        }
+    }
+
     fn play(&mut self, event: AudioEvent) {
-        let Some(sink) = &self.sink else { return };
+        let Some(guest_mixer) = &self.guest_mixer else {
+            return;
+        };
         let Some(voices) = self.programs.get(&event.id) else {
             return;
         };
@@ -338,7 +392,7 @@ impl AudioOutput {
         if samples.is_empty() {
             return;
         }
-        sink.mixer().add(SamplesBuffer::new(
+        guest_mixer.add(SamplesBuffer::new(
             NonZeroU16::new(1).unwrap(),
             NonZeroU32::new(48_000).unwrap(),
             samples,
@@ -346,17 +400,27 @@ impl AudioOutput {
     }
 
     fn play_sample(&mut self, event: SampleAudioEvent) {
-        let Some(sink) = &self.sink else { return };
+        let Some(guest_mixer) = &self.guest_mixer else {
+            return;
+        };
         let Some(sample) = self.samples.get(&event.id) else {
             return;
         };
-        sink.mixer().add(
+        guest_mixer.add(
             sample
                 .source
                 .clone()
                 .speed(event.pitch)
                 .amplify(event.volume),
         );
+    }
+}
+
+/// Rebases guest logical cooldowns by the exact wall duration during which
+/// their audio transport was suspended.
+fn shift_audio_cooldowns(last_played: &mut HashMap<u32, Instant>, suspension: Duration) {
+    for timestamp in last_played.values_mut() {
+        *timestamp += suspension;
     }
 }
 
@@ -595,12 +659,15 @@ struct FrontplaneView {
     plugin_init: PluginInit,
     monotonic_origin: Instant,
     scheduler: SimulationScheduler,
+    suspension: GuestSuspension,
+    paused_at: Option<Duration>,
     timing_generation: u64,
     open_documents: Rc<RefCell<VecDeque<PathBuf>>>,
     empty_state: bool,
     can_select_mixed_files_and_dirs: bool,
     sliders: Vec<NativeSlider>,
     _slider_subscriptions: Vec<Subscription>,
+    _focus_subscriptions: Vec<Subscription>,
 }
 
 #[derive(Clone)]
@@ -697,7 +764,7 @@ impl FrontplaneView {
     fn new(
         startup: Startup,
         open_documents: Rc<RefCell<VecDeque<PathBuf>>>,
-        window: &Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
         let Startup {
@@ -715,8 +782,22 @@ impl FrontplaneView {
             MAX_TICKS_PER_WAKE,
             Duration::ZERO,
         );
+        let suspension = GuestSuspension::new(metadata.pause_triggers.iter().copied());
         let entries = standard_menu_entries(&metadata);
         let (sliders, slider_subscriptions) = Self::build_sliders(&metadata.controls, cx);
+        let focus_handle = cx.focus_handle();
+        let focus_subscriptions = vec![
+            cx.on_focus_in(&focus_handle, window, |this, _, cx| {
+                if this.suspension.is_enabled() {
+                    this.queue_native_event(Event::Focus(true), cx);
+                }
+            }),
+            cx.on_focus_out(&focus_handle, window, |this, _, _, cx| {
+                if this.suspension.is_enabled() {
+                    this.queue_native_event(Event::Focus(false), cx);
+                }
+            }),
+        ];
         let mut view = Self {
             frontplane,
             frame,
@@ -737,7 +818,7 @@ impl FrontplaneView {
                 StandardMenuEntry::Quit(label) => Some(label.clone()),
                 _ => None,
             }),
-            focus_handle: cx.focus_handle(),
+            focus_handle,
             window_handle: window.window_handle(),
             audio: AudioOutput::new(&metadata),
             source,
@@ -748,12 +829,15 @@ impl FrontplaneView {
             plugin_init,
             monotonic_origin,
             scheduler,
+            suspension,
+            paused_at: None,
             timing_generation: 0,
             open_documents,
             empty_state,
             can_select_mixed_files_and_dirs: cx.can_select_mixed_files_and_dirs(),
             sliders,
             _slider_subscriptions: slider_subscriptions,
+            _focus_subscriptions: focus_subscriptions,
         };
 
         view.spawn_timing_loop(cx);
@@ -825,6 +909,10 @@ impl FrontplaneView {
         self.scheduler =
             SimulationScheduler::new(self.frontplane.simulation_rate(), MAX_TICKS_PER_WAKE, now);
         self.timing_generation = self.timing_generation.wrapping_add(1);
+        if self.suspension.is_suspended() {
+            self.paused_at = Some(now);
+            return;
+        }
         self.spawn_timing_loop(cx);
     }
 
@@ -890,7 +978,13 @@ impl FrontplaneView {
             self.plugin_init,
             assets,
         ) {
-            Ok(prepared) => {
+            Ok(mut prepared) => {
+                if self.suspension.is_suspended()
+                    && let Err(error) = prepared.restore_suspension()
+                {
+                    self.set_reload_error(path, EN.reload_failed, Some(&error.to_string()));
+                    return;
+                }
                 let notice = match prepared.state_transfer {
                     StateTransfer::Preserved => EN.reload_preserved,
                     StateTransfer::Restarted => EN.reload_restarted,
@@ -919,7 +1013,24 @@ impl FrontplaneView {
                     .map_err(|error| error.to_string())
             });
         match result {
-            Ok((frontplane, frame)) => {
+            Ok((mut frontplane, mut frame)) => {
+                if self.suspension.is_suspended() {
+                    if let Err(error) = frontplane
+                        .event(Event::Pause(PausePhase::Restored))
+                        .and_then(|()| frontplane.render())
+                        .map(|paused_frame| frame = paused_frame)
+                    {
+                        self.set_reload_error(
+                            &revision_path,
+                            EN.reload_failed,
+                            Some(&error.to_string()),
+                        );
+                        return true;
+                    }
+                    frontplane.drain_audio();
+                    frontplane.drain_sample_audio();
+                    frontplane.drain_effects();
+                }
                 let mut revisions = RevisionTracker::default();
                 revisions.observe(&revision);
                 self.source = Some(ExternalSource {
@@ -962,6 +1073,8 @@ impl FrontplaneView {
             StandardMenuEntry::Quit(label) => Some(label.clone()),
             _ => None,
         });
+        self.suspension
+            .replace_triggers(metadata.pause_triggers.iter().copied());
         self.audio.replace_metadata(&metadata);
         let (sliders, subscriptions) = Self::build_sliders(&metadata.controls, cx);
         self.sliders = sliders;
@@ -1025,6 +1138,11 @@ impl FrontplaneView {
                 }
             }
         }
+        self.drain_guest_outputs(cx);
+        pump.render || pump.dropped_ticks > 0
+    }
+
+    fn drain_guest_outputs(&mut self, cx: &mut Context<Self>) {
         for event in self.frontplane.drain_audio() {
             self.audio.play(event);
         }
@@ -1036,16 +1154,106 @@ impl FrontplaneView {
                 cx.quit();
             }
         }
-        pump.render || pump.dropped_ticks > 0
     }
 
-    /// Stamps native input in the scheduler's monotonic clock domain before
-    /// pumping, preventing a late wake from applying it to an overdue tick.
-    fn queue_native_event(&mut self, event: Event, cx: &mut Context<Self>) {
-        let now = self.monotonic_origin.elapsed();
-        self.scheduler.queue_event(now, event);
+    fn discard_guest_outputs(&mut self) {
+        self.frontplane.drain_audio();
+        self.frontplane.drain_sample_audio();
+        self.frontplane.drain_effects();
+    }
+
+    fn render_pause_phase(&mut self, phase: PausePhase) -> Result<(), aedicule::FrontplaneError> {
+        self.frontplane.event(Event::Pause(phase))?;
+        self.frame = self.frontplane.render()?;
+        Ok(())
+    }
+
+    /// Stops the guest timeline and its private audio bus at one logical input
+    /// barrier, then accepts exactly one guest-authored paused frame.
+    fn pause_guest(&mut self, now: Duration, cx: &mut Context<Self>) {
         if self.pump_simulation(now, cx) {
             cx.notify();
+        }
+        if self.fatal_error.is_some() {
+            return;
+        }
+        for event in self.scheduler.drain_events_through(now) {
+            if let Err(error) = self.frontplane.event(event) {
+                self.fatal_error = Some(error.to_string());
+                cx.notify();
+                return;
+            }
+        }
+        self.drain_guest_outputs(cx);
+        self.audio.pause_at(Instant::now());
+        self.timing_generation = self.timing_generation.wrapping_add(1);
+        match self.render_pause_phase(PausePhase::Paused) {
+            Ok(()) => {
+                self.discard_guest_outputs();
+                self.paused_at = Some(now);
+                cx.notify();
+            }
+            Err(error) => {
+                self.fatal_error = Some(error.to_string());
+                cx.notify();
+            }
+        }
+    }
+
+    /// Reconciles releases before the semantic resumed edge, shifts the exact
+    /// scheduler baseline, then restarts both audio and fixed-step wakes.
+    fn resume_guest(&mut self, now: Duration, reconciliation: Vec<Event>, cx: &mut Context<Self>) {
+        let paused_at = self
+            .paused_at
+            .take()
+            .expect("resume disposition follows a completed native pause");
+        self.scheduler.resume_after_pause(paused_at, now);
+        let result = reconciliation
+            .into_iter()
+            .try_for_each(|event| self.frontplane.event(event))
+            .and_then(|()| self.render_pause_phase(PausePhase::Resumed));
+        if let Err(error) = result {
+            self.fatal_error = Some(error.to_string());
+            cx.notify();
+            return;
+        }
+        self.audio.resume_at(Instant::now());
+        self.drain_guest_outputs(cx);
+        self.timing_generation = self.timing_generation.wrapping_add(1);
+        self.spawn_timing_loop(cx);
+        cx.notify();
+    }
+
+    /// Stamps ordinary native input in the scheduler clock while intercepting
+    /// configured pause triggers before their raw edges can reach gameplay.
+    fn queue_native_event(&mut self, event: Event, cx: &mut Context<Self>) {
+        let now = self.monotonic_origin.elapsed();
+        match self.suspension.handle(event) {
+            SuspensionDisposition::Deliver(event) => {
+                self.scheduler.queue_event(now, event);
+                if self.pump_simulation(now, cx) {
+                    cx.notify();
+                }
+            }
+            SuspensionDisposition::Maintenance(event) => {
+                let result = self
+                    .frontplane
+                    .event(event)
+                    .and_then(|()| self.frontplane.render());
+                match result {
+                    Ok(frame) => {
+                        self.frame = frame;
+                        self.discard_guest_outputs();
+                    }
+                    Err(error) => self.fatal_error = Some(error.to_string()),
+                }
+                cx.notify();
+            }
+            SuspensionDisposition::Consumed => {}
+            SuspensionDisposition::Pause => self.pause_guest(now, cx),
+            SuspensionDisposition::Resume { reconciliation } => {
+                self.resume_guest(now, reconciliation, cx);
+            }
         }
     }
 
@@ -2023,8 +2231,8 @@ mod tests {
         DECIMAL_SCALE, OpenPathKind, StandardMenuEntry, TITLE_BAR_GLYPH_RGBA, ViewportTracker,
         fixed_sine, guest_positioned_control_layer, host_title_bar_layer, menu_action_event,
         menu_action_label, native_menus, open_path_prompt_options, render_sample_for_host,
-        render_synth_program_fixed, standard_menu_entries, title_bar_control_glyph_overlay,
-        title_bar_control_glyphs,
+        render_synth_program_fixed, shift_audio_cooldowns, standard_menu_entries,
+        title_bar_control_glyph_overlay, title_bar_control_glyphs,
     };
     use aedicule::{
         Event, Key, MenuItem as PluginMenuItem, Metadata, SampleAsset, SynthFilter, SynthVoice,
@@ -2035,7 +2243,14 @@ mod tests {
         Render, Styled as _, TestApp, Window, div, point, px, size,
     };
     use gpui_component::TitleBar;
-    use rodio::Source as _;
+    use rodio::{
+        Player, Source as _, buffer::SamplesBuffer as TestSamplesBuffer, mixer::mixer as test_mixer,
+    };
+    use std::{
+        collections::HashMap,
+        num::{NonZeroU16, NonZeroU32},
+        time::{Duration, Instant},
+    };
 
     #[derive(Default)]
     struct HostTitleBarHitProbe {
@@ -2199,6 +2414,7 @@ mod tests {
                 PluginMenuItem::action(6, "Leave", Some("Ctrl+Q")),
                 PluginMenuItem::action(1024, "Plugin-specific", None),
             ],
+            pause_triggers: Vec::new(),
             controls: Vec::new(),
             synth_voices: Vec::new(),
             sample_assets: Vec::new(),
@@ -2390,5 +2606,40 @@ mod tests {
             rendered.source.collect::<Vec<_>>(),
             vec![-1.0, 0.0, 0.5, 1.0]
         );
+    }
+
+    #[test]
+    fn native_audio_cooldowns_exclude_wall_time_spent_paused() {
+        let anchor = Instant::now();
+        let mut last_played = HashMap::from([(7, anchor + Duration::from_millis(25))]);
+
+        shift_audio_cooldowns(&mut last_played, Duration::from_secs(90));
+
+        assert_eq!(last_played[&7], anchor + Duration::from_millis(90_025));
+    }
+
+    #[test]
+    fn guest_audio_mixer_pause_retains_the_nested_source_cursor() {
+        let channels = NonZeroU16::new(1).unwrap();
+        let sample_rate = NonZeroU32::new(1).unwrap();
+        let (guest_mixer, guest_source) = test_mixer(channels, sample_rate);
+        let (guest_player, mut device_source) = Player::new();
+        guest_player.append(guest_source);
+        guest_mixer.add(TestSamplesBuffer::new(
+            channels,
+            sample_rate,
+            vec![0.25, 0.5, 0.75],
+        ));
+
+        assert_eq!(
+            device_source.by_ref().take(32).find(|sample| *sample != 0.0),
+            Some(0.25)
+        );
+        guest_player.pause();
+        assert_eq!(device_source.next(), Some(0.0));
+        assert_eq!(device_source.next(), Some(0.0));
+        guest_player.play();
+        assert_eq!(device_source.next(), Some(0.5));
+        assert_eq!(device_source.next(), Some(0.75));
     }
 }

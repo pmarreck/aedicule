@@ -4,7 +4,7 @@
 //! output independent of GPUI. Native and future web frontplanes are adapters
 //! over the same lifecycle, validation, snapshot, and command-buffer logic.
 
-use std::collections::{BTreeMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
 use std::ffi::OsString;
 use std::fmt;
 use std::fmt::Write as _;
@@ -86,6 +86,7 @@ const NANOS_PER_SECOND: u128 = 1_000_000_000;
 const Q16_SCALE: f64 = 65_536.0;
 const WAT_IMPORT_MODULE: &str = wat_abi::IMPORT_MODULE;
 const Q30_ONE: i64 = 1 << 30;
+const MAX_PAUSE_TRIGGERS: usize = 16;
 const CORDIC_INVERSE_GAIN_Q30: i64 = 652_032_874;
 const CORDIC_ATAN_TURN: [i64; 31] = [
     0x2000_0000,
@@ -498,6 +499,35 @@ impl SimulationScheduler {
     /// used to classify the event at an exact simulation boundary.
     pub fn queue_event(&mut self, timestamp: Duration, event: Event) {
         self.events.push_back(TimestampedEvent { timestamp, event });
+    }
+
+    /// Flushes raw input that arrived before a host-owned pause barrier so it
+    /// cannot be stranded and replayed after a later resume.
+    pub fn drain_events_through(&mut self, timestamp: Duration) -> Vec<Event> {
+        let mut events = Vec::new();
+        while self
+            .events
+            .front()
+            .is_some_and(|event| event.timestamp <= timestamp)
+        {
+            events.push(self.events.pop_front().expect("front event exists").event);
+        }
+        events
+    }
+
+    /// Removes wall time spent suspended from the exact rational timeline while
+    /// retaining its fractional tick phase and every pre-pause boundary.
+    pub fn resume_after_pause(&mut self, paused_at: Duration, resumed_at: Duration) {
+        assert!(paused_at >= self.last_sample);
+        assert!(resumed_at >= paused_at);
+        let suspension = resumed_at - paused_at;
+        self.origin = self.origin.saturating_add(suspension);
+        self.last_sample = self.last_sample.saturating_add(suspension);
+        for event in &mut self.events {
+            if event.timestamp >= paused_at {
+                event.timestamp = event.timestamp.saturating_add(suspension);
+            }
+        }
     }
 
     /// Converts one arbitrary wake into the smallest ordered sequence of guest
@@ -990,6 +1020,7 @@ impl Default for Limits {
 pub struct Metadata {
     pub title: String,
     pub menu_items: Vec<MenuItem>,
+    pub pause_triggers: Vec<PauseTrigger>,
     pub controls: Vec<SliderControl>,
     pub synth_voices: Vec<SynthVoice>,
     pub sample_assets: Vec<SampleAsset>,
@@ -1000,6 +1031,7 @@ impl Default for Metadata {
         Self {
             title: "WAT Application".into(),
             menu_items: Vec::new(),
+            pause_triggers: Vec::new(),
             controls: Vec::new(),
             synth_voices: Vec::new(),
             sample_assets: Vec::new(),
@@ -1672,6 +1704,46 @@ pub enum Event {
     /// Host-reported nominal display mode. The numerator travels in the `code`
     /// slot and the bounded denominator in `a` for WAT ABI event kind 9.
     DisplayRefresh(TickRate),
+    /// Host-owned scheduling lifecycle emitted instead of a declared trigger's
+    /// raw physical edge. ABI event kind 15 reserves kinds 11-14 for touch.
+    Pause(PausePhase),
+}
+
+/// Identifies the guest-visible stages of one host-owned suspension lifecycle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+pub enum PausePhase {
+    Paused = 1,
+    Resumed = 2,
+    Restored = 3,
+}
+
+/// Names the physical input domain of a declarative pause/wake selector.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+pub enum PauseTriggerKind {
+    Key = 1,
+}
+
+/// A bounded configure-time selector whose fresh physical edge is consumed by
+/// Aedicule and converted into a semantic pause lifecycle transition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PauseTrigger {
+    pub kind: PauseTriggerKind,
+    pub code: u32,
+}
+
+impl PauseTrigger {
+    pub const fn key(key: Key) -> Self {
+        Self {
+            kind: PauseTriggerKind::Key,
+            code: key as u32,
+        }
+    }
+
+    fn matches_key(self, key: Key) -> bool {
+        self.kind == PauseTriggerKind::Key && self.code == key as u32
+    }
 }
 
 /// Separates continuous slider motion from its final committed release edge.
@@ -1739,7 +1811,7 @@ impl PointerScrollUnit {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum Key {
     ArrowLeft = 1,
@@ -1757,6 +1829,26 @@ pub enum Key {
 }
 
 impl Key {
+    /// Validates a guest-declared stable key ID without accepting arbitrary
+    /// numeric values as future ABI meanings.
+    pub fn from_abi(code: u32) -> Option<Self> {
+        match code {
+            1 => Some(Self::ArrowLeft),
+            2 => Some(Self::ArrowRight),
+            3 => Some(Self::ArrowUp),
+            4 => Some(Self::Space),
+            5 => Some(Self::P),
+            6 => Some(Self::R),
+            7 => Some(Self::F),
+            8 => Some(Self::K),
+            9 => Some(Self::B),
+            10 => Some(Self::H),
+            11 => Some(Self::Escape),
+            12 => Some(Self::F1),
+            _ => None,
+        }
+    }
+
     /// Normalizes GPUI's cross-platform physical key names into Aedicule's
     /// stable guest IDs so native and browser adapters cannot drift.
     pub fn from_gpui_name(name: &str) -> Option<Self> {
@@ -1774,6 +1866,178 @@ impl Key {
             "escape" => Some(Self::Escape),
             "f1" => Some(Self::F1),
             _ => None,
+        }
+    }
+}
+
+/// Tells an adapter whether to deliver, consume, or perform a host-owned
+/// suspension transition for one raw input edge.
+#[derive(Debug, Clone, PartialEq)]
+pub enum SuspensionDisposition {
+    Deliver(Event),
+    Maintenance(Event),
+    Consumed,
+    Pause,
+    Resume { reconciliation: Vec<Event> },
+}
+
+/// Tracks physical-versus-guest input ownership while Aedicule has stopped the
+/// guest scheduler, preventing stuck controls and held-key self-resume.
+#[derive(Debug, Clone)]
+pub struct GuestSuspension {
+    triggers: Vec<PauseTrigger>,
+    suspended: bool,
+    physical_keys: BTreeSet<Key>,
+    consumed_trigger_keys: BTreeSet<Key>,
+    guest_keys: BTreeSet<Key>,
+    physical_pointer_buttons: BTreeSet<u32>,
+    guest_pointer_buttons: BTreeMap<u32, (f32, f32)>,
+    reconciliation: Vec<Event>,
+    triggers_after_resume: Option<Vec<PauseTrigger>>,
+}
+
+impl GuestSuspension {
+    pub fn new(triggers: impl IntoIterator<Item = PauseTrigger>) -> Self {
+        Self {
+            triggers: triggers.into_iter().collect(),
+            suspended: false,
+            physical_keys: BTreeSet::new(),
+            consumed_trigger_keys: BTreeSet::new(),
+            guest_keys: BTreeSet::new(),
+            physical_pointer_buttons: BTreeSet::new(),
+            guest_pointer_buttons: BTreeMap::new(),
+            reconciliation: Vec::new(),
+            triggers_after_resume: None,
+        }
+    }
+
+    pub fn is_suspended(&self) -> bool {
+        self.suspended
+    }
+
+    pub fn is_enabled(&self) -> bool {
+        !self.triggers.is_empty() || self.triggers_after_resume.is_some()
+    }
+
+    fn is_trigger(&self, key: Key) -> bool {
+        self.triggers.iter().any(|trigger| trigger.matches_key(key))
+    }
+
+    /// Adopts replacement metadata without stranding an already-paused guest
+    /// that removed every wake selector during hot reload.
+    pub fn replace_triggers(&mut self, triggers: impl IntoIterator<Item = PauseTrigger>) {
+        let triggers = triggers.into_iter().collect::<Vec<_>>();
+        if self.suspended {
+            if !triggers.is_empty() {
+                self.triggers.clone_from(&triggers);
+            }
+            self.triggers_after_resume = Some(triggers);
+        } else {
+            self.triggers = triggers;
+        }
+    }
+
+    /// Classifies fresh edges and records releases that must reach the guest
+    /// before its semantic resumed event.
+    pub fn handle(&mut self, event: Event) -> SuspensionDisposition {
+        if !self.is_enabled() {
+            return SuspensionDisposition::Deliver(event);
+        }
+        match event {
+            Event::KeyDown(key) => {
+                let fresh = self.physical_keys.insert(key);
+                if self.is_trigger(key) {
+                    if !fresh {
+                        return SuspensionDisposition::Consumed;
+                    }
+                    self.consumed_trigger_keys.insert(key);
+                    if self.suspended {
+                        self.suspended = false;
+                        if let Some(triggers) = self.triggers_after_resume.take() {
+                            self.triggers = triggers;
+                        }
+                        return SuspensionDisposition::Resume {
+                            reconciliation: std::mem::take(&mut self.reconciliation),
+                        };
+                    }
+                    self.suspended = true;
+                    return SuspensionDisposition::Pause;
+                }
+                if self.suspended || !fresh {
+                    return SuspensionDisposition::Consumed;
+                }
+                self.guest_keys.insert(key);
+                SuspensionDisposition::Deliver(event)
+            }
+            Event::KeyUp(key) => {
+                self.physical_keys.remove(&key);
+                if self.consumed_trigger_keys.remove(&key) {
+                    return SuspensionDisposition::Consumed;
+                }
+                if self.is_trigger(key) {
+                    return SuspensionDisposition::Consumed;
+                }
+                if self.suspended {
+                    if self.guest_keys.remove(&key) {
+                        self.reconciliation.push(event);
+                    }
+                    SuspensionDisposition::Consumed
+                } else {
+                    self.guest_keys.remove(&key);
+                    SuspensionDisposition::Deliver(event)
+                }
+            }
+            Event::PointerDown { button, x, y } => {
+                let fresh = self.physical_pointer_buttons.insert(button);
+                if self.suspended || !fresh {
+                    return SuspensionDisposition::Consumed;
+                }
+                self.guest_pointer_buttons.insert(button, (x, y));
+                SuspensionDisposition::Deliver(event)
+            }
+            Event::PointerUp { button, x, y } => {
+                self.physical_pointer_buttons.remove(&button);
+                if self.suspended {
+                    if self.guest_pointer_buttons.remove(&button).is_some() {
+                        self.reconciliation.push(Event::PointerUp { button, x, y });
+                    }
+                    SuspensionDisposition::Consumed
+                } else {
+                    self.guest_pointer_buttons.remove(&button);
+                    SuspensionDisposition::Deliver(event)
+                }
+            }
+            Event::Focus(false) => {
+                self.physical_keys.clear();
+                self.physical_pointer_buttons.clear();
+                if self.suspended {
+                    self.reconciliation.extend(
+                        std::mem::take(&mut self.guest_keys)
+                            .into_iter()
+                            .map(Event::KeyUp),
+                    );
+                    self.reconciliation.extend(
+                        std::mem::take(&mut self.guest_pointer_buttons)
+                            .into_iter()
+                            .map(|(button, (x, y))| Event::PointerUp { button, x, y }),
+                    );
+                    self.reconciliation.push(Event::Focus(false));
+                    SuspensionDisposition::Consumed
+                } else {
+                    self.guest_keys.clear();
+                    self.guest_pointer_buttons.clear();
+                    SuspensionDisposition::Deliver(event)
+                }
+            }
+            Event::Focus(true) if self.suspended => {
+                self.reconciliation.push(event);
+                SuspensionDisposition::Consumed
+            }
+            Event::Viewport { .. } | Event::DisplayRefresh(_) if self.suspended => {
+                SuspensionDisposition::Maintenance(event)
+            }
+            _ if self.suspended => SuspensionDisposition::Consumed,
+            _ => SuspensionDisposition::Deliver(event),
         }
     }
 }
@@ -1831,6 +2095,19 @@ pub struct PreparedReload {
     pub frontplane: Frontplane,
     pub frame: FrameOutput,
     pub state_transfer: StateTransfer,
+}
+
+impl PreparedReload {
+    /// Completes candidate admission in the suspended lifecycle before an
+    /// adapter atomically replaces the current guest.
+    pub fn restore_suspension(&mut self) -> Result<(), FrontplaneError> {
+        self.frontplane.event(Event::Pause(PausePhase::Restored))?;
+        self.frame = self.frontplane.render()?;
+        self.frontplane.drain_audio();
+        self.frontplane.drain_sample_audio();
+        self.frontplane.drain_effects();
+        Ok(())
+    }
 }
 
 #[derive(Debug, Error)]
@@ -2755,6 +3032,7 @@ fn legacy_event_parameters(event: Event) -> (i32, i32, f32, f32) {
             delta_x,
             delta_y,
         } => (10, unit as i32, delta_x, delta_y),
+        Event::Pause(phase) => (15, phase as i32, 0.0, 0.0),
     }
 }
 
@@ -2801,6 +3079,7 @@ fn integer_event_parameters(
             let (delta_x, delta_y) = coordinates(delta_x, delta_y)?;
             (10, unit as i32, delta_x, delta_y)
         }
+        Event::Pause(phase) => (15, phase as i32, 0, 0),
     };
     Ok(parameters)
 }
@@ -2840,6 +3119,45 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
                     0
                 }
                 Err(error) => caller.data_mut().reject(error, -3),
+            },
+        )
+        .map_err(runtime_error)?;
+    linker
+        .func_wrap(
+            WAT_IMPORT_MODULE,
+            "AE_pause_trigger",
+            |mut caller: Caller<'_, HostState>, kind: i32, code: i32, flags: i32| {
+                if caller.data().active_operation != Some("AE_configure") {
+                    return caller.data_mut().reject(
+                        PendingError::InvalidFrame("AE_pause_trigger is configure-only"),
+                        -8,
+                    );
+                }
+                if flags != 0 || kind != PauseTriggerKind::Key as i32 {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::Unsupported("AE_pause_trigger"), -4);
+                }
+                let Some(key) = Key::from_abi(code as u32) else {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::InvalidNumber("AE_pause_trigger"), -5);
+                };
+                if caller.data().metadata.pause_triggers.len() >= MAX_PAUSE_TRIGGERS {
+                    return caller.data_mut().reject(
+                        PendingError::Budget("AE_pause_trigger", "pause trigger"),
+                        -2,
+                    );
+                }
+                let trigger = PauseTrigger::key(key);
+                if caller.data().metadata.pause_triggers.contains(&trigger) {
+                    return caller.data_mut().reject(
+                        PendingError::DuplicateId("AE_pause_trigger", code as u32),
+                        -7,
+                    );
+                }
+                caller.data_mut().metadata.pause_triggers.push(trigger);
+                0
             },
         )
         .map_err(runtime_error)?;

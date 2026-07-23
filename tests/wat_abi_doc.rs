@@ -1,4 +1,7 @@
-use aedicule::{LLM_GUIDE_VERSION, WAT_ABI_IMPORTS, guide_for_llms_markdown, wat_abi_markdown};
+use aedicule::{
+    ABI_MAJOR, ABI_MINOR, LLM_GUIDE_VERSION, WAT_ABI_IMPORTS, guide_for_llms_markdown,
+    wat_abi_markdown,
+};
 
 #[test]
 fn checked_in_wat_abi_reference_is_the_generated_canonical_document() {
@@ -38,8 +41,10 @@ fn checked_in_llm_guide_is_generated_versioned_and_complete_without_host_source(
         std::fs::read_to_string("GUIDE_FOR_LLMS.md").expect("GUIDE_FOR_LLMS.md exists");
 
     assert_eq!(checked_in, guide_for_llms_markdown());
-    assert!(checked_in.contains("\n### Aedicule WAT ABI v0.2\n"));
-    assert!(!checked_in.contains("\n## Aedicule WAT ABI v0.2\n"));
+    let abi_heading = format!("\n### Aedicule WAT ABI v{ABI_MAJOR}.{ABI_MINOR}\n");
+    let wrong_heading = format!("\n## Aedicule WAT ABI v{ABI_MAJOR}.{ABI_MINOR}\n");
+    assert!(checked_in.contains(&abi_heading));
+    assert!(!checked_in.contains(&wrong_heading));
     assert!(
         !checked_in.lines().any(|line| line.ends_with(' ')),
         "the generated guide must not rely on trailing-space Markdown breaks"
@@ -56,6 +61,8 @@ fn checked_in_llm_guide_is_generated_versioned_and_complete_without_host_source(
     assert!(checked_in.contains("## Proposed—not callable yet"));
     assert!(checked_in.contains("## Common WAT and LLM mistakes"));
     assert!(checked_in.contains("## Recommended toolchain"));
+    assert!(checked_in.contains("### Host-scheduled pause"));
+    assert!(checked_in.contains("does not alter or deduplicate its raw input lifecycle"));
     assert!(checked_in.contains("Comment intent, units, invariants, and state layout"));
     for import in WAT_ABI_IMPORTS {
         assert!(

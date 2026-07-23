@@ -5,9 +5,9 @@
 use std::fmt::Write as _;
 
 pub const ABI_MAJOR: i32 = 0;
-pub const ABI_MINOR: i32 = 2;
+pub const ABI_MINOR: i32 = 3;
 pub const IMPORT_MODULE: &str = "aedicule.v0";
-pub const LLM_GUIDE_VERSION: &str = "0.1.0";
+pub const LLM_GUIDE_VERSION: &str = "0.2.0";
 const LLM_GUIDE_CANONICAL_URL: &str =
     "https://github.com/pmarreck/aedicule/blob/yolo/GUIDE_FOR_LLMS.md";
 const LLM_GUIDE_ABI_MARKER: &str = "{{GENERATED_ABI_REFERENCE}}";
@@ -30,6 +30,11 @@ pub const WAT_ABI_IMPORTS: &[WatAbiImport] = &[
         name: "AE_menu_item",
         signature: "(param id i32) (param ptr i32) (param len i32) (param shortcut i32) (param flags i32) (result i32)",
         summary: "Declares an action menu item; `flags & 1` is a separator and shortcut codes are host-defined.",
+    },
+    WatAbiImport {
+        name: "AE_pause_trigger",
+        signature: "(param kind i32) (param code i32) (param flags i32) (result i32)",
+        summary: "Registers one typed host-consumed pause/wake trigger during `AE_configure`; version 0 supports stable key kind `1` and requires `flags = 0`.",
     },
     WatAbiImport {
         name: "AE_slider_i32",
@@ -224,7 +229,11 @@ pub fn wat_abi_markdown() -> String {
     );
 
     document.push_str(
-        "## Input events\n\n`AE_event(kind, code, a, b)` and its integer-profile counterpart `AE_event_i32(kind, code, a, b)` carry host input at an ordered fixed-step boundary. A host may omit an event kind it cannot observe, but it must not invent application semantics. In the integer profile, logical-pixel values use signed Q16.16; IDs, flags, and the display-rate denominator remain ordinary unscaled integers.\n\n| Kind | Event | `code`, `a`, `b` |\n| ---: | --- | --- |\n| 1 | Key down | `code` is a physical-key ID; `a = b = 0` |\n| 2 | Key up | Same key ID; `a = b = 0` |\n| 3 | Pointer move | `code = 0`; `a = x`, `b = y` logical pixels |\n| 4 | Pointer down | `code` is button ID; `a = x`, `b = y` logical pixels |\n| 5 | Pointer up | `code` is button ID; `a = x`, `b = y` logical pixels |\n| 6 | Viewport | `code = 0`; `a = width`, `b = height` logical pixels |\n| 7 | Menu action | `code` is the guest-declared action ID; `a = b = 0` |\n| 8 | Focus | `code = 1` when focused, `0` when unfocused; `a = b = 0` |\n| 9 | Display refresh | `code = numerator_hz`; `a = denominator`, `b = 0` |\n| 10 | Pointer scroll | `code` is unit ID; `a = horizontal delta`, `b = vertical delta` |\n\nPhysical-key IDs are `1` left, `2` right, `3` up, `4` space, `5` P, `6` R, `7` F, `8` K, `9` B, `10` H, `11` Escape, and `12` F1. Pointer button IDs are `1` primary/left, `2` secondary/right, and `3` middle/wheel-click. Native and browser canvas adapters emit down and up edges for all three IDs.\n\nPointer-scroll unit IDs are `1` lines and `2` logical pixels. Positive `a` means leftward motion; positive `b` means upward motion. Hosts preserve both axes and omit zero-delta scroll events.\n\n",
+        "## Input events\n\n`AE_event(kind, code, a, b)` and its integer-profile counterpart `AE_event_i32(kind, code, a, b)` carry host input at an ordered fixed-step boundary. A host may omit an event kind it cannot observe, but it must not invent application semantics. In the integer profile, logical-pixel values use signed Q16.16; IDs, flags, and the display-rate denominator remain ordinary unscaled integers.\n\n| Kind | Event | `code`, `a`, `b` |\n| ---: | --- | --- |\n| 1 | Key down | `code` is a physical-key ID; `a = b = 0` |\n| 2 | Key up | Same key ID; `a = b = 0` |\n| 3 | Pointer move | `code = 0`; `a = x`, `b = y` logical pixels |\n| 4 | Pointer down | `code` is button ID; `a = x`, `b = y` logical pixels |\n| 5 | Pointer up | `code` is button ID; `a = x`, `b = y` logical pixels |\n| 6 | Viewport | `code = 0`; `a = width`, `b = height` logical pixels |\n| 7 | Menu action | `code` is the guest-declared action ID; `a = b = 0` |\n| 8 | Focus | `code = 1` when focused, `0` when unfocused; `a = b = 0` |\n| 9 | Display refresh | `code = numerator_hz`; `a = denominator`, `b = 0` |\n| 10 | Pointer scroll | `code` is unit ID; `a = horizontal delta`, `b = vertical delta` |\n| 15 | Pause lifecycle | `code` is `1` paused, `2` resumed, or `3` restored-paused; `a = b = 0` |\n\nKinds 11 through 14 are reserved for the proposed touch-contact profile and are not emitted yet. Physical-key IDs are `1` left, `2` right, `3` up, `4` space, `5` P, `6` R, `7` F, `8` K, `9` B, `10` H, `11` Escape, and `12` F1. Pointer button IDs are `1` primary/left, `2` secondary/right, and `3` middle/wheel-click. Native and browser canvas adapters emit down and up edges for all three IDs.\n\nPointer-scroll unit IDs are `1` lines and `2` logical pixels. Positive `a` means leftward motion; positive `b` means upward motion. Hosts preserve both axes and omit zero-delta scroll events.\n\n",
+    );
+
+    document.push_str(
+        "## Host-scheduled pause\n\nA guest opts in by calling `AE_pause_trigger(kind, code, flags)` during `AE_configure`. ABI v0.3 accepts selector kind `1` for a stable physical-key ID and requires `flags = 0`. Declarations are bounded and unique. A guest that declares no trigger receives the ordinary lifecycle unchanged.\n\nA fresh declared key-down is consumed by Aedicule; neither that down edge nor its matching up edge reaches gameplay. Repeats and a still-held trigger cannot self-resume. On pause, Aedicule executes work already due at the input barrier and delivers any earlier queued input in arrival order, freezes the fixed-step scheduler and guest audio transport, sends kind `15`, code `1`, accepts exactly one final render, and then performs no ordinary guest ticks or renders. Host window, menu, watcher, and transactional reload machinery remain live. A viewport or display-mode change may send its semantic event and accept at most one replacement paused frame without advancing simulation.\n\nA fresh trigger after release resumes. Releases or focus cancellation for inputs held at pause entry are delivered first, then kind `15`, code `2`, one render, and the next exact rational deadline. New gameplay presses made only while suspended are not armed. A reload candidate admitted while paused receives kind `15`, code `3` and renders its paused presentation before atomic replacement. Failed reloads preserve the old guest and transport.\n\nPaused wall time is removed from the scheduler baseline, so it produces no catch-up ticks and retains the pre-pause fractional phase. Native playback uses a guest-only pausable mixer and shifts synth cooldown timestamps by the same duration; browser sampled audio suspends its shared Web Audio context. Successful reload deterministically cancels old guest sources. A small device buffer may finish after the logical barrier, but its latency never advances guest time. Audio/effects requested by the paused transition itself are discarded in ABI v0.3; the resumed transition may request new output.\n\n",
     );
 
     document.push_str(
@@ -239,8 +248,9 @@ pub fn wat_abi_markdown() -> String {
         );
     }
 
-    document.push_str(
-        "## Portable text faces\n\n`AE_text` remains source-compatible and uses the active platform UI face. `AE_text_font` and `AE_text_font_q16` accept stable selector `0` for that platform default or `1` for Aedicule's embedded Geist Mono Regular. Selector `1` is registered from identical OFL-1.1 font bytes in native and browser adapters, so aligned numerical data never depends on host installation. Unknown selectors reject the complete render transaction rather than silently substituting a proportional face. Package-supplied font handles are not part of ABI v0.2; they require bounded `.aed` asset transport and collision-safe family identities in every adapter.\n\n## Stable draw IDs\n\nEvery non-composition draw ID is unique **across all primitive kinds within one frame**: a path, line, circle, text, or sprite cannot reuse another primitive's ID. The set resets at the next successful frame begin, so the same semantic object should normally reuse its ID in later frames.\n\n",
+    let _ = write!(
+        document,
+        "## Portable text faces\n\n`AE_text` remains source-compatible and uses the active platform UI face. `AE_text_font` and `AE_text_font_q16` accept stable selector `0` for that platform default or `1` for Aedicule's embedded Geist Mono Regular. Selector `1` is registered from identical OFL-1.1 font bytes in native and browser adapters, so aligned numerical data never depends on host installation. Unknown selectors reject the complete render transaction rather than silently substituting a proportional face. Package-supplied font handles are not part of ABI v{ABI_MAJOR}.{ABI_MINOR}; they require bounded `.aed` asset transport and collision-safe family identities in every adapter.\n\n## Stable draw IDs\n\nEvery non-composition draw ID is unique **across all primitive kinds within one frame**: a path, line, circle, text, or sprite cannot reuse another primitive's ID. The set resets at the next successful frame begin, so the same semantic object should normally reuse its ID in later frames.\n\n",
     );
 
     document.push_str(
@@ -264,7 +274,7 @@ pub fn guide_for_llms_markdown() -> String {
         .replace("{{GUIDE_VERSION}}", LLM_GUIDE_VERSION)
         .replace("{{ABI_VERSION}}", &format!("{ABI_MAJOR}.{ABI_MINOR}"))
         .replace("{{CANONICAL_URL}}", LLM_GUIDE_CANONICAL_URL)
-        .replace(LLM_GUIDE_ABI_MARKER, &abi_reference)
+        .replace(LLM_GUIDE_ABI_MARKER, abi_reference)
 }
 
 fn strip_generated_comment(markdown: &str) -> String {

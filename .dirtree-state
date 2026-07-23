@@ -134,6 +134,7 @@ annotate=[
 	tests/render_cli.rs = CLI coverage for deterministic frames, controls, diagnostics, spaced paths, and asset-aware WAT/directory/.aed sources.
 	tests/sample_audio.rs = FLAC admission, virtual-root equivalence, reload, event rollback, and policy regression suite.
 	tests/snapshot.rs = Neutral guest fixture proving generic render purity and snapshot restore/rejection semantics
+	tests/suspension.rs = Host-scheduled pause ABI, raw-input reconciliation, hot-reload, and exact scheduler regression tests
 	tests/svg_export.rs = Pure generic SVG artifact coverage with a neutral stateful WAT fixture
 	tests/synth.rs = Guest-declared synth ABI, exact descriptor capture, and set-based invalid-field classifier tests
 	tests/timing.rs = Deterministic fixed-step and live-adapter scheduling tests across every supported rate, event boundaries, jitter, and overload

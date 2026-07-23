@@ -509,6 +509,12 @@
       WAT tests and the rebuilt browser runtime.
     - [ ] Prevent GPUI Web's current mouse-compatibility conversion from
       duplicating each touch as primary-button input.
+    - [ ] Hand the raw-contact contract to Vibesteroids so that guest—not
+      Aedicule—maps upward travel on the left half or downward travel on the
+      right half to proportional ship rotation on fullscreen mobile.
+    - [ ] Make the mobile demo fill the available viewport immediately and
+      provide a user-activated fullscreen entry surface where browser policy
+      forbids automatic fullscreen; preserve the browser-owned exit path.
     - Curiosity poke: Chrome remapped the probe's requested touch IDs 41/42/43
       to pointer IDs 2/3/4; clients must treat IDs as opaque, page-local
       correlation tokens and never persist or interpret their numeric values.
@@ -581,20 +587,29 @@
   - Curiosity poke: editors and atomic package writers commonly emit rename
     bursts; debounce by source identity and content generation, not sleeps, so
     one complete candidate is evaluated without suppressing a later change.
-- [ ] Define a host-scheduled guest-suspension ABI that consumes no guest CPU
+- [x] Define a host-scheduled guest-suspension ABI that consumes no guest CPU
   while paused but leaves pause presentation and application state guest-owned.
-  Compare two explicit boundaries before implementation: host-converted
-  registered input triggers versus a guest suspension request made after an
-  ordinary event, paired with bounded host-owned wake selectors.
-  - [ ] Specify exact suspend/resume ordering, the one final paused render,
+  Use the settled host-converted boundary: the guest declaratively registers
+  bounded typed pause triggers during configuration; Aedicule consumes their
+  fresh physical edges and emits semantic suspension lifecycle events instead
+  of leaking the raw trigger into guest gameplay. A guest that registers no
+  pause trigger retains its current lifecycle unchanged.
+  (2026-07-23 18:11 EDT: ABI v0.3, native/browser adapters, exact scheduler
+  phase, input reconciliation, reload restoration, guest-audio transport,
+  generated references, full `./test`, and optimized `./build` are green.)
+  - [x] Add `AE_pause_trigger(kind, code, flags)` with a version-0 stable-key
+    selector, bounded declarations, generated documentation, and additive ABI
+    versioning; reserve the selector kind so controllers and menu actions can
+    join without overloading raw key IDs.
+  - [x] Specify exact suspend/resume ordering, the one final paused render,
     cached-scene repaint, and monotonic scheduler-baseline reset with no
     accumulated paused-time catch-up.
-  - [ ] Reconcile releases, cancellation, focus loss, and new presses observed
+  - [x] Reconcile releases, cancellation, focus loss, and new presses observed
     while suspended; a held or repeated pause trigger must not self-resume.
-  - [ ] Keep native window/menu/file-watch/reload machinery live, teach a
+  - [x] Keep native window/menu/file-watch/reload machinery live, teach a
     replacement guest that suspension was restored, and define resize as
     viewport event plus at most one paused render without restarting ticks.
-  - [ ] Freeze a per-guest audio transport at the same logical pause barrier:
+  - [x] Freeze a per-guest audio transport at the same logical pause barrier:
     retain FLAC sample cursors, synth phase/envelopes, and cooldown time; resume
     without restart, duplication, truncation, pitch drift, or wall-time expiry.
     Keep host-chrome audio on a separate bus, specify reload preservation versus

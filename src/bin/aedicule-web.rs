@@ -9,8 +9,8 @@ use aedicule::{
     PluginInit, PointerButton, PointerScrollUnit, Rect, SliderControl, UiSnapshot,
     gpui_canvas::paint_frame,
     web::{
-        BROWSER_ASSETS_GLOBAL, BROWSER_WAT_GLOBAL, BrowserDeliveredEventCounts, BrowserRuntime,
-        required_browser_wat,
+        BROWSER_ASSETS_GLOBAL, BROWSER_WAT_GLOBAL, BrowserDeliveredEventCounts,
+        BrowserInputOutcome, BrowserRuntime, required_browser_wat,
     },
 };
 #[cfg_attr(not(target_family = "wasm"), allow(unused_imports))]
@@ -42,6 +42,9 @@ extern "C" {
         volume: f32,
         pitch: f32,
     );
+
+    #[wasm_bindgen::prelude::wasm_bindgen(js_namespace = globalThis, js_name = __AEDICULE_SET_AUDIO_PAUSED)]
+    fn set_browser_audio_paused(paused: bool);
 
     #[wasm_bindgen::prelude::wasm_bindgen(js_namespace = console, js_name = info)]
     fn browser_console_info(prefix: &str, phase: &str, detail: &str);
@@ -94,6 +97,9 @@ fn trace_browser_detail(_: &str, _: &str) {}
 fn trace_browser_input(event: &Event) {
     trace_browser_detail("frontplane", &format!("{event:?}"));
 }
+
+#[cfg(not(target_family = "wasm"))]
+fn set_browser_audio_paused(_: bool) {}
 
 /// Publishes the last accepted guest background as a compact browser
 /// diagnostic; unlike headless GPU screenshots, this observes the committed
@@ -219,6 +225,7 @@ struct WebFrontplane {
     pressed_pointer_buttons: [u16; 3],
     sliders: Vec<WebSlider>,
     _slider_subscriptions: Vec<Subscription>,
+    _focus_subscriptions: Vec<Subscription>,
 }
 
 #[cfg_attr(not(target_family = "wasm"), allow(dead_code))]
@@ -286,18 +293,39 @@ impl WebFrontplane {
         (sliders, subscriptions)
     }
 
-    fn new(runtime: BrowserRuntime, origin: Instant, cx: &mut Context<Self>) -> Self {
+    fn new(
+        runtime: BrowserRuntime,
+        origin: Instant,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let (sliders, slider_subscriptions) = Self::build_sliders(&runtime.metadata().controls, cx);
+        let focus_handle = cx.focus_handle();
+        let focus_subscriptions = vec![
+            cx.on_focus_in(&focus_handle, window, |this, _, cx| {
+                if this.runtime.pause_is_enabled() {
+                    this.queue_event(Event::Focus(true));
+                    cx.notify();
+                }
+            }),
+            cx.on_focus_out(&focus_handle, window, |this, _, _, cx| {
+                if this.runtime.pause_is_enabled() {
+                    this.queue_event(Event::Focus(false));
+                    cx.notify();
+                }
+            }),
+        ];
         Self {
             runtime,
             origin,
-            focus_handle: cx.focus_handle(),
+            focus_handle,
             reported_delivered_events: 0,
             viewport_bits: None,
             fatal_error: None,
             pressed_pointer_buttons: [0; 3],
             sliders,
             _slider_subscriptions: slider_subscriptions,
+            _focus_subscriptions: focus_subscriptions,
         }
     }
 
@@ -345,7 +373,22 @@ impl WebFrontplane {
     fn queue_event(&mut self, event: Event) {
         if self.fatal_error.is_none() {
             trace_browser_input(&event);
-            self.runtime.queue_event(self.origin.elapsed(), event);
+            match self.runtime.handle_input(self.origin.elapsed(), event) {
+                Ok(BrowserInputOutcome::Paused) => {
+                    self.play_pending_samples();
+                    set_browser_audio_paused(true);
+                }
+                Ok(BrowserInputOutcome::Resumed) => {
+                    set_browser_audio_paused(false);
+                    self.play_pending_samples();
+                }
+                Ok(
+                    BrowserInputOutcome::Queued
+                    | BrowserInputOutcome::Rendered
+                    | BrowserInputOutcome::Consumed,
+                ) => {}
+                Err(error) => self.fatal_error = Some(error.to_string()),
+            }
         }
     }
 
@@ -450,7 +493,7 @@ impl Render for WebFrontplane {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.observe_viewport(window);
         self.advance();
-        if self.fatal_error.is_none() {
+        if self.fatal_error.is_none() && !self.runtime.is_suspended() {
             window.request_animation_frame();
         }
         let frame = self.runtime.frame().clone();
@@ -722,7 +765,7 @@ fn main() {
                 },
                 |window, cx| {
                     Theme::change(ThemeMode::Dark, Some(window), cx);
-                    let view = cx.new(|cx| WebFrontplane::new(runtime, origin, cx));
+                    let view = cx.new(|cx| WebFrontplane::new(runtime, origin, window, cx));
                     view.focus_handle(cx).focus(window, cx);
                     cx.new(|cx| Root::new(view, window, cx))
                 },

@@ -2,9 +2,9 @@
 
 # Guide for LLMs writing Aedicule applications
 
-Guide version: `0.1.0`
+Guide version: `0.2.0`
 
-Current Aedicule WAT ABI: `0.2`
+Current Aedicule WAT ABI: `0.3`
 
 Canonical guide: https://github.com/pmarreck/aedicule/blob/yolo/GUIDE_FOR_LLMS.md
 
@@ -15,7 +15,7 @@ An Aedicule **guest** is a WebAssembly Text (`.wat`) application. Aedicule is th
 ## Ground rules
 
 1. Treat the exact generated appendix as the authority for names and signatures. Import only from `aedicule.v0`, use only `AE_*` names, and declare the ABI version exports.
-2. Everything under **Available now** is implemented in ABI `0.2`. Everything under **Proposed—not callable yet** is design direction, not an import or export you may emit.
+2. Everything under **Available now** is implemented in ABI `0.3`. Everything under **Proposed—not callable yet** is design direction, not an import or export you may emit.
 3. Check every status-returning host import. `0` means success. A nonzero result rejects the guest transaction that contains it; ignoring the result does not make invalid output valid.
 4. Keep application state in guest memory. Treat `AE_render` as a projection of that state, not as the place to advance simulation or fire one-shot effects.
 5. Comment intent, units, invariants, and state layout. WAT is compact enough that an uncommented correct program can still be unmaintainable.
@@ -80,6 +80,14 @@ The event table in the appendix defines stable key, pointer, viewport, focus, di
 Pointer scroll preserves both axes and distinguishes line units from logical-pixel units. Do not silently convert one unit into the other. Middle/wheel click is pointer button `3`, separate from scroll.
 
 Native and browser adapters currently deliver the documented keyboard and pointer set. Browser touch is presently lowered through pointer behavior; stable touch identity, multiple contacts, pressure, and cancellation do not yet have a finalized guest ABI.
+
+### Host-scheduled pause
+
+Pause is opt-in. During `AE_configure`, call `AE_pause_trigger(1, KEY_ID, 0)` for each stable physical key that should toggle suspension. Declare ABI minor `3` or newer when using it. If a guest declares no pause trigger, Aedicule does not alter or deduplicate its raw input lifecycle.
+
+Aedicule consumes both raw edges of each declared trigger. Do not also handle that key as gameplay input. Instead, handle event kind `15`: code `1` means the scheduler and guest-audio bus have just paused, code `2` means they have resumed, and code `3` tells a hot-reload candidate that it is replacing an already-paused guest. Update only pause presentation/state in these events; ticks stop while paused, and the host requests one render for each phase.
+
+Held/repeated triggers do not immediately undo a pause. A fresh down after release resumes. Aedicule reconciles releases and focus cancellation observed while suspended before delivering code `2`, preserves the exact rational tick phase, and never converts paused wall time into catch-up ticks. Viewport/display changes and transactional reload remain live without advancing simulation.
 
 ### Atomic rendering
 
@@ -313,7 +321,7 @@ aedicule --test --seed 0x5eed project/
 aedicule-render project/ --ticks 1
 ```
 
-Pin tool versions in reproducible builds. Tool defaults evolve as WebAssembly proposals graduate, while Aedicule ABI `0.2` intentionally exposes a narrower core contract.
+Pin tool versions in reproducible builds. Tool defaults evolve as WebAssembly proposals graduate, while Aedicule ABI `0.3` intentionally exposes a narrower core contract.
 
 ## Proposed—not callable yet
 
@@ -376,7 +384,7 @@ Before calling a guest ready:
 
 The remainder is generated from the same declarative Rust table used to check `WAT_ABI.md`. It is deliberately duplicated here so an LLM with only this file still has every current name, signature, event code, and lifecycle rule.
 
-### Aedicule WAT ABI v0.2
+### Aedicule WAT ABI v0.3
 
 This is the complete client-facing ABI for WAT applications accepted by Aedicule today. The only import module is `aedicule.v0`. Every function at this boundary is named `AE_*`; the provisional `host.v0` / `fp_*` names are rejected.
 
@@ -438,10 +446,21 @@ The major version must match exactly. Aedicule accepts guest minor versions from
 | 8 | Focus | `code = 1` when focused, `0` when unfocused; `a = b = 0` |
 | 9 | Display refresh | `code = numerator_hz`; `a = denominator`, `b = 0` |
 | 10 | Pointer scroll | `code` is unit ID; `a = horizontal delta`, `b = vertical delta` |
+| 15 | Pause lifecycle | `code` is `1` paused, `2` resumed, or `3` restored-paused; `a = b = 0` |
 
-Physical-key IDs are `1` left, `2` right, `3` up, `4` space, `5` P, `6` R, `7` F, `8` K, `9` B, `10` H, `11` Escape, and `12` F1. Pointer button IDs are `1` primary/left, `2` secondary/right, and `3` middle/wheel-click. Native and browser canvas adapters emit down and up edges for all three IDs.
+Kinds 11 through 14 are reserved for the proposed touch-contact profile and are not emitted yet. Physical-key IDs are `1` left, `2` right, `3` up, `4` space, `5` P, `6` R, `7` F, `8` K, `9` B, `10` H, `11` Escape, and `12` F1. Pointer button IDs are `1` primary/left, `2` secondary/right, and `3` middle/wheel-click. Native and browser canvas adapters emit down and up edges for all three IDs.
 
 Pointer-scroll unit IDs are `1` lines and `2` logical pixels. Positive `a` means leftward motion; positive `b` means upward motion. Hosts preserve both axes and omit zero-delta scroll events.
+
+#### Host-scheduled pause
+
+A guest opts in by calling `AE_pause_trigger(kind, code, flags)` during `AE_configure`. ABI v0.3 accepts selector kind `1` for a stable physical-key ID and requires `flags = 0`. Declarations are bounded and unique. A guest that declares no trigger receives the ordinary lifecycle unchanged.
+
+A fresh declared key-down is consumed by Aedicule; neither that down edge nor its matching up edge reaches gameplay. Repeats and a still-held trigger cannot self-resume. On pause, Aedicule executes work already due at the input barrier and delivers any earlier queued input in arrival order, freezes the fixed-step scheduler and guest audio transport, sends kind `15`, code `1`, accepts exactly one final render, and then performs no ordinary guest ticks or renders. Host window, menu, watcher, and transactional reload machinery remain live. A viewport or display-mode change may send its semantic event and accept at most one replacement paused frame without advancing simulation.
+
+A fresh trigger after release resumes. Releases or focus cancellation for inputs held at pause entry are delivered first, then kind `15`, code `2`, one render, and the next exact rational deadline. New gameplay presses made only while suspended are not armed. A reload candidate admitted while paused receives kind `15`, code `3` and renders its paused presentation before atomic replacement. Failed reloads preserve the old guest and transport.
+
+Paused wall time is removed from the scheduler baseline, so it produces no catch-up ticks and retains the pre-pause fractional phase. Native playback uses a guest-only pausable mixer and shifts synth cooldown timestamps by the same duration; browser sampled audio suspends its shared Web Audio context. Successful reload deterministically cancels old guest sources. A small device buffer may finish after the logical barrier, but its latency never advances guest time. Audio/effects requested by the paused transition itself are discarded in ABI v0.3; the resumed transition may request new output.
 
 #### Integer controls and declarative native UI
 
@@ -468,6 +487,14 @@ Sets the UTF-8 application title during `AE_configure`.
 ```
 
 Declares an action menu item; `flags & 1` is a separator and shortcut codes are host-defined.
+
+##### `AE_pause_trigger`
+
+```wat
+(func $AE_pause_trigger (param kind i32) (param code i32) (param flags i32) (result i32))
+```
+
+Registers one typed host-consumed pause/wake trigger during `AE_configure`; version 0 supports stable key kind `1` and requires `flags = 0`.
 
 ##### `AE_slider_i32`
 
@@ -759,7 +786,7 @@ Accepts a bounded UTF-8 diagnostic message; version 0 does not expose its sink t
 
 #### Portable text faces
 
-`AE_text` remains source-compatible and uses the active platform UI face. `AE_text_font` and `AE_text_font_q16` accept stable selector `0` for that platform default or `1` for Aedicule's embedded Geist Mono Regular. Selector `1` is registered from identical OFL-1.1 font bytes in native and browser adapters, so aligned numerical data never depends on host installation. Unknown selectors reject the complete render transaction rather than silently substituting a proportional face. Package-supplied font handles are not part of ABI v0.2; they require bounded `.aed` asset transport and collision-safe family identities in every adapter.
+`AE_text` remains source-compatible and uses the active platform UI face. `AE_text_font` and `AE_text_font_q16` accept stable selector `0` for that platform default or `1` for Aedicule's embedded Geist Mono Regular. Selector `1` is registered from identical OFL-1.1 font bytes in native and browser adapters, so aligned numerical data never depends on host installation. Unknown selectors reject the complete render transaction rather than silently substituting a proportional face. Package-supplied font handles are not part of ABI v0.3; they require bounded `.aed` asset transport and collision-safe family identities in every adapter.
 
 #### Stable draw IDs
 

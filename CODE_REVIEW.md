@@ -206,3 +206,51 @@ recovery UI.
 4. Strengthen atomic publication and actual-widget tests.
 5. Begin AVP extraction and event-driven/view-only output only after those
    correctness savepoints are green.
+
+## Pause lifecycle addendum
+
+Date: 2026-07-23
+
+Scope: ABI v0.3 pause declaration and semantic events, exact scheduler
+rebasing, raw-input ownership/reconciliation, native and browser adapters,
+hot reload, and the guest-only audio transport. This focused milestone pass
+rechecked the applicable functionality, coverage, duplication, complexity,
+resource lifetime, ABI, and error-handling dimensions above. FFI and database
+dimensions remain inapplicable.
+
+### Resolved warning: no-opt-in guests lost repeated raw edges
+
+The first classifier tracked every guest even when it had no pause trigger, so
+a repeated key-down or pointer-down was consumed. That contradicted the
+additive contract and could have changed Ulam or any older guest merely by
+running on ABI v0.3.
+
+Resolution: `GuestSuspension::handle` now bypasses all classification when the
+feature is disabled. A set-based regression proves repeated key, pointer, and
+focus edges are delivered unchanged without an opt-in.
+
+### Resolved warning: pre-barrier input could replay after resume
+
+An ordinary edge already queued for the next tick could be followed by an
+immediate pause trigger. Without an explicit barrier drain, its physical
+release could be reconciled before the stale down edge finally reached the
+guest after resume.
+
+Resolution: both adapters execute due work and drain every earlier queued edge
+before emitting the semantic paused event. Native scheduler and browser
+runtime regressions prove the order.
+
+### Resolved advisory: audio cursor preservation relied only on dependency prose
+
+Resolution: the native test suite now drives Aedicule's nested
+guest-mixer/player topology directly. It consumes one sample, observes silence
+while paused, and then resumes at the next two samples; the separate cooldown
+test proves paused wall time is excluded.
+
+### Remaining manual boundary
+
+The Web Audio context is browser- and device-owned. Unit/source contracts prove
+that the Rust adapter stops animation work and requests context suspend/resume,
+while browser startup integration proves the callable bridge exists. Audible
+device-buffer tail and browser autoplay policy remain real-browser acceptance
+checks, as documented in the ABI, rather than deterministic unit-test claims.

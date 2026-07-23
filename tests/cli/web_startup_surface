@@ -57,6 +57,10 @@ expect_text "$root/web/bootstrap.js" 'globalThis.__AEDICULE_PLAY_PCM' \
 	'browser bootstrap has no Web Audio sampled-PCM device adapter'
 expect_text "$root/web/bootstrap.js" 'globalThis.__AEDICULE_AUDIO_REQUEST_COUNT' \
 	'browser sampled-audio adapter exposes no compact request diagnostic'
+expect_text "$root/web/bootstrap.js" 'globalThis.__AEDICULE_SET_AUDIO_PAUSED' \
+	'browser sampled-audio adapter cannot preserve playback cursors across guest pause'
+expect_text "$root/src/bin/aedicule-web.rs" 'BrowserInputOutcome::Paused' \
+	'browser input adapter does not apply host-owned pause transitions'
 expect_text "$root/web/bootstrap.js" '.createBuffer(' \
 	'browser sample adapter does not create an explicit channel-aware PCM buffer'
 expect_text "$root/flake.nix" 'install -Dm644 ${./packaging/web/launcher-i18n.mjs} $out/launcher-i18n.mjs' \

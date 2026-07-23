@@ -15,6 +15,7 @@ const MAX_APPLICATION_ASSETS = 1024;
 const MAX_APPLICATION_ASSET_BYTES = 16 * 1024 * 1024;
 const MAX_APPLICATION_BYTES = 64 * 1024 * 1024;
 let audioContext;
+let guestAudioPaused = false;
 globalThis.__AEDICULE_AUDIO_REQUEST_COUNT = 0;
 
 function reportStartupDiagnostic(stage, detail = {}) {
@@ -144,11 +145,20 @@ function ensureAudioContext() {
 }
 
 function unlockAudio() {
+	if (guestAudioPaused) return;
 	const context = ensureAudioContext();
 	if (context?.state === "suspended") {
 		context.resume().catch(error => console.warn(strings.audioUnlockFailed, error));
 	}
 }
+
+globalThis.__AEDICULE_SET_AUDIO_PAUSED = paused => {
+	guestAudioPaused = Boolean(paused);
+	const context = ensureAudioContext();
+	if (context === undefined) return;
+	const transition = guestAudioPaused ? context.suspend() : context.resume();
+	transition.catch(error => console.warn(strings.audioUnlockFailed, error));
+};
 
 for (const eventName of ["pointerdown", "keydown", "touchstart"]) {
 	addEventListener(eventName, unlockAudio, { capture: true, passive: true });

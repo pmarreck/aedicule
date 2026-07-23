@@ -1,5 +1,6 @@
 use aedicule::{
-    DrawCommand, Frontplane, GEIST_MONO_FAMILY, GEIST_MONO_REGULAR, Limits, TextFont, render_svg,
+    ABI_MINOR, DrawCommand, Frontplane, GEIST_MONO_FAMILY, GEIST_MONO_REGULAR, Limits, TextFont,
+    render_svg,
 };
 
 const FONT_WAT: &str = r#"(module
@@ -139,7 +140,7 @@ fn bundled_geist_mono_is_the_expected_regular_opentype_payload() {
 #[test]
 fn abi_minor_accepts_older_guests_but_rejects_unknown_future_contracts() {
     assert!(render(&FONT_WAT.replacen("i32.const 2", "i32.const 0", 1)).is_ok());
-    for minor in [-1, 3] {
+    for minor in [-1, ABI_MINOR + 1] {
         let source = FONT_WAT.replacen("i32.const 2", &format!("i32.const {minor}"), 1);
         let error = Frontplane::from_wat(&source, Limits::default())
             .unwrap_err()
