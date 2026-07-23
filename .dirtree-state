@@ -45,6 +45,7 @@ annotate=[
 	assets/fonts/SOURCE.md = Upstream commit, path, checksum, and embedding provenance for Geist Mono.
 	assets/icons/Aedicule-WAT.ico = Multi-resolution Windows WAT document icon.
 	assets/icons/Aedicule.ico = Multi-resolution Windows Aedicule application icon.
+	assets/icons/aedicule-aed-document.png = High-resolution packaged .aed application document icon source for native bundles.
 	assets/icons/aedicule-app.png = Approved high-resolution Aedicule application icon source for platform packages.
 	assets/icons/aedicule-wat-document.png = High-resolution WAT document icon source for platform packages.
 	build = Top-level optimized Nix build and debug/test dispatcher

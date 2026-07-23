@@ -14,6 +14,16 @@
     constituent runtime/package artifacts and build manifest. Use one file
     where the platform supports it and a native application bundle where it
     does not; preserve the embedded `.aed` bytes exactly.
+    - [ ] Layer appified menus: package metadata owns application
+      name/About/icon and selects runner versus single-app mode; AVP declares
+      arbitrary hierarchical guest menus with stable action IDs; the host
+      retains an unshadowable Quit/recovery floor. Runner mode keeps Open…;
+      appified mode exposes document opening only when the package requests
+      that capability.
+    - [ ] Make menu accelerators typed AVP data: stable key IDs plus semantic
+      Primary/Command/Control/Alt/Shift modifiers, atomically reject duplicate
+      guest chords, reserve chords by runner/appified capability profile, and
+      emit one menu-action event without also leaking a raw key event.
   - [x] Make `--test` require `tests/main.wast`, run every direct
     `tests/*.wast` suite in deterministic PCG32/Fisher-Yates order with an
     emitted replay seed, and ignore nested WAST composition fragments across
@@ -86,6 +96,29 @@
 
 - [ ] Ship Aedicule and the Ulam Flower/Vibesteroids demos as one coherent
   six-target delivery matrix.
+  - [x] Register `.aed` as an Aedicule-owned macOS document type and give
+    packaged runnable applications a distinct package document icon rather
+    than reusing the editable `.wat` source icon.
+    (2026-07-23 13:25 EDT; the full suite and release build passed, macOS
+    validated the shipped plist/signature, and opening the installed demo
+    `.aed` through Launch Services started Aedicule.)
+    Curiosity poke: Finder caches Launch Services declarations and icons, so
+    the installed-app acceptance must refresh registration rather than mistake
+    stale metadata for a failed bundle.
+  - [x] Make a no-argument native launch usable without guest cooperation:
+    always expose host-owned About, Open…, and Quit actions; let Open… select
+    `.wat`, `.aed`, or an application directory; and render an actionable
+    empty state instead of silently launching the black conformance guest.
+    (2026-07-23 13:25 EDT; focused tests, the full suite, the macOS release
+    build, and Peter's live Mac visual acceptance passed.)
+    Curiosity poke: preserve guest-authored application commands in a separate
+    menu so a guest cannot rename, shadow, or remove the host escape hatches.
+  - [x] Install the two bundled demo applications beside the private Mac test
+    install in a stable, visible user directory, and print their exact paths.
+    (2026-07-23 13:25 EDT; publisher contract and full suite passed;
+    `~/Documents/AediculeDemos/` is populated on Peter's Mac.)
+    Curiosity poke: update publisher-owned demo copies transactionally without
+    overwriting a user's mutable project directory.
   - [x] Make `./build` produce the optimized current-platform application and
     add `./build_all` for exactly web, macOS/aarch64, Linux/aarch64,
     Windows/aarch64, Linux/x86_64, and Windows/x86_64.

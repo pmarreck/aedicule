@@ -25,9 +25,10 @@ use aedicule::{
 use gpui::{
     AnyWindowHandle, App, AppContext as _, Context, Entity, FocusHandle, Focusable,
     InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent, KeyUpEvent, Menu, MenuItem,
-    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement as _, Render,
-    ScrollDelta, ScrollWheelEvent, Styled as _, Subscription, Window, WindowBounds, WindowOptions,
-    actions, canvas, div, prelude::FluentBuilder as _, px, rgba, size,
+    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement as _,
+    PathPromptOptions, PromptLevel, Render, ScrollDelta, ScrollWheelEvent, Styled as _,
+    Subscription, Window, WindowBounds, WindowOptions, actions, canvas, div,
+    prelude::FluentBuilder as _, px, rgba, size,
 };
 use gpui_component::{
     ActiveTheme as _, Root, Selectable as _, Theme, ThemeMode, TitleBar,
@@ -38,7 +39,18 @@ use gpui_component::{
 use rodio::{DeviceSinkBuilder, MixerDeviceSink, Source as _, buffer::SamplesBuffer};
 use smol::Timer;
 
-actions!(aedicule, [NewApplication, ShowHelp, ReloadPlugin, Quit]);
+actions!(
+    aedicule,
+    [
+        AboutAedicule,
+        OpenApplication,
+        OpenProjectDirectory,
+        NewApplication,
+        ShowHelp,
+        ReloadPlugin,
+        Quit
+    ]
+);
 
 const LOGICAL_WIDTH: f32 = 1024.0;
 const LOGICAL_HEIGHT: f32 = 768.0;
@@ -49,6 +61,19 @@ const MAX_TICKS_PER_WAKE: u32 = 8;
 const DEFAULT_PLUGIN_INIT: PluginInit = PluginInit::new(0x5eed_cafe, LOGICAL_WIDTH, LOGICAL_HEIGHT);
 
 struct Strings {
+    app_name: &'static str,
+    about_app: &'static str,
+    about_detail: &'static str,
+    file_menu: &'static str,
+    open: &'static str,
+    open_application: &'static str,
+    open_project_directory: &'static str,
+    quit_app: &'static str,
+    ok: &'static str,
+    empty_heading: &'static str,
+    empty_detail: &'static str,
+    no_application: &'static str,
+    file_picker_failed: &'static str,
     fallback_title: &'static str,
     application_menu: &'static str,
     abi_status: &'static str,
@@ -76,6 +101,19 @@ struct Strings {
 }
 
 const EN: Strings = Strings {
+    app_name: "Aedicule",
+    about_app: "About Aedicule",
+    about_detail: "A capability-bounded, cross-platform runtime for WAT applications.",
+    file_menu: "File",
+    open: "Open…",
+    open_application: "Open Application…",
+    open_project_directory: "Open Project Directory…",
+    quit_app: "Quit Aedicule",
+    ok: "OK",
+    empty_heading: "Open an Aedicule application",
+    empty_detail: "Choose a project directory, .aed package, or .wat file to begin.",
+    no_application: "no application open",
+    file_picker_failed: "Could not open the system file picker",
     fallback_title: "WAT Application — GPUI Frontplane",
     application_menu: "Application",
     abi_status: "WAT owns behavior • GPUI owns the window",
@@ -118,10 +156,11 @@ Options:
   --about       Show version and build platform
 
 Without arguments, ./code.wat is loaded when present, followed by any packaged
-default plugin, then the embedded fallback. An application directory resolves
-to its code.wat file. Set AE_DISPLAY_REFRESH_RATE to an exact initial display
-rate such as 60000/1001; canonical 59.94, 29.97, 23.976, and 119.88 are also
-accepted.
+default application; otherwise Aedicule opens its application chooser. Use
+--embedded to run the ABI conformance fallback. An application directory
+resolves to its code.wat file. Set AE_DISPLAY_REFRESH_RATE to an exact initial
+display rate such as 60000/1001; canonical 59.94, 29.97, 23.976, and 119.88
+are also accepted.
 ",
     about: "generic native GPUI frontplane for capability-bounded WAT applications",
     cli_error: "aedicule",
@@ -174,8 +213,12 @@ fn menu_action_event(action_id: u32) -> Event {
     Event::MenuAction(action_id)
 }
 
-fn native_menus(metadata: &Metadata, can_reload: bool) -> Vec<Menu> {
-    let mut items: Vec<_> = standard_menu_entries(metadata)
+fn native_menus(
+    metadata: &Metadata,
+    can_reload: bool,
+    can_select_mixed_files_and_dirs: bool,
+) -> Vec<Menu> {
+    let application_items: Vec<_> = standard_menu_entries(metadata)
         .into_iter()
         .map(|entry| match entry {
             StandardMenuEntry::New(label) => MenuItem::action(label, NewApplication),
@@ -184,20 +227,47 @@ fn native_menus(metadata: &Metadata, can_reload: bool) -> Vec<Menu> {
             StandardMenuEntry::Quit(label) => MenuItem::action(label, Quit),
         })
         .collect();
-    if can_reload {
-        if !items.is_empty() {
-            items.push(MenuItem::Separator);
-        }
-        items.push(MenuItem::action(EN.reload, ReloadPlugin));
-    }
-    if items.is_empty() {
-        Vec::new()
+    let mut file_items = if can_select_mixed_files_and_dirs {
+        vec![MenuItem::action(EN.open, OpenApplication)]
     } else {
-        vec![Menu {
-            name: EN.application_menu.into(),
-            items,
-            disabled: false,
-        }]
+        vec![
+            MenuItem::action(EN.open_application, OpenApplication),
+            MenuItem::action(EN.open_project_directory, OpenProjectDirectory),
+        ]
+    };
+    if can_reload {
+        file_items.push(MenuItem::Separator);
+        file_items.push(MenuItem::action(EN.reload, ReloadPlugin));
+    }
+    let mut menus = vec![
+        Menu::new(EN.app_name).items([
+            MenuItem::action(EN.about_app, AboutAedicule),
+            MenuItem::Separator,
+            MenuItem::action(EN.quit_app, Quit),
+        ]),
+        Menu::new(EN.file_menu).items(file_items),
+    ];
+    if !application_items.is_empty() {
+        menus.push(Menu::new(EN.application_menu).items(application_items));
+    }
+    menus
+}
+
+#[derive(Clone, Copy)]
+enum OpenPathKind {
+    Mixed,
+    File,
+    Directory,
+}
+
+/// Keeps platform-picker limitations out of the application loader by reducing
+/// each host menu action to one explicit file/directory capability request.
+fn open_path_prompt_options(kind: OpenPathKind) -> PathPromptOptions {
+    PathPromptOptions {
+        files: matches!(kind, OpenPathKind::Mixed | OpenPathKind::File),
+        directories: matches!(kind, OpenPathKind::Mixed | OpenPathKind::Directory),
+        multiple: false,
+        prompt: Some(EN.open.into()),
     }
 }
 
@@ -504,6 +574,7 @@ struct Startup {
     source: Option<ExternalSource>,
     reload_error: Option<String>,
     plugin_init: PluginInit,
+    empty_state: bool,
 }
 
 struct FrontplaneView {
@@ -526,6 +597,8 @@ struct FrontplaneView {
     scheduler: SimulationScheduler,
     timing_generation: u64,
     open_documents: Rc<RefCell<VecDeque<PathBuf>>>,
+    empty_state: bool,
+    can_select_mixed_files_and_dirs: bool,
     sliders: Vec<NativeSlider>,
     _slider_subscriptions: Vec<Subscription>,
 }
@@ -633,6 +706,7 @@ impl FrontplaneView {
             source,
             reload_error,
             plugin_init,
+            empty_state,
         } = startup;
         let metadata = frontplane.metadata().clone();
         let monotonic_origin = Instant::now();
@@ -646,7 +720,11 @@ impl FrontplaneView {
         let mut view = Self {
             frontplane,
             frame,
-            title: metadata.title.clone(),
+            title: if empty_state {
+                EN.app_name.to_owned()
+            } else {
+                metadata.title.clone()
+            },
             new_label: entries.iter().find_map(|entry| match entry {
                 StandardMenuEntry::New(label) => Some(label.clone()),
                 _ => None,
@@ -672,6 +750,8 @@ impl FrontplaneView {
             scheduler,
             timing_generation: 0,
             open_documents,
+            empty_state,
+            can_select_mixed_files_and_dirs: cx.can_select_mixed_files_and_dirs(),
             sliders,
             _slider_subscriptions: slider_subscriptions,
         };
@@ -848,6 +928,7 @@ impl FrontplaneView {
                     watch: false,
                     revisions,
                 });
+                self.empty_state = false;
                 self.install_frontplane(frontplane, frame, EN.reload_restarted, cx);
             }
             Err(error) => self.set_reload_error(&revision_path, EN.reload_failed, Some(&error)),
@@ -890,7 +971,11 @@ impl FrontplaneView {
         self.reload_error = None;
         self.reload_notice = Some(notice);
         self.viewport.invalidate();
-        cx.set_menus(native_menus(&metadata, self.source.is_some()));
+        cx.set_menus(native_menus(
+            &metadata,
+            self.source.is_some(),
+            self.can_select_mixed_files_and_dirs,
+        ));
         let title = window_title(&metadata);
         let _ = cx.update_window(self.window_handle, |_, window, _| {
             window.set_window_title(&title);
@@ -967,6 +1052,72 @@ impl FrontplaneView {
     fn new_application(&mut self, _: &NewApplication, _: &mut Window, cx: &mut Context<Self>) {
         self.fatal_error = None;
         self.queue_native_event(Event::MenuAction(1), cx);
+    }
+
+    fn about_aedicule(&mut self, _: &AboutAedicule, window: &mut Window, cx: &mut Context<Self>) {
+        let detail = format!(
+            "Aedicule {}\n{}",
+            env!("CARGO_PKG_VERSION"),
+            EN.about_detail
+        );
+        let _ = window.prompt(PromptLevel::Info, EN.about_app, Some(&detail), &[EN.ok], cx);
+    }
+
+    /// Feeds native file-picker selections into the existing OS open-document
+    /// queue so drag/drop, Finder associations, and File→Open share one loader.
+    fn prompt_for_application(
+        &mut self,
+        kind: OpenPathKind,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let selection = cx.prompt_for_paths(open_path_prompt_options(kind));
+        cx.spawn(async move |this, cx| {
+            let selected = match selection.await {
+                Ok(Ok(Some(paths))) => paths.into_iter().next(),
+                Ok(Ok(None)) | Err(_) => None,
+                Ok(Err(error)) => {
+                    let detail = format!("{}: {error}", EN.file_picker_failed);
+                    let _ = this.update(cx, |this, cx| {
+                        this.reload_error = Some(detail);
+                        cx.notify();
+                    });
+                    None
+                }
+            };
+            if let Some(path) = selected {
+                let _ = this.update(cx, |this, cx| {
+                    this.open_documents.borrow_mut().push_back(path);
+                    if this.open_requested_document(cx) {
+                        cx.notify();
+                    }
+                });
+            }
+        })
+        .detach();
+    }
+
+    fn open_application(
+        &mut self,
+        _: &OpenApplication,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let kind = if self.can_select_mixed_files_and_dirs {
+            OpenPathKind::Mixed
+        } else {
+            OpenPathKind::File
+        };
+        self.prompt_for_application(kind, window, cx);
+    }
+
+    fn open_project_directory(
+        &mut self,
+        _: &OpenProjectDirectory,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.prompt_for_application(OpenPathKind::Directory, window, cx);
     }
 
     fn show_help(&mut self, _: &ShowHelp, _: &mut Window, cx: &mut Context<Self>) {
@@ -1131,6 +1282,8 @@ impl Render for FrontplaneView {
         let new_label = self.new_label.clone();
         let help_label = self.help_label.clone();
         let quit_label = self.quit_label.clone();
+        let empty_state = self.empty_state;
+        let can_select_mixed_files_and_dirs = self.can_select_mixed_files_and_dirs;
         let control_panels = ui
             .iter()
             .flat_map(|snapshot| snapshot.control_panels.iter())
@@ -1209,12 +1362,13 @@ impl Render for FrontplaneView {
             })
             .collect::<Vec<_>>();
         let can_reload = self.source.is_some();
-        let source_status = match &self.source {
-            Some(source) if source.watch => {
+        let source_status = match (&self.source, empty_state) {
+            (_, true) => EN.no_application.to_owned(),
+            (Some(source), false) if source.watch => {
                 format!("{} {}", EN.watching, source.path.display())
             }
-            Some(source) => format!("{} {}", EN.external_source, source.path.display()),
-            None => EN.embedded_source.to_owned(),
+            (Some(source), false) => format!("{} {}", EN.external_source, source.path.display()),
+            (None, false) => EN.embedded_source.to_owned(),
         };
         let timing_status = format!(
             "{} • {} {} • {}",
@@ -1237,6 +1391,9 @@ impl Render for FrontplaneView {
             .track_focus(&self.focus_handle)
             .on_key_down(cx.listener(Self::key_down))
             .on_key_up(cx.listener(Self::key_up))
+            .on_action(cx.listener(Self::about_aedicule))
+            .on_action(cx.listener(Self::open_application))
+            .on_action(cx.listener(Self::open_project_directory))
             .on_action(cx.listener(Self::new_application))
             .on_action(cx.listener(Self::show_help))
             .on_action(cx.listener(Self::reload_plugin))
@@ -1342,6 +1499,89 @@ impl Render for FrontplaneView {
             .children(control_panels)
             .children(slider_layers)
             .children(button_layers)
+            .when(empty_state, |this| {
+                this.child(
+                    div()
+                        .id("empty-state")
+                        .absolute()
+                        .top(px(HOST_TITLE_BAR_HEIGHT))
+                        .bottom(px(28.0))
+                        .left_0()
+                        .right_0()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .bg(rgba(0x0d1117ff))
+                        .child(
+                            div()
+                                .w(px(560.0))
+                                .p_8()
+                                .flex()
+                                .flex_col()
+                                .items_center()
+                                .gap_4()
+                                .rounded_xl()
+                                .bg(rgba(0x161b22ff))
+                                .text_color(rgba(0xf6f7f9ff))
+                                .child(div().text_xl().child(EN.empty_heading))
+                                .child(
+                                    div()
+                                        .text_center()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child(EN.empty_detail),
+                                )
+                                .child(
+                                    h_flex()
+                                        .gap_2()
+                                        .when(can_select_mixed_files_and_dirs, |this| {
+                                            this.child(
+                                                Button::new("open-empty-state")
+                                                    .primary()
+                                                    .label(EN.open)
+                                                    .on_click(cx.listener(
+                                                        |this, _, window, cx| {
+                                                            this.open_application(
+                                                                &OpenApplication,
+                                                                window,
+                                                                cx,
+                                                            )
+                                                        },
+                                                    )),
+                                            )
+                                        })
+                                        .when(!can_select_mixed_files_and_dirs, |this| {
+                                            this.child(
+                                                Button::new("open-file-empty-state")
+                                                    .primary()
+                                                    .label(EN.open_application)
+                                                    .on_click(cx.listener(
+                                                        |this, _, window, cx| {
+                                                            this.open_application(
+                                                                &OpenApplication,
+                                                                window,
+                                                                cx,
+                                                            )
+                                                        },
+                                                    )),
+                                            )
+                                            .child(
+                                                Button::new("open-directory-empty-state")
+                                                    .label(EN.open_project_directory)
+                                                    .on_click(cx.listener(
+                                                        |this, _, window, cx| {
+                                                            this.open_project_directory(
+                                                                &OpenProjectDirectory,
+                                                                window,
+                                                                cx,
+                                                            )
+                                                        },
+                                                    )),
+                                            )
+                                        }),
+                                ),
+                        ),
+                )
+            })
             .child(
                 host_title_bar_layer()
                     .child(
@@ -1507,6 +1747,7 @@ fn startup(source: PluginSource, watch: bool, seed: Option<u64>) -> Result<Start
                 source: None,
                 reload_error: None,
                 plugin_init,
+                empty_state: false,
             }
         }
         application @ (PluginSource::File(_)
@@ -1534,6 +1775,7 @@ fn startup(source: PluginSource, watch: bool, seed: Option<u64>) -> Result<Start
                     }),
                     reload_error: None,
                     plugin_init,
+                    empty_state: false,
                 },
                 Err(error) => {
                     let reload_error = format!("{}: {}: {error}", EN.reload_failed, path.display());
@@ -1557,11 +1799,18 @@ fn startup(source: PluginSource, watch: bool, seed: Option<u64>) -> Result<Start
                         }),
                         reload_error: Some(reload_error),
                         plugin_init,
+                        empty_state: false,
                     }
                 }
             }
         }
     })
+}
+
+fn launcher(seed: Option<u64>) -> Result<Startup, String> {
+    let mut startup = startup(PluginSource::Embedded, false, seed)?;
+    startup.empty_state = true;
+    Ok(startup)
 }
 
 fn plugin_source_for_path(path: PathBuf) -> PluginSource {
@@ -1632,15 +1881,29 @@ fn run_application(startup: Startup) {
             .add_fonts(vec![Cow::Borrowed(GEIST_MONO_REGULAR)])
             .expect("register bundled Geist Mono Regular");
         cx.bind_keys([
+            KeyBinding::new("cmd-o", OpenApplication, None),
+            KeyBinding::new("ctrl-o", OpenApplication, None),
             KeyBinding::new("ctrl-n", NewApplication, None),
             KeyBinding::new("f1", ShowHelp, None),
+            KeyBinding::new("cmd-r", ReloadPlugin, None),
             KeyBinding::new("ctrl-r", ReloadPlugin, None),
+            KeyBinding::new("cmd-q", Quit, None),
             KeyBinding::new("ctrl-q", Quit, None),
         ]);
         let metadata = startup.frontplane.metadata().clone();
-        let window_title = window_title(&metadata);
-        cx.set_menus(native_menus(&metadata, startup.source.is_some()));
+        let window_title = if startup.empty_state {
+            EN.app_name.to_owned()
+        } else {
+            window_title(&metadata)
+        };
+        let can_select_mixed_files_and_dirs = cx.can_select_mixed_files_and_dirs();
+        cx.set_menus(native_menus(
+            &metadata,
+            startup.source.is_some(),
+            can_select_mixed_files_and_dirs,
+        ));
         cx.on_action(|_: &Quit, cx| cx.quit());
+        cx.activate(true);
         let options = WindowOptions {
             titlebar: Some(TitleBar::title_bar_options()),
             window_bounds: Some(WindowBounds::centered(size(px(1100.0), px(850.0)), cx)),
@@ -1707,6 +1970,13 @@ fn main() -> ExitCode {
             env::consts::OS,
             env::consts::ARCH,
         ),
+        LaunchAction::Launcher { seed } => match launcher(seed) {
+            Ok(startup) => run_application(startup),
+            Err(error) => {
+                eprintln!("{}: {error}", EN.cli_error);
+                return ExitCode::from(2);
+            }
+        },
         LaunchAction::Run {
             source,
             watch,
@@ -1770,10 +2040,11 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::{
-        DECIMAL_SCALE, StandardMenuEntry, TITLE_BAR_GLYPH_RGBA, ViewportTracker, fixed_sine,
-        guest_positioned_control_layer, host_title_bar_layer, map_key, menu_action_event,
-        menu_action_label, render_sample_for_host, render_synth_program_fixed,
-        standard_menu_entries, title_bar_control_glyph_overlay, title_bar_control_glyphs,
+        DECIMAL_SCALE, OpenPathKind, StandardMenuEntry, TITLE_BAR_GLYPH_RGBA, ViewportTracker,
+        fixed_sine, guest_positioned_control_layer, host_title_bar_layer, map_key,
+        menu_action_event, menu_action_label, native_menus, open_path_prompt_options,
+        render_sample_for_host, render_synth_program_fixed, standard_menu_entries,
+        title_bar_control_glyph_overlay, title_bar_control_glyphs,
     };
     use aedicule::{
         Event, Key, MenuItem as PluginMenuItem, Metadata, SampleAsset, SynthFilter, SynthVoice,
@@ -1962,6 +2233,72 @@ mod tests {
                 StandardMenuEntry::Quit("Leave".into()),
             ]
         );
+        assert_eq!(
+            native_menus(&metadata, false, true)
+                .iter()
+                .map(|menu| menu.name.as_ref())
+                .collect::<Vec<_>>(),
+            vec!["Aedicule", "File", "Application"]
+        );
+    }
+
+    #[test]
+    fn host_escape_hatches_exist_without_guest_metadata() {
+        let menus = native_menus(&Metadata::default(), false, true);
+        assert_eq!(
+            menus
+                .iter()
+                .map(|menu| menu.name.as_ref())
+                .collect::<Vec<_>>(),
+            vec!["Aedicule", "File"]
+        );
+        let item_names = |menu: &gpui::Menu| {
+            menu.items
+                .iter()
+                .filter_map(|item| match item {
+                    gpui::MenuItem::Action { name, .. } => Some(name.to_string()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            item_names(&menus[0]),
+            vec!["About Aedicule", "Quit Aedicule"]
+        );
+        assert_eq!(item_names(&menus[1]), vec!["Open…"]);
+    }
+
+    #[test]
+    fn platforms_without_mixed_pickers_expose_file_and_directory_actions() {
+        let menus = native_menus(&Metadata::default(), false, false);
+        let item_names = menus[1]
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                gpui::MenuItem::Action { name, .. } => Some(name.to_string()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            item_names,
+            vec!["Open Application…", "Open Project Directory…"]
+        );
+    }
+
+    #[test]
+    fn picker_capabilities_classify_every_open_action() {
+        let cases = [
+            (OpenPathKind::Mixed, true, true),
+            (OpenPathKind::File, true, false),
+            (OpenPathKind::Directory, false, true),
+        ];
+
+        for (kind, files, directories) in cases {
+            let options = open_path_prompt_options(kind);
+            assert_eq!((options.files, options.directories), (files, directories));
+            assert!(!options.multiple);
+        }
     }
 
     #[test]

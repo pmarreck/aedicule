@@ -41,6 +41,7 @@ log="$work/invocations"
 stdout="$work/stdout"
 stderr="$work/stderr"
 reported_application_path="~"'/Applications/Aedicule.app'
+reported_demos_path="~"'/Documents/AediculeDemos/'
 mkdir -p "$fixture" "$fake_bin" "$release_source"
 cp "$root/publish" "$fixture/publish"
 chmod +x "$fixture/publish"
@@ -213,8 +214,9 @@ run_publish() {
 status=$?
 if (( status != 0 )) || ! rg -F 'GitHub Release' "$stdout" >/dev/null \
 		|| ! rg -F "$reported_application_path" "$stdout" >/dev/null \
+		|| ! rg -F "$reported_demos_path" "$stdout" >/dev/null \
 		|| ! rg -F -- '--skip-mac' "$stdout" >/dev/null; then
-	fail '--help does not describe publication and optional Mac installation'
+	fail '--help does not describe publication and optional Mac application/demo installation'
 fi
 
 run_publish AEDICULE_TEST_TAG_EXISTS=0 AEDICULE_TEST_MAC_REACHABLE=0
@@ -286,6 +288,9 @@ require_log "$log" $'ssh\t-o\tBatchMode=yes' 'Mac deployment did not run its rem
 if ! rg -F "$reported_application_path" "$stdout" >/dev/null; then
 	fail 'successful Mac deployment did not report the installed path'
 fi
+if ! rg -F "$reported_demos_path" "$stdout" >/dev/null; then
+	fail 'successful Mac deployment did not report the installed demo path'
+fi
 # These are literal source fragments; the dollar-prefixed names must not expand.
 # shellcheck disable=SC2016
 for required_remote_policy in \
@@ -293,12 +298,16 @@ for required_remote_policy in \
 	'"$executable" --about' \
 	'chmod -R u+w "$app"' \
 	'codesign --force --sign - "$executable"' \
+	'demos="$HOME/Documents/AediculeDemos"' \
+	'mkdir -p "$demos"' \
+	'app_demos="$app/Contents/Resources/Demos"' \
 	'ditto --hfsCompression "$app" "$incoming"' \
 	'chmod -R u+w "$stage" 2>/dev/null || true' \
 	'/bin/rm -rf -- "$stage"' \
 	'/bin/rm -f -- "$archive"' \
 	'mv "$destination" "$backup"' \
-	'mv "$backup" "$destination"'; do
+	'mv "$backup" "$destination"' \
+	'Installed demos in %s\n'; do
 	if ! rg -F -- "$required_remote_policy" "$root/publish" >/dev/null; then
 		fail "Mac installer lacks required policy: $required_remote_policy"
 	fi

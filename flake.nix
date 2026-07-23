@@ -431,18 +431,22 @@
 							nativeBuildInputs = [ pkgs.imagemagick pkgs.libicns ];
 						} ''
 							app=$out/Aedicule.app
-							mkdir -p $app/Contents/MacOS $app/Contents/Resources/Demos $app/Contents/Resources/Web icon-work/app icon-work/document
+							mkdir -p $app/Contents/MacOS $app/Contents/Resources/Demos $app/Contents/Resources/Web \
+								icon-work/app icon-work/aed-document icon-work/wat-document
 							cp -R ${self.packages.${system}.webRuntime}/. $app/Contents/Resources/Web/
 							cp ${raw}/bin/aedicule $app/Contents/MacOS/aedicule
 							chmod +x $app/Contents/MacOS/aedicule
 							for size in 16 32 48 128 256 512 1024; do
 								magick ${./assets/icons/aedicule-app.png} -resize "''${size}x''${size}" \
 									"icon-work/app/''${size}.png"
+								magick ${./assets/icons/aedicule-aed-document.png} -resize "''${size}x''${size}" \
+									"icon-work/aed-document/''${size}.png"
 								magick ${./assets/icons/aedicule-wat-document.png} -resize "''${size}x''${size}" \
-									"icon-work/document/''${size}.png"
+									"icon-work/wat-document/''${size}.png"
 							done
 							png2icns $app/Contents/Resources/Aedicule.icns icon-work/app/*.png
-							png2icns $app/Contents/Resources/AediculeWAT.icns icon-work/document/*.png
+							png2icns $app/Contents/Resources/AediculeAED.icns icon-work/aed-document/*.png
+							png2icns $app/Contents/Resources/AediculeWAT.icns icon-work/wat-document/*.png
 							cp ${./packaging/macos/Info.plist.in} $app/Contents/Info.plist
 							substituteInPlace $app/Contents/Info.plist \
 								--replace-fail '@VERSION@' '${version}'

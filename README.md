@@ -131,14 +131,15 @@ complete Vibesteroids `.aed` application, and a checksum manifest.
 | Target | Package |
 | --- | --- |
 | Web | Static-site ZIP containing both demos |
-| macOS / Apple Silicon | `.app` ZIP with WAT document association |
+| macOS / Apple Silicon | `.app` ZIP with `.wat` source and `.aed` package associations |
 | Linux / ARM64 | Self-contained `tar.gz` with desktop/MIME metadata |
 | Windows / ARM64 | ZIP with app/document icons and association helper |
 | Linux / x86_64 | Self-contained `tar.gz` with desktop/MIME metadata |
 | Windows / x86_64 | ZIP with app/document icons and association helper |
 
-On desktop, pass a `.wat` path to Aedicule or drag a WAT document onto the
-application. macOS registers the document type from its application bundle;
+On desktop, pass a `.wat` or `.aed` path to Aedicule or drag its document onto
+the application. macOS registers both `.wat` and `.aed` document types from its
+application bundle, using distinct source and packaged-application icons;
 Linux ships desktop and MIME metadata; Windows includes an optional PowerShell
 association helper.
 

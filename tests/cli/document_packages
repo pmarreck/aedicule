@@ -16,6 +16,7 @@ require_text() {
 
 for icon in \
 	assets/icons/aedicule-app.png \
+	assets/icons/aedicule-aed-document.png \
 	assets/icons/aedicule-wat-document.png \
 	assets/icons/Aedicule.ico \
 	assets/icons/Aedicule-WAT.ico; do
@@ -27,10 +28,17 @@ done
 
 require_text packaging/macos/Info.plist.in CFBundleDocumentTypes
 require_text packaging/macos/Info.plist.in UTImportedTypeDeclarations
+require_text packaging/macos/Info.plist.in UTExportedTypeDeclarations
 require_text packaging/macos/Info.plist.in org.webassembly.wat
+require_text packaging/macos/Info.plist.in dev.aedicule.application
+require_text packaging/macos/Info.plist.in application/vnd.aedicule.app+zip
+require_text packaging/macos/Info.plist.in AediculeAED.icns
+require_text packaging/macos/Info.plist.in '<string>aed</string>'
 require_text packaging/macos/Info.plist.in CFBundleTypeIconFile
 require_text packaging/macos/Info.plist.in '<string>11.0</string>'
 require_text flake.nix 'MACOSX_DEPLOYMENT_TARGET = "11.0";'
+require_text flake.nix 'assets/icons/aedicule-aed-document.png'
+require_text flake.nix 'Contents/Resources/AediculeAED.icns'
 require_text packaging/linux/aedicule.desktop 'Exec=aedicule %f'
 require_text packaging/linux/aedicule.desktop 'MimeType=text/x-webassembly-wat;'
 require_text packaging/linux/aedicule-launcher.in '@LOADER@'
@@ -39,6 +47,7 @@ require_text packaging/linux/org.webassembly.wat.xml 'glob pattern="*.wat"'
 require_text packaging/windows/install-file-association.ps1 'Aedicule.WAT'
 require_text packaging/windows/install-file-association.ps1 '"%1"'
 require_text packaging/windows/aedicule.rc 'Aedicule.ico'
+require_text README.md 'macOS registers both `.wat` and `.aed` document types'
 require_text flake.nix 'runtimeDll'
 require_text flake.nix 'cp -L "$runtimeDll" $out/'
 require_text flake.nix '$out/Tools/install-file-association.ps1'

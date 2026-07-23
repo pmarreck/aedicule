@@ -31,17 +31,13 @@ fn temporary_directory(label: &str) -> PathBuf {
 }
 
 #[test]
-fn default_source_prefers_colocated_then_packaged_then_embedded_fallback() {
+fn default_source_prefers_colocated_then_packaged_then_launcher() {
     let directory = temporary_directory("default");
     let packaged = directory.join("installed/application.wat");
 
     assert_eq!(
         resolve_launch(arguments(&[]), &directory).unwrap(),
-        LaunchAction::Run {
-            source: PluginSource::Embedded,
-            watch: false,
-            seed: None,
-        }
+        LaunchAction::Launcher { seed: None }
     );
 
     assert_eq!(
@@ -247,9 +243,7 @@ fn deterministic_seed_is_validated_and_later_values_override_earlier_ones() {
     );
     assert_eq!(
         resolve_launch(arguments(&["--seed", "0x5eedcafe"]), &directory).unwrap(),
-        LaunchAction::Run {
-            source: PluginSource::Embedded,
-            watch: false,
+        LaunchAction::Launcher {
             seed: Some(0x5eed_cafe),
         }
     );

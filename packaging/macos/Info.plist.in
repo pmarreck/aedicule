@@ -10,6 +10,20 @@
 	<array>
 		<dict>
 			<key>CFBundleTypeIconFile</key>
+			<string>AediculeAED.icns</string>
+			<key>CFBundleTypeName</key>
+			<string>Aedicule packaged application</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>dev.aedicule.application</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeIconFile</key>
 			<string>AediculeWAT.icns</string>
 			<key>CFBundleTypeName</key>
 			<string>WebAssembly Text application</string>
@@ -43,6 +57,29 @@
 	<string>11.0</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.archive</string>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Aedicule packaged application</string>
+			<key>UTTypeIdentifier</key>
+			<string>dev.aedicule.application</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>aed</string>
+				</array>
+				<key>public.mime-type</key>
+				<string>application/vnd.aedicule.app+zip</string>
+			</dict>
+		</dict>
+	</array>
 	<key>UTImportedTypeDeclarations</key>
 	<array>
 		<dict>

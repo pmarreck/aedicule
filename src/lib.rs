@@ -602,6 +602,9 @@ pub enum PluginSource {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LaunchAction {
+    Launcher {
+        seed: Option<u64>,
+    },
     Run {
         source: PluginSource,
         watch: bool,
@@ -864,16 +867,19 @@ pub fn resolve_launch(
         source = Some(plugin_source(path));
     }
 
-    let source = source.unwrap_or_else(|| {
-        let default = working_directory.join(DEFAULT_PLUGIN_FILE);
-        if watch || default.is_file() {
-            PluginSource::File(default)
-        } else if let Some(packaged_default) = packaged_default {
-            PluginSource::File(packaged_default.to_owned())
-        } else {
-            PluginSource::Embedded
+    let source = match source {
+        Some(source) => source,
+        None => {
+            let default = working_directory.join(DEFAULT_PLUGIN_FILE);
+            if watch || default.is_file() {
+                PluginSource::File(default)
+            } else if let Some(packaged_default) = packaged_default {
+                PluginSource::File(packaged_default.to_owned())
+            } else {
+                return Ok(LaunchAction::Launcher { seed });
+            }
         }
-    });
+    };
     Ok(LaunchAction::Run {
         source,
         watch,

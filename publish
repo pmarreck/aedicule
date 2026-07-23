@@ -12,7 +12,8 @@ Usage: ./publish [OPTIONS]
 Build, test, and publish the current Aedicule version as a GitHub Release.
 The command is resumable: an existing exact tag/release skips completed work.
 When Peter's Mac is SSH-reachable through the tailnet, the verified public
-macOS archive is also installed as ~/Applications/Aedicule.app for testing.
+macOS archive is also installed as ~/Applications/Aedicule.app for testing,
+with its bundled demos copied to ~/Documents/AediculeDemos/.
 
 Options:
   --version VERSION  Require this source version (for example, 0.1.2 or v0.1.2)
@@ -253,9 +254,13 @@ set -u
 
 archive=$1
 stage=$(mktemp -d "${TMPDIR:-/tmp}/aedicule-publish.XXXXXX") || exit 1
+demo_incoming_root=
 cleanup() {
 	chmod -R u+w "$stage" 2>/dev/null || true
 	/bin/rm -rf -- "$stage"
+	if [[ -n $demo_incoming_root ]]; then
+		/bin/rm -rf -- "$demo_incoming_root"
+	fi
 	/bin/rm -f -- "$archive"
 }
 trap cleanup EXIT
@@ -263,8 +268,13 @@ trap cleanup EXIT
 ditto -x -k "$archive" "$stage" || exit 1
 app="$stage/Aedicule/Aedicule.app"
 executable="$app/Contents/MacOS/aedicule"
+app_demos="$app/Contents/Resources/Demos"
 if [[ ! -d $app || ! -x $executable ]]; then
 	printf 'publish: macOS archive does not contain Aedicule.app\n' >&2
+	exit 1
+fi
+if [[ ! -d $app_demos ]]; then
+	printf 'publish: macOS archive does not contain bundled demos\n' >&2
 	exit 1
 fi
 
@@ -304,6 +314,25 @@ if ! mv "$incoming" "$destination"; then
 fi
 rmdir "$incoming_root" 2>/dev/null || true
 printf 'Installed %s\n' "$destination"
+
+demos="$HOME/Documents/AediculeDemos"
+mkdir -p "$demos" || exit 1
+demo_incoming_root=$(mktemp -d "$HOME/Documents/.aedicule-demos.XXXXXX") || exit 1
+demo_incoming="$demo_incoming_root/AediculeDemos"
+if ! ditto --hfsCompression "$app_demos" "$demo_incoming"; then
+	exit 1
+fi
+demo_backup="$HOME/.Trash/AediculeDemos.$(date -u +%Y%m%dT%H%M%SZ).$$"
+if ! mv "$demos" "$demo_backup"; then
+	exit 1
+fi
+if ! mv "$demo_incoming" "$demos"; then
+	mv "$demo_backup" "$demos" 2>/dev/null || true
+	exit 1
+fi
+rmdir "$demo_incoming_root" 2>/dev/null || true
+demo_incoming_root=
+printf 'Installed demos in %s\n' "$demos"
 REMOTE
 then
 	printf 'publish: public release succeeded, but Mac installation failed\n' >&2
@@ -311,3 +340,4 @@ then
 fi
 
 printf 'Mac test install complete: ~/Applications/Aedicule.app\n'
+printf 'Mac demos installed: ~/Documents/AediculeDemos/\n'
