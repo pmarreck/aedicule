@@ -131,7 +131,7 @@
         `./test`, the isolated Nix check, `./build`, `./build_all`, static
         analysis, and all six v0.1.3 archive checksums pass before commit.
         (2026-07-23 03:44 EDT.)
-      - [ ] Publish a v0.1.4 corrective Mac artifact without rewriting the
+      - [x] Publish a v0.1.4 corrective Mac artifact without rewriting the
         immutable v0.1.3 audit trail.
         - [x] Recover the lost v0.1.3 GitHub tag-trigger event by completing
           the independent local rebuild gate, manually uploading only the
@@ -152,13 +152,19 @@
           six-target `./build_all`, archive-checksum, independent
           reproducibility, formatting, ShellCheck, actionlint, and diff gates.
           (2026-07-23 06:37 EDT.)
-        - [ ] Commit and push the corrective source, publish v0.1.4, then
-          verify the public archive and installed app on the Mac.
+        - [x] Commit and push the corrective source as `8d053096`, publish all
+          six independently rebuilt/checksum-bound v0.1.4 archives, and verify
+          the public Mac binary and private installed app on Peter's M4. The
+          untouched public binary starts and has one `libobjc`; the publisher's
+          repaired private bundle has a valid ad-hoc signature and starts from
+          `~/Applications`. (2026-07-23 08:17 EDT.)
     - [ ] Make the public macOS archive Gatekeeper-clean by adapting
       `../validate_gui`'s external release-keychain, Developer ID hardened
       runtime/timestamp, Apple notarization, stapling, `spctl`, and receipt
-      contract. The private tailnet test install remains ad-hoc signed until
-      this separate credentialed publication gate is implemented.
+      contract. Independent M4 verification proved that the untouched v0.1.4
+      ZIP starts but fails strict bundle-signature verification because its
+      resources were assembled after the Mach-O was signed; publish only a
+      post-assembly signed/stapled final ZIP once this credentialed gate exists.
   - [x] Expand Mechatron Prime and GitHub Actions gates to falsify the complete
     target/archive matrix, then watch both after pushing.
     - [x] Pass `./test`, the isolated Nix test derivation, `./build`,
