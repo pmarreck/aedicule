@@ -1,0 +1,91 @@
+#!/usr/bin/env luajit
+
+local path = arg[1]
+if not path or arg[2] then
+	io.stderr:write("usage: validate_macho MACH_O\n")
+	os.exit(2)
+end
+
+local function reject(message)
+	io.stderr:write("validate_macho: ", message, "\n")
+	os.exit(1)
+end
+
+local function read_exact(file, size)
+	local value = file:read(size)
+	if not value or #value ~= size then
+		reject("unsupported or truncated Mach-O")
+	end
+	return value
+end
+
+local function u32le(bytes, offset)
+	local a, b, c, d = bytes:byte(offset, offset + 3)
+	if not d then
+		reject("unsupported or truncated Mach-O")
+	end
+	return a + b * 0x100 + c * 0x10000 + d * 0x1000000
+end
+
+local file, open_error = io.open(path, "rb")
+if not file then
+	reject(open_error or "cannot open input")
+end
+
+local header = read_exact(file, 32)
+if header:sub(1, 4) ~= "\207\250\237\254" then
+	reject("unsupported or truncated Mach-O")
+end
+
+local command_count = u32le(header, 17)
+local command_bytes = read_exact(file, u32le(header, 21))
+file:close()
+
+local dylib_commands = {
+	[0x0c] = true, -- LC_LOAD_DYLIB
+	[0x18] = true, -- LC_LOAD_WEAK_DYLIB
+	[0x1f] = true, -- LC_REEXPORT_DYLIB
+	[0x20] = true, -- LC_LAZY_LOAD_DYLIB
+	[0x23] = true, -- LC_LOAD_UPWARD_DYLIB
+}
+local seen = {}
+local offset = 1
+
+-- Validate the complete Mach-O dylib load-command set so dyld cannot abort on
+-- duplicate dependencies before the application reaches its own entry point.
+for _ = 1, command_count do
+	if offset + 7 > #command_bytes then
+		reject("unsupported or truncated Mach-O")
+	end
+	local command = u32le(command_bytes, offset)
+	local command_size = u32le(command_bytes, offset + 4)
+	if command_size < 8 or offset + command_size - 1 > #command_bytes then
+		reject("unsupported or truncated Mach-O")
+	end
+	local base_command = command % 0x80000000
+	if dylib_commands[base_command] then
+		if command_size < 24 then
+			reject("unsupported or truncated Mach-O")
+		end
+		local name_offset = u32le(command_bytes, offset + 8)
+		if name_offset < 24 or name_offset >= command_size then
+			reject("unsupported or truncated Mach-O")
+		end
+		local first = offset + name_offset
+		local terminator = command_bytes:find("\0", first, true)
+		local command_end = offset + command_size
+		if not terminator or terminator >= command_end then
+			reject("unsupported or truncated Mach-O")
+		end
+		local name = command_bytes:sub(first, terminator - 1)
+		if seen[name] then
+			reject("duplicate linked dylib: " .. name)
+		end
+		seen[name] = true
+	end
+	offset = offset + command_size
+end
+
+if offset ~= #command_bytes + 1 then
+	reject("unsupported or truncated Mach-O")
+end

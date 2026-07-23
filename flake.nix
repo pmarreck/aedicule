@@ -12,7 +12,7 @@
 
 	outputs = { self, nixpkgs, fenix, crane }:
 		let
-			version = "0.1.3";
+			version = "0.1.4";
 			systems = [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" ];
 			forAllSystems = nixpkgs.lib.genAttrs systems;
 			pkgsFor = system: import nixpkgs {
@@ -201,7 +201,7 @@
 					applicationCargoDeps = pkgs.rustPlatform.fetchCargoVendor {
 						name = "aedicule-cargo-deps";
 						src = cargoDependencySource;
-						hash = "sha256-t+ANTsHd1jPMyXy32DYcWMZhlKYtkoCfDWhK3l0qrzI=";
+						hash = "sha256-tc3UMhcofAAfAP4qFDYZiNhHcF/O2mEdHqcwNRbzYmE=";
 					};
 					nativeCommonArgs = {
 						pname = "aedicule";
@@ -501,9 +501,11 @@
 							runHook preBuild
 							export CARGO_ZIGBUILD_CACHE_DIR=$TMPDIR/cargo-zigbuild
 							export ZIG_GLOBAL_CACHE_DIR=$TMPDIR/zig-cache
+							export CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS='-C link-arg=-Wl,-dead_strip_dylibs'
 							cargo zigbuild --offline --release --target ${macosRustTarget} \
 								--bin aedicule
 							binary=target/${macosRustTarget}/release/aedicule
+							luajit ${./packaging/macos/validate_macho} "$binary"
 							luajit ${./packaging/macos/canonicalize_uuid} "$binary"
 							rcodesign sign --binary-identifier com.pmarreck.aedicule \
 								"$binary" "$binary.signed"
@@ -577,14 +579,16 @@
 							patchShebangs tests/cli/development_dependencies tests/cli/repository_boundary \
 								tests/cli/aedicule_naming \
 								tests/cli/document_packages tests/cli/demo_snapshots \
-								tests/cli/macos_reproducibility tests/cli/reproducible_releases \
+								tests/cli/macos_reproducibility tests/cli/macos_linkage \
+								tests/cli/reproducible_releases \
 								tests/cli/publish \
 								tests/cli/web_i18n tests/cli/github_pages \
 								tests/cli/ci_acceleration \
 								tests/cli/native_parallelism \
 								tests/integration/web_browser_startup \
 								tests/integration/web_packaged_audio \
-								packaging/macos/canonicalize_uuid check_reproducible publish
+								packaging/macos/canonicalize_uuid packaging/macos/validate_macho \
+								check_reproducible publish
 							cargo test --no-default-features --features native-runtime
 							cargo test --bin aedicule
 							cargo rustc --release --bin aedicule -- -D warnings
@@ -600,6 +604,7 @@
 							./tests/cli/document_packages
 							./tests/cli/demo_snapshots
 							./tests/cli/macos_reproducibility
+							./tests/cli/macos_linkage
 							./tests/cli/reproducible_releases
 							./tests/cli/publish
 							./tests/cli/web_i18n

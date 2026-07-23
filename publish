@@ -274,6 +274,10 @@ if ! codesign --verify --deep --strict "$app" >/dev/null 2>&1; then
 	codesign --force --sign - "$app" || exit 1
 fi
 codesign --verify --deep --strict --verbose=2 "$app" || exit 1
+if ! "$executable" --about >/dev/null; then
+	printf 'publish: macOS executable failed its pre-install startup probe\n' >&2
+	exit 1
+fi
 
 applications="$HOME/Applications"
 destination="$applications/Aedicule.app"

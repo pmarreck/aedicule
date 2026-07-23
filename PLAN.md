@@ -131,6 +131,29 @@
         `./test`, the isolated Nix check, `./build`, `./build_all`, static
         analysis, and all six v0.1.3 archive checksums pass before commit.
         (2026-07-23 03:44 EDT.)
+      - [ ] Publish a v0.1.4 corrective Mac artifact without rewriting the
+        immutable v0.1.3 audit trail.
+        - [x] Recover the lost v0.1.3 GitHub tag-trigger event by completing
+          the independent local rebuild gate, manually uploading only the
+          checksum-bound exact-tag artifacts, and resuming `./publish`.
+          GitHub CI and Mechatron Prime passed; the public release exists.
+          (2026-07-23 04:55 EDT.)
+        - [x] Reproduce the installed app's pre-`main` dyld abort: the
+          Linux-to-Darwin link retained three `/usr/lib/libobjc.A.dylib` load
+          commands even though the Mach-O signature verified. Add a LuaJIT
+          set-classifier over every dylib load command and run it before
+          signing. (2026-07-23 05:18 EDT.)
+        - [x] Pass `-dead_strip_dylibs` through the cross link, prove the real
+          Nix artifact has a unique dylib set, copy that exact signed binary to
+          Peter's M4 Mac, and run `--about` successfully there. Also require
+          the publisher's staged binary to pass the same startup probe before
+          touching `~/Applications`. (2026-07-23 05:30 EDT.)
+        - [x] Run the complete `./test`, isolated Nix test, `./build`,
+          six-target `./build_all`, archive-checksum, independent
+          reproducibility, formatting, ShellCheck, actionlint, and diff gates.
+          (2026-07-23 06:37 EDT.)
+        - [ ] Commit and push the corrective source, publish v0.1.4, then
+          verify the public archive and installed app on the Mac.
     - [ ] Make the public macOS archive Gatekeeper-clean by adapting
       `../validate_gui`'s external release-keychain, Developer ID hardened
       runtime/timestamp, Apple notarization, stapling, `spctl`, and receipt

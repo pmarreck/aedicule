@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+
+set -u
+
+root=$(cd "$(dirname "$0")/../.." && pwd -P)
+validator="$root/packaging/macos/validate_macho"
+work="$TMPDIR/aedicule-macho-linkage-$$"
+failures=0
+
+# root is resolved dynamically before this source.
+# shellcheck disable=SC1091
+source "$root/tests/lib/capture.bash"
+
+mkdir -p "$work"
+trap 'rm -rf "$work"' EXIT
+
+fail() {
+	printf 'macOS linkage: %s\n' "$1" >&2
+	failures=$((failures + 1))
+}
+
+make_fixture() {
+	path=$1
+	shift
+	dylibs=$(printf '%s\n' "$@")
+	AEDICULE_TEST_PATH=$path AEDICULE_TEST_DYLIBS=$dylibs luajit -e '
+		local path = assert(os.getenv("AEDICULE_TEST_PATH"))
+		local dylibs = assert(os.getenv("AEDICULE_TEST_DYLIBS"))
+		local function u32(value)
+			return string.char(
+				value % 256,
+				math.floor(value / 256) % 256,
+				math.floor(value / 65536) % 256,
+				math.floor(value / 16777216) % 256)
+		end
+		local commands = {}
+		for name in dylibs:gmatch("[^\n]+") do
+			local size = 24 + #name + 1
+			size = size + ((8 - (size % 8)) % 8)
+			commands[#commands + 1] = u32(0x0c) .. u32(size) .. u32(24)
+				.. u32(0) .. u32(0) .. u32(0)
+				.. name .. "\0" .. string.rep("\0", size - 25 - #name)
+		end
+		local command_bytes = table.concat(commands)
+		local header = u32(0xfeedfacf) .. u32(0x0100000c) .. u32(0) .. u32(2)
+			.. u32(#commands) .. u32(#command_bytes) .. u32(0) .. u32(0)
+		local file = assert(io.open(path, "wb"))
+		assert(file:write(header, command_bytes))
+		assert(file:close())
+	'
+}
+
+if [[ ! -x $validator ]]; then
+	fail 'Mach-O linkage validator is missing or not executable'
+else
+	interpreter=$(head -1 "$validator")
+	if [[ $interpreter != '#!/usr/bin/env luajit' \
+			&& $interpreter != '#!/nix/store/'*'/bin/luajit' ]]; then
+		fail "Mach-O linkage validator must use project LuaJIT; found $interpreter"
+	fi
+fi
+
+make_fixture "$work/unique" \
+	/usr/lib/libobjc.A.dylib \
+	/System/Library/Frameworks/AppKit.framework/Versions/C/AppKit
+make_fixture "$work/duplicate-adjacent" \
+	/usr/lib/libobjc.A.dylib \
+	/usr/lib/libobjc.A.dylib \
+	/System/Library/Frameworks/AppKit.framework/Versions/C/AppKit
+make_fixture "$work/duplicate-separated" \
+	/usr/lib/libobjc.A.dylib \
+	/System/Library/Frameworks/AppKit.framework/Versions/C/AppKit \
+	/usr/lib/libobjc.A.dylib
+
+if [[ -x $validator ]]; then
+	out='' err='' rc=0
+	capture "$validator" "$work/unique"
+	if (( rc != 0 )) || [[ -n $out || -n $err ]]; then
+		fail "unique dylib set was rejected or noisy: rc=$rc out=$out err=$err"
+	fi
+
+	for fixture in duplicate-adjacent duplicate-separated; do
+		out='' err='' rc=0
+		capture "$validator" "$work/$fixture"
+		if (( rc == 0 )) || [[ -n $out ]] \
+				|| [[ $err != *'duplicate linked dylib'* ]] \
+				|| [[ $err != *'/usr/lib/libobjc.A.dylib'* ]]; then
+			fail "duplicate dylib set was not rejected explicitly: $fixture rc=$rc out=$out err=$err"
+		fi
+	done
+
+	printf 'not-a-mach-o' >"$work/malformed"
+	out='' err='' rc=0
+	capture "$validator" "$work/malformed"
+	if (( rc == 0 )) || [[ -n $out ]] || [[ $err != *'unsupported or truncated Mach-O'* ]]; then
+		fail "malformed Mach-O was not rejected explicitly: rc=$rc out=$out err=$err"
+	fi
+fi
+
+if ! rg -F 'packaging/macos/validate_macho} "$binary"' "$root/flake.nix" >/dev/null; then
+	fail 'macOS build does not validate its complete dylib dependency set before signing'
+fi
+
+if (( failures > 255 )); then
+	exit 255
+fi
+exit "$failures"
