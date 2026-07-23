@@ -143,8 +143,9 @@ may reject unsupported or policy-forbidden requests.
 
 ## WAT-facing capability shape
 
-The eventual ABI additions should operate on validated package names, not WAT
-memory payloads:
+The sampled-audio ABI operates on validated package names, not WAT memory
+payloads. `AE_sample_asset` and `AE_sample_play` shipped in ABI v0.1; the image
+asset declaration below remains proposed:
 
 ```wat
 ;; configure-time, id must be unique
@@ -158,15 +159,12 @@ memory payloads:
   (func (param id i32 volume f32 pitch f32 flags i32) (result i32)))
 ```
 
-`AE_image_asset` feeds the existing `AE_sprite` resource model. `AE_sample_*`
-is distinct from `AE_synth_voice`/`AE_audio`, preserving synthesized programs
-and digitized clips as different bounded capabilities. Both declarations happen
-during `AE_configure`; runtime calls only choose already admitted IDs. Audio
-output is one-way: device buffering or playback position never becomes an
-event, timer, or guest-visible clock.
-
-These names are proposed, not yet part of ABI v0.0. They require the normal
-hard cutover and generated `WAT_ABI.md` update when implemented.
+`AE_image_asset` would feed the existing `AE_sprite` resource model.
+`AE_sample_*` is distinct from `AE_synth_voice`/`AE_audio`, preserving
+synthesized programs and digitized clips as different bounded capabilities.
+Declarations happen during `AE_configure`; runtime calls only choose already
+admitted IDs. Native and browser output is one-way: device buffering or
+playback position never becomes an event, timer, or guest-visible clock.
 
 ## Media rollout
 
@@ -259,9 +257,11 @@ the same contract for CLI, canvas, or form applications.
 
 Native file associations should make `.aed` the normal
 double-click and drag-and-drop application type while retaining `.wat` as a
-developer-facing type. The web launcher fetches the same `.aed` bytes before
-creating `BrowserRuntime`. A missing or invalid declared entry fails
-configuration rather than producing a partial frame or silent sound.
+developer-facing type. Dynamic `--web` delivery serves the validated package
+entrypoint and assets from one bounded virtual root; static delivery extracts
+the same declared bytes and emits an explicit asset catalog before creating
+`BrowserRuntime`. A missing or invalid declared entry fails configuration
+rather than producing a partial frame or silent sound.
 
 ## Required falsification before implementation
 

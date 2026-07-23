@@ -17,6 +17,29 @@ export const english = Object.freeze({
 	vibesteroidsPackage: "Download Vibesteroids .aed",
 	downloads: "Download apps",
 	source: "Source",
+	assetCatalogEntryLimit: "Aedicule asset catalog exceeds its entry limit.",
+	assetCatalogHttp: "Aedicule could not load the asset catalog: HTTP {status}",
+	assetCatalogInvalidPath: "Aedicule asset catalog contains an invalid or duplicate path.",
+	assetLimit: "Aedicule package asset exceeds its byte limit: {name}",
+	assetTotalLimit: "Aedicule package assets exceed their total byte limit.",
+	audioPlaybackFailed: "[Aedicule audio] playback failed",
+	audioUnavailable: "[Aedicule audio] Web Audio is unavailable",
+	audioUnlockFailed: "[Aedicule audio] unlock failed",
+	checkingCapabilities: "Checking browser capabilities…",
+	couldNotLoadAsset: "Aedicule could not load package asset {name}: HTTP {status}",
+	couldNotLoadWat: "Aedicule could not load code.wat: HTTP {status}",
+	couldNotStart: "Aedicule could not start.",
+	invalidPcmRequest: "invalid Aedicule PCM playback request",
+	loadingApplicationAssets: "Loading application assets…",
+	loadingWat: "Loading WAT application…",
+	no: "no",
+	requiresIsolation: "Aedicule requires cross-origin isolation for shared WebAssembly memory.",
+	requiresSecureContext: "Aedicule requires a secure HTTPS browser context.",
+	requiresSharedMemory: "This browser does not expose shared WebAssembly memory.",
+	requiresWebGpu: "This browser does not expose WebGPU. Safari requires version 26 or newer.",
+	starting: "Starting Aedicule…",
+	unusableWebGpu: "WebGPU is present, but the browser did not provide a usable GPU adapter.",
+	yes: "yes",
 });
 
 const rtlLocales = new Set(["ar", "he", "fa", "ps", "ur"]);
@@ -45,6 +68,17 @@ export function resolveLocale(languages) {
 
 export function directionFor(locale) {
 	return rtlLocales.has(locale) ? "rtl" : "ltr";
+}
+
+/**
+ * Formats named message fields while rejecting incomplete catalogs instead
+ * of leaking implementation placeholders into a user-visible diagnostic.
+ */
+export function formatMessage(message, values) {
+	return message.replaceAll(/\{([^{}]+)\}/g, (_placeholder, name) => {
+		if (!Object.hasOwn(values, name)) throw new Error(`unknown message value: ${name}`);
+		return String(values[name]);
+	});
 }
 
 /**

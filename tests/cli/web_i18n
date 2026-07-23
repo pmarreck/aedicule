@@ -18,10 +18,23 @@ assert.deepEqual(i18n.supportedLocales, [
 	"sw", "ta", "th", "tr", "uk", "ur", "vi", "yo", "zh_hans", "zh_hant",
 ]);
 assert.deepEqual(Object.keys(i18n.english).sort(), [
-	"downloads", "intro", "open", "source", "title", "ulamDescription",
-	"ulamName", "vibesteroidsDescription", "vibesteroidsName",
-	"vibesteroidsPackage",
+	"assetCatalogEntryLimit", "assetCatalogHttp", "assetCatalogInvalidPath",
+	"assetLimit", "assetTotalLimit", "audioPlaybackFailed", "audioUnavailable",
+	"audioUnlockFailed", "checkingCapabilities", "couldNotLoadAsset",
+	"couldNotLoadWat", "couldNotStart", "downloads", "intro", "invalidPcmRequest",
+	"loadingApplicationAssets", "loadingWat", "no", "open", "requiresIsolation",
+	"requiresSecureContext", "requiresSharedMemory", "requiresWebGpu", "source",
+	"starting", "title", "ulamDescription", "ulamName", "unusableWebGpu",
+	"vibesteroidsDescription", "vibesteroidsName", "vibesteroidsPackage", "yes",
 ]);
+assert.equal(i18n.formatMessage(i18n.english.couldNotLoadAsset, {
+	name: "assets/a.flac",
+	status: 404,
+}), "Aedicule could not load package asset assets/a.flac: HTTP 404");
+assert.throws(
+	() => i18n.formatMessage("{missing}", {}),
+	/unknown message value: missing/,
+);
 assert.equal(i18n.resolveLocale(["fil-PH"]), "fil");
 assert.equal(i18n.resolveLocale(["pt-BR"]), "pt_br");
 assert.equal(i18n.resolveLocale(["zh"]), "zh_hans");

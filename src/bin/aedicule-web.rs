@@ -5,9 +5,9 @@ use std::{borrow::Cow, cell::OnceCell};
 
 #[cfg_attr(not(target_family = "wasm"), allow(unused_imports))]
 use aedicule::{
-    Event, GEIST_MONO_REGULAR, PluginInit, PointerButton, PointerScrollUnit,
+    ApplicationAssets, Event, GEIST_MONO_REGULAR, PluginInit, PointerButton, PointerScrollUnit,
     gpui_canvas::paint_frame,
-    web::{BROWSER_WAT_GLOBAL, BrowserRuntime, required_browser_wat},
+    web::{BROWSER_ASSETS_GLOBAL, BROWSER_WAT_GLOBAL, BrowserRuntime, required_browser_wat},
 };
 #[cfg_attr(not(target_family = "wasm"), allow(unused_imports))]
 use gpui::{
@@ -19,6 +19,19 @@ use gpui::{
 #[cfg(target_family = "wasm")]
 use wasm_bindgen::JsValue;
 use web_time::Instant;
+
+#[cfg(target_family = "wasm")]
+#[wasm_bindgen::prelude::wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen::prelude::wasm_bindgen(js_namespace = globalThis, js_name = __AEDICULE_PLAY_PCM)]
+    fn play_browser_pcm(
+        sample_rate: u32,
+        channels: u32,
+        samples: &js_sys::Float32Array,
+        volume: f32,
+        pitch: f32,
+    );
+}
 
 #[cfg_attr(not(target_family = "wasm"), allow(dead_code))]
 const LOGICAL_WIDTH: f32 = 1024.0;
@@ -71,9 +84,29 @@ impl WebFrontplane {
         if self.fatal_error.is_some() {
             return;
         }
-        if let Err(error) = self.runtime.advance_to(self.origin.elapsed()) {
-            self.fatal_error = Some(error.to_string());
+        match self.runtime.advance_to(self.origin.elapsed()) {
+            Ok(_) => self.play_pending_samples(),
+            Err(error) => self.fatal_error = Some(error.to_string()),
         }
+    }
+
+    /// Hands decoded immutable PCM to Web Audio after the deterministic runtime
+    /// has committed its tick; device state never feeds back into guest time.
+    fn play_pending_samples(&mut self) {
+        let pending = self.runtime.drain_sample_audio();
+        #[cfg(target_family = "wasm")]
+        for playback in pending {
+            let samples = js_sys::Float32Array::from(playback.samples.as_slice());
+            play_browser_pcm(
+                playback.sample_rate,
+                u32::from(playback.channels),
+                &samples,
+                playback.volume,
+                playback.pitch,
+            );
+        }
+        #[cfg(not(target_family = "wasm"))]
+        let _ = pending;
     }
 
     /// Gives GPUI input a monotonic timestamp before the shared scheduler
@@ -248,13 +281,46 @@ fn browser_wat() -> String {
     required_browser_wat(source).expect("Aedicule browser bootstrap must load code.wat")
 }
 
+/// Copies the bootstrap's bounded typed arrays into the same ordered virtual
+/// asset map consumed by native and headless application adapters.
+#[cfg(target_family = "wasm")]
+fn browser_assets() -> ApplicationAssets {
+    let value = js_sys::Reflect::get(&js_sys::global(), &JsValue::from_str(BROWSER_ASSETS_GLOBAL))
+        .expect("Aedicule browser bootstrap must expose its asset catalog");
+    if value.is_null() || value.is_undefined() {
+        return ApplicationAssets::new();
+    }
+    let object = js_sys::Object::from(value);
+    let keys = js_sys::Object::keys(&object);
+    let mut assets = ApplicationAssets::new();
+    for index in 0..keys.length() {
+        let name = keys
+            .get(index)
+            .as_string()
+            .expect("Aedicule browser asset name must be UTF-8");
+        let bytes = js_sys::Uint8Array::new(
+            &js_sys::Reflect::get(&object, &JsValue::from_str(&name))
+                .expect("Aedicule browser asset must exist"),
+        )
+        .to_vec();
+        assets.insert(name, bytes);
+    }
+    assets
+}
+
 #[cfg(target_family = "wasm")]
 fn main() {
     gpui_platform::web_init();
     let wat = browser_wat();
+    let assets = browser_assets();
     let origin = Instant::now();
-    let runtime = BrowserRuntime::new(&wat, DEFAULT_PLUGIN_INIT, std::time::Duration::ZERO)
-        .expect("Aedicule browser code.wat initializes and renders");
+    let runtime = BrowserRuntime::new_with_assets(
+        &wat,
+        DEFAULT_PLUGIN_INIT,
+        std::time::Duration::ZERO,
+        assets,
+    )
+    .expect("Aedicule browser code.wat initializes and renders");
 
     let application = gpui_platform::single_threaded_web().run_embedded(move |cx: &mut App| {
         cx.text_system()

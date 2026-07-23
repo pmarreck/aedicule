@@ -8,6 +8,11 @@ snapshot="$work/snapshot"
 failures=0
 trap 'rm -rf -- "$work"' EXIT
 
+if ! rg -F 'develop+=(--keep CARGO_TARGET_DIR)' "$root/test" >/dev/null; then
+	printf 'full suite does not preserve the configured SSD Cargo target cache\n' >&2
+	failures=$((failures + 1))
+fi
+
 system=$(nix eval --impure --raw --expr builtins.currentSystem 2>/dev/null)
 status=$?
 if (( status != 0 )); then

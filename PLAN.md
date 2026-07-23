@@ -38,8 +38,12 @@
     `AE_sample_asset` / `AE_sample_play` imports, with identical bare-WAT,
     directory, archive, and reload admission plus native device playback.
     (2026-07-22 14:48 EDT)
+  - [x] Carry the same admitted FLAC catalog through dynamic and static browser
+    delivery, convert fixed PCM only at the WebAudio boundary, and prove a real
+    packaged Vibesteroids request in headless Chrome without audible test
+    output. (2026-07-22 22:43 EDT)
   - [ ] Expose packaged image assets by virtual name without granting arbitrary
-    virtual-filesystem reads, then add browser sample/image adapter parity.
+    virtual-filesystem reads, then add browser image-adapter parity.
   - Curiosity poke: non-loopback browsers require a secure context as well as
     COOP/COEP, so remote/tailnet serving needs an explicit TLS/reverse-proxy
     contract rather than silently printing an unusable HTTP URL.
@@ -80,8 +84,9 @@
     (2026-07-22 02:58 EDT)
   - [x] Bundle the byte-pinned schema-11 Vibesteroids `.aed` with its FLAC,
     standard WAST entry point, README, and license in every native delivery and
-    expose the identical application as a direct Pages download while keeping
-    the pre-sample browser guest explicit. (2026-07-22 17:40 EDT)
+    expose both the identical application as a direct Pages download and its
+    exact package-backed WAT/FLAC as the playable browser guest.
+    (2026-07-22 22:43 EDT)
   - [ ] Produce deterministic archives with manifests/checksums and publish
     them as GitHub Release assets.
     - [x] Audit v0.1.0 with independent Nix rebuilds; remove compile-time
@@ -124,6 +129,11 @@
       writes outlive Node's internal recursive-delete retry window.
       (2026-07-22 19:17 EDT; deterministic injected-race regression, real
       Pages-style WebGPU/input probe, and complete suite passed.)
+    - [x] Make Chromium startup failure bounded, give sandboxed browser helpers
+      a private writable home, and constrain Fontconfig to pinned DejaVu rather
+      than scanning ambient system/profile roots. The isolated Nix gate, real
+      packaged-FLAC browser probe, `./build`, six-target `./build_all`, and all
+      emitted checksums passed. (2026-07-22 22:43 EDT)
   - [ ] Re-run the browser startup probe and obtain Peter's iPhone visual
     acceptance before describing the web demos as playable.
     (Headless Ulam Flower and Vibesteroids startup/input probes passed
@@ -287,7 +297,9 @@
     - Curiosity poke: Chrome remapped the probe's requested touch IDs 41/42/43
       to pointer IDs 2/3/4; clients must treat IDs as opaque, page-local
       correlation tokens and never persist or interpret their numeric values.
-  - [ ] Add an independently runnable downstream Vibesteroids web smoke proof.
+  - [x] Add an independently runnable downstream Vibesteroids web smoke proof
+    sourced from the exact `.aed`, including its declared FLAC asset and a real
+    muted WebAudio request. (2026-07-22 22:43 EDT)
 
 - [ ] Standardize cross-platform pointer buttons and two-axis wheel motion for
   WAT clients without exposing platform-specific mouse representations.
@@ -418,12 +430,15 @@
     `ASSET_PACKAGE_PROPOSAL.md`. (2026-07-19 18:29 EDT)
   - Curiosity poke: can indexed uncompressed entries remain zero-copy while
     compressed entries enforce strict decoded-size and checksum limits?
-- [ ] Add guest-controlled digitized-audio playback from packaged assets, with
+- [x] Add guest-controlled digitized-audio playback from packaged assets, with
   FLAC as the delivered-media baseline and bounded raw PCM/WAV fallback.
   Ogg and MP3 are deferred pending `blar` design work.
   - [x] Decode bounded RIFF/WAVE integer PCM into device-independent fixed
     samples; malformed, unsupported, contradictory, and over-budget inputs
     have distinct tests. (2026-07-19 18:38 EDT)
+  - [x] Decode admitted FLAC assets, preserve transactional guest playback
+    requests, and implement native plus browser device adapters without making
+    device timing guest-observable. (2026-07-22 22:43 EDT)
   - Curiosity poke: can long tracks stream under a bounded decode-memory budget
     without making audio-device timing observable by the deterministic guest?
 - [ ] Load bounded texture assets from the same package into the existing
@@ -434,6 +449,15 @@
   test of the generic ABI: [`ulam-flower-wat`](../ulam-flower-wat/) drives
   exact ticks plus pointer/viewport events through only `AE_*` imports.
   Its headless integration test passed. (2026-07-19 18:29 EDT)
+- [ ] Build a guest-owned magenta/green anaglyph vector demo for Peter's
+  TriOviz glasses, initially as a fullscreen 3D viewer and potentially as a
+  Tempest/Vectrex-inspired tube shooter. Keep stereo projection, eye
+  separation, palette calibration, and game semantics in WAT; Aedicule should
+  supply only generic layered-vector rendering, depth ordering, fullscreen,
+  and input capabilities. (Idea captured 2026-07-22 22:01 EDT.)
+  - Curiosity poke: photograph or otherwise identify the glasses' actual
+    transmission colors before choosing matrices; “magenta/green” anaglyph
+    systems are not interchangeable with the more common red/cyan profile.
 - [x] Hard-cut the provisional executable, Cargo crate, environment, source,
   Nix, documentation, and test names to canonical `aedicule` and
   `aedicule-render`, with a repository-wide classifier preventing legacy names

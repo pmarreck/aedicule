@@ -19,9 +19,10 @@ v0 capability model is broadly reusable.
 
 **Proof-of-concept status:** successful. Native rendering, timestamped input,
 guest-rate absolute-deadline scheduling, generated audio, bounded packaged FLAC
-samples, portable bundled Geist Mono text, deterministic headless SVG, bounded
-guest execution, snapshots, and state-preserving live reload all work on the
-exercised NixOS path. ABI and cross-platform stability remain pre-production.
+samples across native and browser adapters, portable bundled Geist Mono text,
+deterministic headless SVG, bounded guest execution, snapshots, and
+state-preserving live reload all work on the exercised NixOS path. ABI and
+cross-platform stability remain pre-production.
 
 **Main branch:** yolo
 

@@ -15,6 +15,16 @@ expect_text() {
 	fi
 }
 
+reject_text() {
+	file=$1
+	text=$2
+	message=$3
+	if rg -F -- "$text" "$file" >/dev/null; then
+		printf '%s\n' "$message" >&2
+		failures=$((failures + 1))
+	fi
+}
+
 expect_text "$root/web/index.html" 'id="aedicule-startup-status"' \
 	'browser page has no visible startup status surface'
 expect_text "$root/web/index.html" 'aria-live="polite"' \
@@ -23,6 +33,8 @@ expect_text "$root/web/bootstrap.js" 'crossOriginIsolated' \
 	'browser bootstrap does not preflight cross-origin isolation'
 expect_text "$root/web/bootstrap.js" 'await globalThis.__AEDICULE_ISOLATION_READY' \
 	'browser bootstrap can race the headerless-host isolation reload'
+expect_text "$root/web/bootstrap.js" 'loadCatalog(navigator.languages)' \
+	'browser runtime strings do not use the shared prepare-phase locale catalog'
 expect_text "$root/web/coi-serviceworker.js" 'Cross-Origin-Embedder-Policy' \
 	'headerless static hosts cannot enable shared WebAssembly memory'
 expect_text "$root/web/coi-serviceworker.js" 'Cross-Origin-Opener-Policy' \
@@ -37,8 +49,28 @@ expect_text "$root/web/bootstrap.js" 'console.error("[Aedicule startup] failed",
 	'browser bootstrap does not report startup failures to the console'
 expect_text "$root/web/bootstrap.js" 'loadApplication().catch(reportStartupFailure)' \
 	'browser bootstrap can still reject into an invisible blank page'
+expect_text "$root/web/bootstrap.js" 'fetch("./application-assets.json"' \
+	'browser bootstrap does not fetch the package asset catalog'
+expect_text "$root/web/bootstrap.js" 'globalThis.__AEDICULE_ASSETS' \
+	'browser bootstrap does not transfer bounded package assets to Wasm'
+expect_text "$root/web/bootstrap.js" 'globalThis.__AEDICULE_PLAY_PCM' \
+	'browser bootstrap has no Web Audio sampled-PCM device adapter'
+expect_text "$root/web/bootstrap.js" 'globalThis.__AEDICULE_AUDIO_REQUEST_COUNT' \
+	'browser sampled-audio adapter exposes no compact request diagnostic'
+expect_text "$root/web/bootstrap.js" '.createBuffer(' \
+	'browser sample adapter does not create an explicit channel-aware PCM buffer'
+expect_text "$root/flake.nix" 'install -Dm644 ${./packaging/web/launcher-i18n.mjs} $out/launcher-i18n.mjs' \
+	'browser runtime delivery omits its localization catalog'
+expect_text "$root/flake.nix" 'FONTCONFIG_FILE = pkgs.writeText "aedicule-test-fonts.conf"' \
+	'sandboxed Chrome acceptance has no isolated font-discovery configuration'
+expect_text "$root/flake.nix" '<dir>${pkgs.dejavu_fonts}/share/fonts/truetype</dir>' \
+	'sandboxed Chrome acceptance does not pin a small deterministic font set'
+reject_text "$root/flake.nix" 'FONTCONFIG_FILE = pkgs.makeFontsConf' \
+	'sandboxed Chrome acceptance still scans ambient system/profile font roots'
 expect_text "$root/src/bin/aedicule-web.rs" 'gpui_platform::single_threaded_web().run_embedded' \
 	'browser entrypoint does not use GPUI embedded-run lifetime ownership'
+expect_text "$root/src/bin/aedicule-web.rs" 'BrowserRuntime::new_with_assets' \
+	'browser entrypoint does not instantiate guests with their admitted asset catalog'
 expect_text "$root/src/bin/aedicule-web.rs" 'retain_browser_application(application)' \
 	'browser entrypoint drops its strong GPUI application handle'
 expect_text "$root/web/Caddyfile" '{$AEDICULE_WEB_LISTEN::8080}' \
@@ -55,6 +87,16 @@ expect_text "$root/tests/integration/web_browser_startup" 'touchCancel' \
 	'headless browser probe does not exercise touch cancellation'
 expect_text "$root/tests/integration/web_browser_startup" 'type: "input-summary"' \
 	'headless browser probe does not compact its synthetic input result'
+expect_text "$root/tests/integration/web_browser_startup" '--require-audio-request' \
+	'headless browser probe cannot require a real sampled-audio handoff'
+expect_text "$root/tests/integration/web_browser_startup" '"--mute-audio"' \
+	'headless browser acceptance can emit physical audio during automated tests'
+expect_text "$root/tests/integration/web_packaged_audio" 'server_pid=$!' \
+	'packaged browser probe does not retain direct ownership of its web server'
+reject_text "$root/tests/integration/web_packaged_audio" 'coproc APP' \
+	'packaged browser probe can orphan its coprocess server under output capture'
+reject_text "$root/test" 'if [[ ! -x $binary ]]' \
+	'full browser gate can execute a stale host binary merely because it exists'
 expect_text "$root/tests/integration/web_browser_startup" '--static-root serves PATH without isolation headers' \
 	'headless browser probe cannot emulate GitHub Pages response headers'
 expect_text "$root/tests/integration/web_browser_startup" 'serviceWorkerControlled' \

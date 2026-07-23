@@ -6,20 +6,26 @@
 
 use std::{
     collections::HashMap,
-    env, fs,
+    env,
+    fmt::Write as _,
+    fs,
     io::{Read, Write},
     net::{SocketAddr, TcpListener, TcpStream},
     path::{Path, PathBuf},
     time::Duration,
 };
 
-use crate::{DEFAULT_PLUGIN_FILE, PluginSource, read_application_file};
+use crate::{
+    ApplicationAssets, DEFAULT_PLUGIN_FILE, PluginSource, read_application_assets,
+    read_application_file,
+};
 
 pub const WEB_RUNTIME_ENV: &str = "AEDICULE_WEB_RUNTIME";
 const MAX_REQUEST_BYTES: usize = 8 * 1024;
 const RUNTIME_FILES: &[&str] = &[
     "index.html",
     "bootstrap.js",
+    "launcher-i18n.mjs",
     "coi-serviceworker.js",
     "manifest.webmanifest",
     "icon.png",
@@ -31,6 +37,8 @@ pub struct WebServer {
     listener: TcpListener,
     files: HashMap<&'static str, Vec<u8>>,
     code: Vec<u8>,
+    asset_catalog: Vec<u8>,
+    assets: ApplicationAssets,
 }
 
 impl WebServer {
@@ -53,12 +61,16 @@ impl WebServer {
             files.insert(name, bytes);
         }
         let code = read_application_file(source, DEFAULT_PLUGIN_FILE)?;
+        let assets = read_application_assets(source)?;
+        let asset_catalog = json_asset_catalog(assets.keys().map(String::as_str));
         let listener = TcpListener::bind((bind, port))
             .map_err(|error| format!("bind web server to {bind}:{port}: {error}"))?;
         Ok(Self {
             listener,
             files,
             code,
+            asset_catalog,
+            assets,
         })
     }
 
@@ -70,8 +82,8 @@ impl WebServer {
         Ok(format_http_url(address))
     }
 
-    /// Serves requests serially: browser startup fetches a tiny fixed set, and
-    /// avoiding a worker pool keeps shutdown/resource ownership predictable.
+    /// Serves the small fixed runtime request set while treating browser-side
+    /// cancellation as local to one connection rather than server-fatal.
     pub fn serve(self) -> Result<(), String> {
         for connection in self.listener.incoming() {
             let mut connection =
@@ -79,16 +91,19 @@ impl WebServer {
             connection
                 .set_read_timeout(Some(Duration::from_secs(5)))
                 .map_err(|error| format!("configure web request timeout: {error}"))?;
-            self.serve_connection(&mut connection)?;
+            if let Err(error) = self.serve_connection(&mut connection) {
+                if is_recoverable_connection_error(error.kind()) {
+                    continue;
+                }
+                return Err(format!("serve web request: {error}"));
+            }
         }
         Ok(())
     }
 
-    fn serve_connection(&self, connection: &mut TcpStream) -> Result<(), String> {
+    fn serve_connection(&self, connection: &mut TcpStream) -> std::io::Result<()> {
         let mut request = [0_u8; MAX_REQUEST_BYTES];
-        let length = connection
-            .read(&mut request)
-            .map_err(|error| format!("read web request: {error}"))?;
+        let length = connection.read(&mut request)?;
         let first_line = request[..length]
             .split(|byte| *byte == b'\n')
             .next()
@@ -111,10 +126,20 @@ impl WebServer {
         let (content_type, body) = match path {
             "/" | "/index.html" => (mime_type("index.html"), self.files["index.html"].as_slice()),
             "/code.wat" => (mime_type(DEFAULT_PLUGIN_FILE), self.code.as_slice()),
+            "/application-assets.json" => (
+                "application/json; charset=utf-8",
+                self.asset_catalog.as_slice(),
+            ),
             path if path.starts_with('/') => {
-                let name = &path[1..];
-                match self.files.get(name) {
-                    Some(body) => (mime_type(name), body.as_slice()),
+                let name = percent_decode_path(&path[1..]);
+                let body = name.as_deref().and_then(|name| {
+                    self.files
+                        .get(name)
+                        .map(Vec::as_slice)
+                        .or_else(|| self.assets.get(name).map(Vec::as_slice))
+                });
+                match body {
+                    Some(body) => (mime_type(name.as_deref().unwrap()), body),
                     None => {
                         return write_response(
                             connection,
@@ -137,6 +162,80 @@ impl WebServer {
             }
         };
         write_response(connection, "200 OK", content_type, body, method == "HEAD")
+    }
+}
+
+/// Browser preloaders routinely cancel speculative requests; those client-local
+/// disconnects must not terminate the application server's accept loop.
+fn is_recoverable_connection_error(kind: std::io::ErrorKind) -> bool {
+    matches!(
+        kind,
+        std::io::ErrorKind::BrokenPipe
+            | std::io::ErrorKind::ConnectionReset
+            | std::io::ErrorKind::ConnectionAborted
+            | std::io::ErrorKind::UnexpectedEof
+            | std::io::ErrorKind::TimedOut
+            | std::io::ErrorKind::WouldBlock
+    )
+}
+
+/// Emits a sorted JSON path list without adding a serializer to the tiny
+/// server adapter; package validation already guarantees well-formed UTF-8.
+fn json_asset_catalog<'a>(names: impl IntoIterator<Item = &'a str>) -> Vec<u8> {
+    let mut output = String::from("[");
+    for (index, name) in names.into_iter().enumerate() {
+        if index > 0 {
+            output.push(',');
+        }
+        output.push('"');
+        for character in name.chars() {
+            match character {
+                '"' => output.push_str("\\\""),
+                '\\' => output.push_str("\\\\"),
+                '\u{08}' => output.push_str("\\b"),
+                '\u{0c}' => output.push_str("\\f"),
+                '\n' => output.push_str("\\n"),
+                '\r' => output.push_str("\\r"),
+                '\t' => output.push_str("\\t"),
+                character if character <= '\u{1f}' => {
+                    write!(&mut output, "\\u{:04x}", u32::from(character))
+                        .expect("writing JSON to a String cannot fail");
+                }
+                character => output.push(character),
+            }
+        }
+        output.push('"');
+    }
+    output.push_str("]\n");
+    output.into_bytes()
+}
+
+/// Decodes one URL path into its validated virtual-package name; only an
+/// exact key in the preloaded asset map can ever become a response.
+fn percent_decode_path(path: &str) -> Option<String> {
+    let bytes = path.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' {
+            let high = *bytes.get(index + 1)?;
+            let low = *bytes.get(index + 2)?;
+            decoded.push(hex_digit(high)? << 4 | hex_digit(low)?);
+            index += 3;
+        } else {
+            decoded.push(bytes[index]);
+            index += 1;
+        }
+    }
+    String::from_utf8(decoded).ok()
+}
+
+fn hex_digit(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
     }
 }
 
@@ -192,9 +291,10 @@ fn mime_type(name: &str) -> &'static str {
         .and_then(|extension| extension.to_str())
     {
         Some("html") => "text/html; charset=utf-8",
-        Some("js") => "text/javascript; charset=utf-8",
+        Some("js" | "mjs") => "text/javascript; charset=utf-8",
         Some("json" | "webmanifest") => "application/manifest+json; charset=utf-8",
         Some("png") => "image/png",
+        Some("flac") => "audio/flac",
         Some("wasm") => "application/wasm",
         Some("wat") => "text/plain; charset=utf-8",
         _ => "application/octet-stream",
@@ -207,19 +307,103 @@ fn write_response(
     content_type: &str,
     body: &[u8],
     head_only: bool,
-) -> Result<(), String> {
+) -> std::io::Result<()> {
     write!(
         connection,
         "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nCross-Origin-Opener-Policy: same-origin\r\nCross-Origin-Embedder-Policy: require-corp\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n",
         body.len()
-    )
-    .map_err(|error| format!("write web response headers: {error}"))?;
+    )?;
     if !head_only {
-        connection
-            .write_all(body)
-            .map_err(|error| format!("write web response body: {error}"))?;
+        connection.write_all(body)?;
     }
-    connection
-        .flush()
-        .map_err(|error| format!("flush web response: {error}"))
+    connection.flush()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::ErrorKind;
+
+    use super::{
+        is_recoverable_connection_error, json_asset_catalog, mime_type, percent_decode_path,
+    };
+
+    #[test]
+    fn asset_catalog_escapes_all_json_sensitive_path_characters() {
+        assert_eq!(
+			json_asset_catalog([
+				"assets/audio/a.flac",
+				"assets/quote\"and\nline.flac",
+				"assets/snowman-☃.flac",
+			]),
+			b"[\"assets/audio/a.flac\",\"assets/quote\\\"and\\nline.flac\",\"assets/snowman-\xe2\x98\x83.flac\"]\n"
+		);
+    }
+
+    #[test]
+    fn percent_decoding_classifies_paths_as_a_set() {
+        let cases = [
+            ("assets/audio/a.flac", Some("assets/audio/a.flac")),
+            ("assets/space%20name.flac", Some("assets/space name.flac")),
+            (
+                "assets/snowman-%E2%98%83.flac",
+                Some("assets/snowman-☃.flac"),
+            ),
+            (
+                "assets/encoded%2fslash.flac",
+                Some("assets/encoded/slash.flac"),
+            ),
+            ("assets/bad%", None),
+            ("assets/bad%gg", None),
+            ("assets/bad%ff", None),
+        ];
+        assert_eq!(
+            cases
+                .iter()
+                .map(|(input, _)| percent_decode_path(input))
+                .collect::<Vec<_>>(),
+            cases
+                .iter()
+                .map(|(_, expected)| expected.map(str::to_owned))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn browser_disconnect_errors_are_classified_over_a_set() {
+        let cases = [
+            (ErrorKind::BrokenPipe, true),
+            (ErrorKind::ConnectionReset, true),
+            (ErrorKind::ConnectionAborted, true),
+            (ErrorKind::UnexpectedEof, true),
+            (ErrorKind::TimedOut, true),
+            (ErrorKind::WouldBlock, true),
+            (ErrorKind::InvalidData, false),
+            (ErrorKind::Other, false),
+        ];
+        assert_eq!(
+            cases
+                .iter()
+                .map(|(kind, _)| is_recoverable_connection_error(*kind))
+                .collect::<Vec<_>>(),
+            cases
+                .iter()
+                .map(|(_, expected)| *expected)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn browser_runtime_mime_types_are_classified_over_a_set() {
+        for (name, expected) in [
+            ("index.html", "text/html; charset=utf-8"),
+            ("bootstrap.js", "text/javascript; charset=utf-8"),
+            ("launcher-i18n.mjs", "text/javascript; charset=utf-8"),
+            ("icon.png", "image/png"),
+            ("sample.flac", "audio/flac"),
+            ("aedicule_web_bg.wasm", "application/wasm"),
+            ("code.wat", "text/plain; charset=utf-8"),
+        ] {
+            assert_eq!(mime_type(name), expected, "{name}");
+        }
+    }
 }

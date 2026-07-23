@@ -4,8 +4,8 @@
 use std::time::Duration;
 
 use crate::{
-    Event, FrameOutput, Frontplane, FrontplaneError, Limits, PluginInit, SimulationCall,
-    SimulationScheduler, initialize_frontplane,
+    ApplicationAssets, Event, FrameOutput, Frontplane, FrontplaneError, Limits, PluginInit,
+    SimulationCall, SimulationScheduler, initialize_frontplane, wav::AUDIO_FIXED_SCALE,
 };
 
 const MAX_TICKS_PER_BROWSER_FRAME: u32 = 8;
@@ -13,6 +13,19 @@ const MAX_TICKS_PER_BROWSER_FRAME: u32 = 8;
 /// Name of the JavaScript global populated by the static delivery bootstrap
 /// before wasm-bindgen enters the GPUI application.
 pub const BROWSER_WAT_GLOBAL: &str = "__AEDICULE_WAT";
+/// Name of the JavaScript object populated with validated virtual asset bytes.
+pub const BROWSER_ASSETS_GLOBAL: &str = "__AEDICULE_ASSETS";
+
+/// One fully decoded, bounded sample request ready for the browser's Web Audio
+/// device adapter; deterministic guest execution observes no playback state.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BrowserSamplePlayback {
+    pub sample_rate: u32,
+    pub channels: u16,
+    pub samples: Vec<f32>,
+    pub volume: f32,
+    pub pitch: f32,
+}
 
 /// Requires a non-empty WAT document supplied by the delivery bootstrap.
 ///
@@ -38,10 +51,22 @@ impl BrowserRuntime {
     /// Builds the browser guest through the shared lifecycle before any visual
     /// callback can see it, then anchors its rational scheduler at `origin`.
     pub fn new(wat: &str, init: PluginInit, origin: Duration) -> Result<Self, FrontplaneError> {
-        let mut frontplane = Frontplane::from_wat(wat, Limits::default())?;
+        Self::new_with_assets(wat, init, origin, ApplicationAssets::new())
+    }
+
+    /// Builds the browser guest with the same immutable virtual asset catalog
+    /// used by native and headless adapters before configuration begins.
+    pub fn new_with_assets(
+        wat: &str,
+        init: PluginInit,
+        origin: Duration,
+        assets: ApplicationAssets,
+    ) -> Result<Self, FrontplaneError> {
+        let mut frontplane = Frontplane::from_wat_with_assets(wat, Limits::default(), assets)?;
         initialize_frontplane(&mut frontplane, init)?;
         let frame = frontplane.render()?;
         frontplane.drain_audio();
+        frontplane.drain_sample_audio();
         frontplane.drain_effects();
         let scheduler = SimulationScheduler::new(
             frontplane.simulation_rate(),
@@ -85,13 +110,44 @@ impl BrowserRuntime {
     pub fn frame(&self) -> &FrameOutput {
         &self.frame
     }
+
+    /// Resolves transactional sample events against immutable admitted metadata
+    /// and converts fixed PCM only at the browser-device boundary.
+    pub fn drain_sample_audio(&mut self) -> Vec<BrowserSamplePlayback> {
+        let events = self.frontplane.drain_sample_audio();
+        events
+            .into_iter()
+            .map(|event| {
+                let sample = self
+                    .frontplane
+                    .metadata()
+                    .sample_assets
+                    .iter()
+                    .find(|sample| sample.id == event.id)
+                    .expect("accepted sample event must reference an admitted asset");
+                BrowserSamplePlayback {
+                    sample_rate: sample.clip.sample_rate,
+                    channels: sample.clip.channels,
+                    samples: sample
+                        .clip
+                        .samples
+                        .iter()
+                        .map(|sample| *sample as f32 / AUDIO_FIXED_SCALE as f32)
+                        .collect(),
+                    volume: event.volume,
+                    pitch: event.pitch,
+                }
+            })
+            .collect()
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::time::Duration;
 
-    use crate::{DrawCommand, Event, PluginInit};
+    use crate::{ApplicationAssets, DrawCommand, Event, PluginInit};
 
     use super::{BrowserRuntime, required_browser_wat};
 
@@ -156,7 +212,44 @@ mod tests {
             (func (export "AE_state_ptr") (result i32) i32.const 0)
             (func (export "AE_state_len") (result i32) i32.const 0)
             (func (export "AE_state_schema") (result i32) i32.const 1))
-    "#;
+	"#;
+
+    const SILENT_FLAC: &[u8] = &[
+        102, 76, 97, 67, 0, 0, 0, 34, 16, 0, 16, 0, 0, 0, 15, 0, 0, 15, 1, 244, 2, 240, 0, 0, 0, 8,
+        112, 188, 143, 75, 114, 168, 105, 33, 70, 139, 248, 232, 68, 29, 206, 81, 132, 0, 0, 40,
+        32, 0, 0, 0, 114, 101, 102, 101, 114, 101, 110, 99, 101, 32, 108, 105, 98, 70, 76, 65, 67,
+        32, 49, 46, 53, 46, 48, 32, 50, 48, 50, 53, 48, 50, 49, 49, 0, 0, 0, 0, 255, 248, 100, 24,
+        0, 7, 84, 0, 0, 0, 0, 0, 0, 140, 21,
+    ];
+
+    const SAMPLE_WAT: &str = r#"
+		(module
+			(import "aedicule.v0" "AE_sample_asset"
+				(func $sample_asset (param i32 i32 i32 i32) (result i32)))
+			(import "aedicule.v0" "AE_sample_play"
+				(func $sample_play (param i32 f32 f32 i32) (result i32)))
+			(import "aedicule.v0" "AE_frame_begin_rgba"
+				(func $frame_begin (param i32) (result i32)))
+			(import "aedicule.v0" "AE_frame_end" (func $frame_end (result i32)))
+			(memory (export "memory") 1)
+			(data (i32.const 0) "assets/audio/sample.flac")
+			(func (export "AE_abi_major") (result i32) i32.const 0)
+			(func (export "AE_abi_minor") (result i32) i32.const 1)
+			(func (export "AE_configure") (result i32)
+				i32.const 77 i32.const 0 i32.const 24 i32.const 0 call $sample_asset)
+			(func (export "AE_init") (param i32 i32 f32 f32) (result i32) i32.const 0)
+			(func (export "AE_event") (param i32 i32 f32 f32) (result i32) i32.const 0)
+			(func (export "AE_tick") (param i32) (result i32)
+				i32.const 77 f32.const 0.5 f32.const 1.25 i32.const 0 call $sample_play drop
+				i32.const 0)
+			(func (export "AE_tick_rate") (param i32 i32) (result i32 i32)
+				i32.const 60 i32.const 1)
+			(func (export "AE_render") (result i32)
+				i32.const 255 call $frame_begin drop call $frame_end drop i32.const 0)
+			(func (export "AE_state_ptr") (result i32) i32.const 0)
+			(func (export "AE_state_len") (result i32) i32.const 0)
+			(func (export "AE_state_schema") (result i32) i32.const 1))
+	"#;
 
     #[test]
     fn accepts_the_external_wat_document_without_substitution() {
@@ -215,5 +308,27 @@ mod tests {
             panic!("expected a keyboard-and-tick-controlled circle");
         };
         assert_eq!((*x, *y), (50.0, 10.0));
+    }
+
+    #[test]
+    fn admitted_flac_assets_become_browser_pcm_playback_requests() {
+        let assets: ApplicationAssets =
+            BTreeMap::from([("assets/audio/sample.flac".to_owned(), SILENT_FLAC.to_vec())]);
+        let mut runtime = BrowserRuntime::new_with_assets(
+            SAMPLE_WAT,
+            PluginInit::new(7, 1024.0, 768.0),
+            Duration::ZERO,
+            assets,
+        )
+        .unwrap();
+
+        assert!(runtime.advance_to(Duration::from_millis(17)).unwrap());
+        let playback = runtime.drain_sample_audio();
+        assert_eq!(playback.len(), 1);
+        assert_eq!(playback[0].sample_rate, 8_000);
+        assert_eq!(playback[0].channels, 2);
+        assert_eq!(playback[0].samples, vec![0.0; 16]);
+        assert_eq!(playback[0].volume, 0.5);
+        assert_eq!(playback[0].pitch, 1.25);
     }
 }

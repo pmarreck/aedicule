@@ -559,8 +559,14 @@
 							pkgs.ripgrep
 							luajitWithPackages
 							pkgs.openssl
-						];
+						] ++ pkgs.lib.optionals (system == "x86_64-linux") [ pkgs.chromium ];
 						AEDICULE_LIBCRYPTO = libcrypto;
+						FONTCONFIG_FILE = pkgs.writeText "aedicule-test-fonts.conf" ''
+							<fontconfig>
+								<dir>${pkgs.dejavu_fonts}/share/fonts/truetype</dir>
+								<cachedir prefix="xdg">fontconfig</cachedir>
+							</fontconfig>
+						'';
 						buildInputs = pkgs.lib.optionals linux (linuxLibraries pkgs);
 						checkPhase = ''
 							runHook preCheck
@@ -571,11 +577,17 @@
 								tests/cli/web_i18n tests/cli/github_pages \
 								tests/cli/ci_acceleration \
 								tests/cli/native_parallelism \
+								tests/integration/web_browser_startup \
+								tests/integration/web_packaged_audio \
 								packaging/macos/canonicalize_uuid check_reproducible
 							cargo test --no-default-features --features native-runtime
 							cargo test --bin aedicule
 							cargo rustc --release --bin aedicule -- -D warnings
 							cargo test --test gui_cli
+							${pkgs.lib.optionalString (system == "x86_64-linux") ''
+								tests/integration/web_packaged_audio target/release/aedicule \
+									${self.packages.${system}.webRuntime} demos/vibesteroids.aed
+							''}
 							cargo check
 							./tests/cli/development_dependencies
 							./tests/cli/repository_boundary
@@ -621,6 +633,7 @@
 							mkdir -p $out
 							install -Dm644 ${./web/index.html} $out/index.html
 							install -Dm644 ${./web/bootstrap.js} $out/bootstrap.js
+							install -Dm644 ${./packaging/web/launcher-i18n.mjs} $out/launcher-i18n.mjs
 							install -Dm644 ${./web/coi-serviceworker.js} $out/coi-serviceworker.js
 							install -Dm644 ${./packaging/web/manifest.webmanifest} $out/manifest.webmanifest
 							install -Dm644 ${./assets/icons/aedicule-app.png} $out/icon.png
@@ -661,8 +674,11 @@
 								wat = ./demos/ulam-flower.wat;
 								title = "Ulam Flower — Aedicule";
 							};
-							vibesteroids = self.lib.${system}.webBundle {
-								wat = ./demos/vibesteroids.wat;
+							vibesteroids = self.lib.${system}.webPackageBundle {
+								package = ./demos/vibesteroids.aed;
+								assets = [
+									"assets/audio/satellite-destroyed.flac"
+								];
 								title = "Vibesteroids — Aedicule";
 							};
 						in pkgs.runCommand "aedicule-delivery-web" {} ''
@@ -728,6 +744,26 @@
 							substituteInPlace $out/index.html \
 								--replace-fail 'Aedicule web application' ${pkgs.lib.escapeShellArg title}
 						'';
+					webPackageBundle = { package, assets ? [], title ? "Aedicule web application" }:
+						let
+							assetCommands = pkgs.lib.concatMapStringsSep "\n" (asset: ''
+								mkdir -p "$out/$(dirname ${pkgs.lib.escapeShellArg asset})"
+								unzip -p ${package} ${pkgs.lib.escapeShellArg asset} > "$out/${asset}"
+								test -s "$out/${asset}"
+							'') assets;
+						in pkgs.runCommand "aedicule-web-package-bundle" {
+							nativeBuildInputs = [ pkgs.unzip ];
+						} ''
+							mkdir -p $out
+							cp -R ${self.packages.${system}.webRuntime}/. $out/
+							unzip -p ${package} code.wat > $out/code.wat
+							test -s $out/code.wat
+							printf '%s\n' ${pkgs.lib.escapeShellArg (builtins.toJSON assets)} \
+								> $out/application-assets.json
+							${assetCommands}
+							substituteInPlace $out/index.html \
+								--replace-fail 'Aedicule web application' ${pkgs.lib.escapeShellArg title}
+						'';
 				});
 
 			devShells = forAllSystems (system:
@@ -753,7 +789,8 @@
 							luajitWithPackages
 							openssl
 						]
-							++ pkgs.lib.optionals pkgs.stdenv.isLinux (linuxLibraries pkgs);
+							++ pkgs.lib.optionals pkgs.stdenv.isLinux (linuxLibraries pkgs)
+							++ pkgs.lib.optionals (system == "x86_64-linux") [ pkgs.chromium ];
 						LD_LIBRARY_PATH = pkgs.lib.optionalString pkgs.stdenv.isLinux
 							(pkgs.lib.makeLibraryPath (linuxLibraries pkgs));
 						AEDICULE_LIBCRYPTO = "${pkgs.openssl.out}/lib/libcrypto${pkgs.stdenv.hostPlatform.extensions.sharedLibrary}";

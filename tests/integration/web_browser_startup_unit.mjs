@@ -2,10 +2,65 @@ import assert from "node:assert/strict";
 import vm from "node:vm";
 
 import {
+	browserProcessEnvironment,
 	inputObserverSource,
 	removeBrowserProfile,
+	waitForFile,
 	waitForDebuggablePage,
 } from "./web_browser_startup";
+
+assert.deepEqual(
+	browserProcessEnvironment("/temporary/chrome-profile", {
+		HOME: "/homeless-shelter",
+		PATH: "/programs",
+		XDG_CACHE_HOME: "/existing/cache",
+		XDG_CONFIG_HOME: "/existing/config",
+	}),
+	{
+		HOME: "/temporary/chrome-profile",
+		PATH: "/programs",
+		XDG_CACHE_HOME: "/existing/cache",
+		XDG_CONFIG_HOME: "/existing/config",
+	},
+);
+assert.deepEqual(
+	browserProcessEnvironment("/temporary/chrome-profile", { PATH: "/programs" }),
+	{
+		HOME: "/temporary/chrome-profile",
+		PATH: "/programs",
+		XDG_CACHE_HOME: "/temporary/chrome-profile/cache",
+		XDG_CONFIG_HOME: "/temporary/chrome-profile/config",
+	},
+);
+
+let timeoutCallback;
+let watcherClosed = 0;
+let timerCancelled = 0;
+const watcher = {
+	close() { watcherClosed += 1; },
+	on() {},
+};
+const missingPortFile = waitForFile("/temporary/chrome-profile/DevToolsActivePort", 17, {
+	cancel: timer => {
+		assert.equal(timer, 23);
+		timerCancelled += 1;
+	},
+	exists: () => false,
+	schedule: (callback, milliseconds) => {
+		assert.equal(milliseconds, 17);
+		timeoutCallback = callback;
+		return 23;
+	},
+	watch: (directory, callback) => {
+		assert.equal(directory, "/temporary/chrome-profile");
+		assert.equal(typeof callback, "function");
+		return watcher;
+	},
+});
+timeoutCallback();
+await assert.rejects(missingPortFile, /timed out waiting for Chrome's DevTools endpoint/);
+assert.equal(watcherClosed, 1);
+assert.equal(timerCancelled, 1);
 
 const expectedPage = {
 	type: "page",

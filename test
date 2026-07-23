@@ -7,6 +7,9 @@ if [[ ${AEDICULE_TEST_SHELL:-0} != 1 ]]; then
 	if [[ -n ${TMPDIR:-} ]]; then
 		develop+=(--keep TMPDIR)
 	fi
+	if [[ -n ${CARGO_TARGET_DIR:-} ]]; then
+		develop+=(--keep CARGO_TARGET_DIR)
+	fi
 	exec "${develop[@]}" -c env AEDICULE_TEST_SHELL=1 "$0" "$@"
 fi
 
@@ -51,6 +54,31 @@ run_web_build() {
 	fi
 }
 
+run_packaged_audio_browser() {
+	local out= err= rc=0 runtime binary
+	if [[ $(uname -s) != Linux || $(uname -m) != x86_64 ]]; then
+		return 0
+	fi
+	capture nix build .#webRuntime --no-link --print-out-paths
+	if (( rc != 0 )); then
+		printf 'browser runtime build failed:\n%s\n%s\n' "$out" "$err" >&2
+		return 1
+	fi
+	runtime=$out
+	binary="${CARGO_TARGET_DIR:-target}/debug/aedicule"
+	capture cargo --quiet build --bin aedicule
+	if (( rc != 0 )); then
+		printf 'browser host build failed:\n%s\n%s\n' "$out" "$err" >&2
+		return 1
+	fi
+	capture ./tests/integration/web_packaged_audio \
+		"$binary" "$runtime" demos/vibesteroids.aed
+	if (( rc != 0 )); then
+		printf '%s%s\n' "$out" "$err" >&2
+		return 1
+	fi
+}
+
 run_check ./tests/cli/development_dependencies
 run_check ./tests/cli/repository_boundary
 run_check ./tests/cli/aedicule_naming
@@ -79,6 +107,7 @@ run_check ./tests/cli/web_delivery
 run_check cargo test --bin aedicule
 run_check cargo test --test gui_cli
 run_check cargo check
+run_check run_packaged_audio_browser
 run_check ./tests/cli/build_partition
 
 if (( failures > 255 )); then

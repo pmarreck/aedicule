@@ -134,15 +134,21 @@ fn native_cli_serves_an_aed_through_the_bundled_web_runtime() {
     let temporary = temporary_directory("web");
     let application = temporary.join("web application");
     let runtime = temporary.join("bundled web runtime");
-    fs::create_dir_all(&application).unwrap();
+    fs::create_dir_all(application.join("assets/audio")).unwrap();
     fs::create_dir_all(&runtime).unwrap();
     fs::write(application.join("code.wat"), b"(module $served)").unwrap();
+    fs::write(
+        application.join("assets/audio/sample.flac"),
+        b"fLaC exact packaged bytes",
+    )
+    .unwrap();
     for (name, bytes) in [
         (
             "index.html",
             b"<!doctype html><title>Aedicule test</title>".as_slice(),
         ),
         ("bootstrap.js", b"console.info('bootstrap')".as_slice()),
+        ("launcher-i18n.mjs", b"export const english = {}".as_slice()),
         ("coi-serviceworker.js", b"// service worker".as_slice()),
         ("manifest.webmanifest", b"{}".as_slice()),
         ("icon.png", b"PNG".as_slice()),
@@ -182,6 +188,38 @@ fn native_cli_serves_an_aed_through_the_bundled_web_runtime() {
     assert!(response.contains("Cross-Origin-Opener-Policy: same-origin\r\n"));
     assert!(response.contains("Cross-Origin-Embedder-Policy: require-corp\r\n"));
     assert!(response.ends_with("(module $served)"), "{response}");
+
+    let mut connection = TcpStream::connect(address).unwrap();
+    connection
+		.write_all(
+			b"GET /application-assets.json HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+		)
+		.unwrap();
+    let mut response = String::new();
+    connection.read_to_string(&mut response).unwrap();
+    assert!(response.starts_with("HTTP/1.1 200 OK\r\n"), "{response}");
+    assert!(
+        response.contains("Content-Type: application/json; charset=utf-8\r\n"),
+        "{response}"
+    );
+    assert!(
+        response.ends_with("[\"assets/audio/sample.flac\"]\n"),
+        "{response}"
+    );
+
+    let mut connection = TcpStream::connect(address).unwrap();
+    connection
+		.write_all(
+			b"GET /assets/audio/sample.flac HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+		)
+		.unwrap();
+    let mut response = Vec::new();
+    connection.read_to_end(&mut response).unwrap();
+    assert!(response.starts_with(b"HTTP/1.1 200 OK\r\n"), "{response:?}");
+    assert!(
+        response.ends_with(b"fLaC exact packaged bytes"),
+        "{response:?}"
+    );
 
     child.kill().unwrap();
     let status = child.wait().unwrap();

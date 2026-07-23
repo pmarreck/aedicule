@@ -45,6 +45,14 @@ require_text "$root/README.md" 'https://pmarreck.github.io/aedicule/' 'public de
 require_text "$root/README.md" 'https://pmarreck.github.io/aedicule/ulam-flower/' 'direct Ulam Flower demo link'
 require_text "$root/README.md" 'https://pmarreck.github.io/aedicule/vibesteroids/' 'direct Vibesteroids demo link'
 require_text "$root/packaging/web/index.html" './vibesteroids.aed' 'direct Vibesteroids package download'
+require_text "$root/flake.nix" 'webPackageBundle = { package, assets ? []' \
+	'package-backed static web bundle constructor'
+require_text "$root/flake.nix" 'package = ./demos/vibesteroids.aed;' \
+	'Pages Vibesteroids source package'
+require_text "$root/flake.nix" '"assets/audio/satellite-destroyed.flac"' \
+	'Pages Vibesteroids sampled-audio asset'
+require_text "$root/flake.nix" 'application-assets.json' \
+	'Pages package asset catalog'
 require_text "$root/flake.nix" '"/README.md"' 'README in Nix test source'
 
 exit "$failures"

@@ -118,8 +118,10 @@ download a native build below.
 The [Vibesteroids `.aed` application](https://pmarreck.github.io/aedicule/vibesteroids.aed)
 is also directly downloadable. It contains the current schema-11 guest, its
 deterministic WAST entry point, and the bounded FLAC sample used after Voyager
-is destroyed. Browser sampled-audio playback is not yet claimed; the live web
-demo deliberately retains the independently green pre-sample WAT snapshot.
+is destroyed. The live web demo is built from that same package entrypoint and
+asset bytes; its one-way Web Audio adapter unlocks on the first pointer, key,
+or touch gesture and plays guest-requested PCM without feeding device timing
+back into deterministic simulation.
 
 Download the latest packaged builds from
 [GitHub Releases](https://github.com/pmarreck/aedicule/releases/latest). Every
@@ -193,8 +195,9 @@ stored-ZIP `.aed` without changing its virtual paths:
 Declared FLAC files below `assets/` are preloaded through a bounded immutable
 catalog; WAT never receives ambient filesystem access. `AE_sample_asset` binds
 a virtual path during configuration and `AE_sample_play` queues transactional
-one-shot playback with bounded volume and pitch. The native adapter currently
-plays these samples; browser sampled-audio parity remains future work.
+one-shot playback with bounded volume and pitch. Native and browser adapters
+play the same decoded fixed-PCM clip; playback state never becomes a guest
+clock or event source.
 
 The frontplane has no bundled production application. Its embedded module is
 a deliberately neutral, stable conformance fallback for recovery and adapter
@@ -255,8 +258,8 @@ Working:
 - bounded Wasmtime lifecycle and `aedicule.v0` / `AE_*` ABI;
 - full-window GPUI canvas, native input, standard menus, and status/error UI;
 - vector, path, transform, text, image-resource, and sprite commands;
-- guest-declared decimal-fixed synth programs and bounded packaged FLAC samples
-  with native audio-device adaptation;
+- guest-declared decimal-fixed synth programs and bounded packaged FLAC samples,
+  with sampled-audio adaptation on native and browser hosts;
 - exact rational, absolute-deadline scheduling at every supported guest-declared
   rate, with timestamped input, display-refresh events, and visible
   bounded-catch-up drops;
@@ -272,7 +275,7 @@ Known limits:
 
 - ABI v0 will change;
 - GPUI sprite-atlas source cropping is modeled but not fully painted natively;
-- browser delivery does not yet play guest-declared synth or sampled audio;
+- browser delivery does not yet play guest-declared synthesized audio;
 - the current retained-view vocabulary is only panels, sliders, and buttons;
   the platform-neutral [Aedicule View Protocol](VIEW_PROTOCOL.md) specifies
   hierarchy, layout, dynamic text/input, accessibility, event-driven apps,

@@ -14,19 +14,21 @@ const EXPECTED_STAGES = [
 	"capabilities",
 	"webgpu-adapter",
 	"wat-fetched",
+	"assets-fetched",
 	"wasm-initializing",
 	"wasm-initialized",
 	"first-animation-frame",
 	"settled",
 ];
 
-const HELP = `usage: web_browser_startup [--chrome PATH] [--timeout-ms N] URL
-       web_browser_startup [--chrome PATH] [--timeout-ms N] --static-root PATH
+const HELP = `usage: web_browser_startup [--chrome PATH] [--timeout-ms N] [--require-audio-request] URL
+       web_browser_startup [--chrome PATH] [--timeout-ms N] [--require-audio-request] --static-root PATH
 
 Launch a headless Chromium browser, stream Aedicule's structured startup
 timeline, and reject browser exceptions or a missing/1x1 GPUI canvas.
 
 --static-root serves PATH without isolation headers, matching GitHub Pages.
+--require-audio-request rejects a guest that never reaches the Web Audio adapter.
 
 Environment:
   AEDICULE_CHROME               Chromium-family executable (overridden by --chrome)
@@ -36,6 +38,7 @@ Environment:
 function parseArguments(arguments_) {
 	let chrome;
 	let timeoutMs = 15_000;
+	let requireAudioRequest = false;
 	let staticRoot;
 	let url;
 	for (let index = 0; index < arguments_.length; index += 1) {
@@ -60,6 +63,10 @@ function parseArguments(arguments_) {
 			staticRoot = arguments_[index += 1];
 			continue;
 		}
+		if (argument === "--require-audio-request") {
+			requireAudioRequest = true;
+			continue;
+		}
 		if (argument.startsWith("-")) {
 			throw new Error(`unknown option: ${argument}`);
 		}
@@ -74,7 +81,13 @@ function parseArguments(arguments_) {
 	if ((url === undefined) === (staticRoot === undefined)) {
 		throw new Error("exactly one URL or --static-root PATH is required");
 	}
-	return { chrome, staticRoot, timeoutMs, url: url === undefined ? undefined : new URL(url).href };
+	return {
+		chrome,
+		requireAudioRequest,
+		staticRoot,
+		timeoutMs,
+		url: url === undefined ? undefined : new URL(url).href,
+	};
 }
 
 const contentTypes = Object.freeze({
@@ -154,6 +167,19 @@ function resolveChrome(explicit) {
 	return chrome;
 }
 
+/**
+ * Gives headless Chrome a disposable writable home so crash reporting and
+ * profile helpers can initialize even inside a Nix build sandbox.
+ */
+export function browserProcessEnvironment(profile, environment = process.env) {
+	return {
+		...environment,
+		HOME: profile,
+		XDG_CACHE_HOME: environment.XDG_CACHE_HOME || join(profile, "cache"),
+		XDG_CONFIG_HOME: environment.XDG_CONFIG_HOME || join(profile, "config"),
+	};
+}
+
 function withTimeout(promise, timeoutMs, description) {
 	return new Promise((resolve, reject) => {
 		const timer = setTimeout(() => reject(new Error(`timed out waiting for ${description}`)), timeoutMs);
@@ -170,21 +196,38 @@ function withTimeout(promise, timeoutMs, description) {
 	});
 }
 
-async function waitForFile(path, timeoutMs) {
-	if (existsSync(path)) return;
-	await withTimeout(new Promise((resolve, reject) => {
-		const watcher = watch(join(path, ".."), (event, filename) => {
-			if (filename === "DevToolsActivePort" && existsSync(path)) {
-				watcher.close();
-				resolve();
-			}
-		});
-		watcher.on("error", reject);
-		if (existsSync(path)) {
-			watcher.close();
-			resolve();
+export async function waitForFile(path, timeoutMs, adapters = {}) {
+	const cancel = adapters.cancel ?? clearTimeout;
+	const exists = adapters.exists ?? existsSync;
+	const schedule = adapters.schedule ?? setTimeout;
+	const watchDirectory = adapters.watch ?? watch;
+	if (exists(path)) return;
+	await new Promise((resolve, reject) => {
+		let settled = false;
+		let timer;
+		let watcher;
+		const finish = error => {
+			if (settled) return;
+			settled = true;
+			if (timer !== undefined) cancel(timer);
+			watcher?.close();
+			if (error === undefined) resolve();
+			else reject(error);
+		};
+		try {
+			watcher = watchDirectory(join(path, ".."), (event, filename) => {
+				if (filename === "DevToolsActivePort" && exists(path)) finish();
+			});
+			watcher.on("error", finish);
+			timer = schedule(
+				() => finish(new Error("timed out waiting for Chrome's DevTools endpoint")),
+				timeoutMs,
+			);
+			if (exists(path)) finish();
+		} catch (error) {
+			finish(error);
 		}
-	}), timeoutMs, "Chrome's DevTools endpoint");
+	});
 }
 
 /**
@@ -296,6 +339,7 @@ async function pageSnapshot(protocol) {
 			crossOriginIsolated: globalThis.crossOriginIsolated === true,
 			serviceWorkerControlled: navigator.serviceWorker?.controller !== null,
 			status: document.getElementById("aedicule-startup-status")?.textContent ?? null,
+			audioRequestCount: globalThis.__AEDICULE_AUDIO_REQUEST_COUNT ?? 0,
 			canvases: Array.from(document.querySelectorAll("canvas"), canvas => {
 				const bounds = canvas.getBoundingClientRect();
 				return { bufferWidth: canvas.width, bufferHeight: canvas.height,
@@ -457,6 +501,7 @@ async function inspect(options) {
 	const chrome = spawn(chromePath, [
 		"--headless=new",
 		"--no-sandbox",
+		"--mute-audio",
 		"--disable-background-networking",
 		"--disable-component-update",
 		"--enable-unsafe-webgpu",
@@ -467,7 +512,10 @@ async function inspect(options) {
 		"--remote-debugging-port=0",
 		`--user-data-dir=${profile}`,
 		"about:blank",
-	], { stdio: ["ignore", "ignore", "pipe"] });
+	], {
+		env: browserProcessEnvironment(profile),
+		stdio: ["ignore", "ignore", "pipe"],
+	});
 	chrome.stderr.setEncoding("utf8");
 	chrome.stderr.on("data", data => {
 		chromeErrors.push(...data.split("\n").filter(Boolean));
@@ -568,6 +616,9 @@ async function inspect(options) {
 		}
 		if (!drawableCanvas) failures.push("GPUI produced no drawable canvas larger than 1x1");
 		if (finalSnapshot.status !== null) failures.push(`startup status remained visible: ${finalSnapshot.status}`);
+		if (options.requireAudioRequest && finalSnapshot.audioRequestCount < 1) {
+			failures.push("guest produced no sampled-audio request at the Web Audio adapter");
+		}
 		if (missingInput.length > 0) {
 			failures.push(`synthetic input was not observed: ${missingInput.map(([type]) => type).join(", ")}`);
 		}

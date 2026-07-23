@@ -3,6 +3,9 @@
 set -u
 
 required=(cargo nix nix-store node rg)
+if [[ $(uname -s) == Linux && $(uname -m) == x86_64 ]]; then
+	required+=(chromium)
+fi
 failures=0
 
 for executable in "${required[@]}"; do
