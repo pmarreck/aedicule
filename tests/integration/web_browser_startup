@@ -168,16 +168,20 @@ function resolveChrome(explicit) {
 }
 
 /**
- * Gives headless Chrome a disposable writable home so crash reporting and
- * profile helpers can initialize even inside a Nix build sandbox.
+ * Gives headless Chrome a disposable writable home and removes Nix's disabled
+ * D-Bus sentinel so profile helpers can initialize inside a build sandbox.
  */
 export function browserProcessEnvironment(profile, environment = process.env) {
-	return {
+	const browserEnvironment = {
 		...environment,
 		HOME: profile,
 		XDG_CACHE_HOME: environment.XDG_CACHE_HOME || join(profile, "cache"),
 		XDG_CONFIG_HOME: environment.XDG_CONFIG_HOME || join(profile, "config"),
 	};
+	if (["", "disabled:"].includes(browserEnvironment.DBUS_SESSION_BUS_ADDRESS)) {
+		delete browserEnvironment.DBUS_SESSION_BUS_ADDRESS;
+	}
+	return browserEnvironment;
 }
 
 function withTimeout(promise, timeoutMs, description) {

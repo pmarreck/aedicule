@@ -12,7 +12,7 @@
 
 	outputs = { self, nixpkgs, fenix, crane }:
 		let
-			version = "0.1.1";
+			version = "0.1.2";
 			systems = [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" ];
 			forAllSystems = nixpkgs.lib.genAttrs systems;
 			pkgsFor = system: import nixpkgs {
@@ -167,6 +167,7 @@
 									"/flake.nix"
 									"/assets"
 									"/packaging"
+									"/publish"
 									"/run"
 									"/src"
 									"/test"
@@ -200,7 +201,7 @@
 					applicationCargoDeps = pkgs.rustPlatform.fetchCargoVendor {
 						name = "aedicule-cargo-deps";
 						src = cargoDependencySource;
-						hash = "sha256-KQT25+rOcHOF4PcFRBGjxjwpMLWMXM3MwozT+XlYh/c=";
+						hash = "sha256-YpEDpGKBsUYxjM7DATMpnBon+UOdpWc1nLXRIjVGes8=";
 					};
 					nativeCommonArgs = {
 						pname = "aedicule";
@@ -554,8 +555,11 @@
 							pkgs.pkg-config
 							pkgs.cmake
 							pkgs.clang
+							pkgs.git
+							pkgs.github-cli
 							pkgs.nix
 							pkgs.nodejs
+							pkgs.openssh
 							pkgs.ripgrep
 							luajitWithPackages
 							pkgs.openssl
@@ -574,12 +578,13 @@
 								tests/cli/aedicule_naming \
 								tests/cli/document_packages tests/cli/demo_snapshots \
 								tests/cli/macos_reproducibility tests/cli/reproducible_releases \
+								tests/cli/publish \
 								tests/cli/web_i18n tests/cli/github_pages \
 								tests/cli/ci_acceleration \
 								tests/cli/native_parallelism \
 								tests/integration/web_browser_startup \
 								tests/integration/web_packaged_audio \
-								packaging/macos/canonicalize_uuid check_reproducible
+								packaging/macos/canonicalize_uuid check_reproducible publish
 							cargo test --no-default-features --features native-runtime
 							cargo test --bin aedicule
 							cargo rustc --release --bin aedicule -- -D warnings
@@ -596,6 +601,7 @@
 							./tests/cli/demo_snapshots
 							./tests/cli/macos_reproducibility
 							./tests/cli/reproducible_releases
+							./tests/cli/publish
 							./tests/cli/web_i18n
 							./tests/cli/github_pages
 							./tests/cli/ci_acceleration
@@ -783,8 +789,11 @@
 							clang
 							cargo-nextest
 							actionlint
+							github-cli
+							git
 							nix
 							nodejs
+							openssh
 							ripgrep
 							luajitWithPackages
 							openssl

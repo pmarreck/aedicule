@@ -26,6 +26,13 @@ cross-platform stability remain pre-production.
 
 **Main branch:** yolo
 
+**Release adapter:** `./publish` binds source version, pushed `yolo` revision,
+annotated tag, independently reproduced six-target GitHub Release, and optional
+private tailnet-Mac installation into one resumable operation. The Mac test
+copy is verified against the public checksum and ad-hoc signed locally when
+needed; public Developer ID signing/notarization remains a separate future
+distribution gate.
+
 **i18n phase:** prepare. Frontplane-owned strings are centralized; only English
 is populated while the ABI remains experimental. The canonical 50-locale
 baseline, RTL set, selection rationale, and browser locale behavior are recorded

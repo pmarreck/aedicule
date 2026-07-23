@@ -33,6 +33,20 @@ assert.deepEqual(
 	},
 );
 
+for (const [address, expected] of [
+	["disabled:", undefined],
+	["", undefined],
+	["unix:path=/run/user/1000/bus", "unix:path=/run/user/1000/bus"],
+	["unix:abstract=/tmp/dbus-test", "unix:abstract=/tmp/dbus-test"],
+	["tcp:host=127.0.0.1,port=1234", "tcp:host=127.0.0.1,port=1234"],
+]) {
+	const environment = browserProcessEnvironment("/temporary/chrome-profile", {
+		DBUS_SESSION_BUS_ADDRESS: address,
+		PATH: "/programs",
+	});
+	assert.equal(environment.DBUS_SESSION_BUS_ADDRESS, expected);
+}
+
 let timeoutCallback;
 let watcherClosed = 0;
 let timerCancelled = 0;

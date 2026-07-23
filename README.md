@@ -142,8 +142,11 @@ application. macOS registers the document type from its application bundle;
 Linux ships desktop and MIME metadata; Windows includes an optional PowerShell
 association helper.
 
-The first release is unsigned. On macOS, use **Open** from Finder's context
-menu on first launch if Gatekeeper asks you to confirm the application.
+The current public macOS archive is unsigned. Use **Open** from Finder's
+context menu on first launch if Gatekeeper asks you to confirm the application.
+`./publish` can additionally install that exact verified archive on Peter's
+tailnet Mac with a local ad-hoc signature; this private test signature is not
+represented as Apple notarization.
 
 The web ZIP is ready for any static HTTPS host. Its top-level launcher offers
 both bundled demos; each demo directory is also a self-contained Aedicule site.
@@ -156,6 +159,7 @@ The supported development path uses Nix flakes:
 ./test
 ./build                   # optimized build for this platform
 ./build_all               # deterministic archives for all six targets
+./publish                 # test, tag, publish, and optionally install on Mac
 ./run                     # code.wat in the working directory, if present
 ./run --watch app/code.wat
 ./run --embedded          # stable ABI-conformance fallback
@@ -166,6 +170,17 @@ provenance manifest through the `result-all` symlink. `./build --test` runs the
 complete suite, while `./build --debug` makes a local debug build. The native
 optimized build grants its one Nix derivation all detected CPU threads;
 `./build_all` retains Nix's multi-derivation scheduling for the target matrix.
+
+`./publish` requires a tracked-clean checkout at the exact pushed `yolo`
+revision and matching Cargo/Nix versions. It runs the complete local gates,
+creates and pushes an annotated version tag, watches GitHub independently
+rebuild all six archives, and prints the durable GitHub Release URL. The
+operation is resumable: rerunning it for an exact existing tag verifies the
+release and retries only unfinished work. If Peter's Mac is SSH-reachable at
+its configurable tailnet address, the command verifies the released macOS ZIP
+against `SHA256SUMS`, preserves any previous app in `~/.Trash`, signs locally
+when needed, and installs it into `~/Applications/Aedicule.app`. Use
+`./publish --skip-mac` when only public artifact publication is desired.
 
 The package contains:
 

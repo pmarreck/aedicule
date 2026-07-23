@@ -1,0 +1,307 @@
+#!/usr/bin/env bash
+
+set -u
+
+root=$(cd "$(dirname "$0")" && pwd -P)
+cd "$root" || exit 1
+
+usage() {
+	cat <<'EOF'
+Usage: ./publish [OPTIONS]
+
+Build, test, and publish the current Aedicule version as a GitHub Release.
+The command is resumable: an existing exact tag/release skips completed work.
+When Peter's Mac is SSH-reachable through the tailnet, the verified public
+macOS archive is also installed as ~/Applications/Aedicule.app for testing.
+
+Options:
+  --version VERSION  Require this source version (for example, 0.1.2 or v0.1.2)
+  --skip-mac         Do not probe or install on the Mac
+  --mac-host HOST    Override the Mac tailnet host
+  --mac-user USER    Override the Mac SSH user
+  --lang LOCALE      Select message locale (English prepare-phase fallback)
+  -h, --help         Show this help
+
+Environment overrides:
+  AEDICULE_MAC_HOST, AEDICULE_MAC_USER
+EOF
+}
+
+requested_version=
+skip_mac=0
+mac_host=${AEDICULE_MAC_HOST:-peters-macbook-pro-m4-max.tail66c90.ts.net}
+mac_user=${AEDICULE_MAC_USER:-pmarreck}
+language=${AEDICULE_PUBLISH_LANG:-${AEDICULE_LANG:-${LC_ALL:-${LC_MESSAGES:-${LANG:-en}}}}}
+
+while (( $# != 0 )); do
+	case $1 in
+		-h|--help)
+			usage
+			exit 0
+			;;
+		--version)
+			if (( $# < 2 )); then
+				printf 'publish: --version requires a value\n' >&2
+				exit 2
+			fi
+			requested_version=${2#v}
+			shift 2
+			;;
+		--skip-mac)
+			skip_mac=1
+			shift
+			;;
+		--mac-host)
+			if (( $# < 2 )); then
+				printf 'publish: --mac-host requires a value\n' >&2
+				exit 2
+			fi
+			mac_host=$2
+			shift 2
+			;;
+		--mac-user)
+			if (( $# < 2 )); then
+				printf 'publish: --mac-user requires a value\n' >&2
+				exit 2
+			fi
+			mac_user=$2
+			shift 2
+			;;
+		--lang)
+			if (( $# < 2 )); then
+				printf 'publish: --lang requires a value\n' >&2
+				exit 2
+			fi
+			language=$2
+			shift 2
+			;;
+		*)
+			printf 'publish: unsupported argument: %s\n' "$1" >&2
+			usage >&2
+			exit 2
+			;;
+	esac
+done
+
+case ${language%%[.@]*} in
+	C|POSIX|en|en_*) ;;
+	*) printf 'publish: locale %s is not translated yet; using English\n' "$language" >&2 ;;
+esac
+
+for command in git gh sha256sum awk mktemp; do
+	if ! command -v "$command" >/dev/null 2>&1; then
+		printf 'publish: required command is unavailable: %s\n' "$command" >&2
+		exit 1
+	fi
+done
+
+source_version=$(awk -F '"' '/^version = "/ { print $2; exit }' Cargo.toml)
+flake_version=$(awk -F '"' '/^[[:space:]]*version = "/ { print $2; exit }' flake.nix)
+if [[ -z $source_version || $source_version != "$flake_version" ]]; then
+	printf 'publish: Cargo.toml and flake.nix do not declare the same version\n' >&2
+	exit 1
+fi
+if [[ -n $requested_version && $requested_version != "$source_version" ]]; then
+	printf 'publish: requested version %s does not match source version %s\n' \
+		"$requested_version" "$source_version" >&2
+	exit 1
+fi
+version=$source_version
+tag="v$version"
+if [[ ! $version =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]; then
+	printf 'publish: source version is not a safe semantic version: %s\n' "$version" >&2
+	exit 1
+fi
+if [[ ! $mac_host =~ ^[0-9A-Za-z._-]+$ || ! $mac_user =~ ^[0-9A-Za-z._-]+$ ]]; then
+	printf 'publish: Mac host/user contain unsupported characters\n' >&2
+	exit 1
+fi
+
+if ! git fetch origin yolo --tags >/dev/null 2>&1; then
+	printf 'publish: could not refresh origin/yolo and version tags\n' >&2
+	exit 1
+fi
+head_revision=$(git rev-parse HEAD 2>/dev/null)
+origin_revision=$(git rev-parse refs/remotes/origin/yolo 2>/dev/null)
+if [[ -z $head_revision || $head_revision != "$origin_revision" ]]; then
+	printf 'publish: HEAD must equal the pushed origin/yolo revision\n' >&2
+	exit 1
+fi
+if ! git diff --quiet || ! git diff --cached --quiet; then
+	printf 'publish: tracked or staged changes must be committed before publication\n' >&2
+	exit 1
+fi
+
+release_url=
+existing_tag=$(git tag --list "$tag")
+if [[ -n $existing_tag ]]; then
+	tag_revision=$(git rev-list -n 1 "$tag" 2>/dev/null)
+	if [[ $tag_revision != "$head_revision" ]]; then
+		printf 'publish: %s already points at another commit\n' "$tag" >&2
+		exit 1
+	fi
+	if ! release_url=$(gh release view "$tag" --json url --jq .url 2>/dev/null); then
+		# A previous run can have created the local tag and then lost its
+		# connection before the push. Pushing an identical remote tag is
+		# idempotent and resumes that exact interrupted boundary.
+		if ! git push origin "$tag"; then
+			printf 'publish: could not ensure %s is present on origin\n' "$tag" >&2
+			exit 1
+		fi
+		run_id=$(gh run list --workflow Release --event push --commit "$head_revision" \
+			--limit 10 --json databaseId --jq '.[0].databaseId // empty')
+		if [[ -z $run_id ]]; then
+			printf 'publish: %s exists but its release workflow cannot be found\n' "$tag" >&2
+			exit 1
+		fi
+		if ! gh run watch "$run_id" --exit-status; then
+			printf 'publish: release workflow %s failed\n' "$run_id" >&2
+			exit 1
+		fi
+		release_url=$(gh release view "$tag" --json url --jq .url) || exit 1
+	fi
+else
+	printf 'Testing exact source for %s...\n' "$tag"
+	if ! ./test; then
+		printf 'publish: complete test suite failed\n' >&2
+		exit 1
+	fi
+	printf 'Building all six deterministic archives...\n'
+	if ! ./build_all; then
+		printf 'publish: six-target build failed\n' >&2
+		exit 1
+	fi
+	if [[ ! -f result-all/SHA256SUMS ]] \
+			|| ! (cd result-all && sha256sum --check SHA256SUMS); then
+		printf 'publish: local release archive checksums failed\n' >&2
+		exit 1
+	fi
+	if ! git tag -a "$tag" -m "Aedicule $tag" "$head_revision"; then
+		printf 'publish: could not create %s\n' "$tag" >&2
+		exit 1
+	fi
+	if ! git push origin "$tag"; then
+		printf 'publish: could not push %s\n' "$tag" >&2
+		exit 1
+	fi
+
+	run_id=
+	for (( attempt = 0; attempt < 30; attempt++ )); do
+		run_id=$(gh run list --workflow Release --event push --commit "$head_revision" \
+			--limit 10 --json databaseId --jq '.[0].databaseId // empty')
+		if [[ -n $run_id ]]; then break; fi
+		sleep 2
+	done
+	if [[ -z $run_id ]]; then
+		printf 'publish: GitHub did not create the %s release workflow\n' "$tag" >&2
+		exit 1
+	fi
+	if ! gh run watch "$run_id" --exit-status; then
+		printf 'publish: release workflow %s failed\n' "$run_id" >&2
+		exit 1
+	fi
+	release_url=$(gh release view "$tag" --json url --jq .url) || {
+		printf 'publish: %s completed without a visible GitHub Release\n' "$tag" >&2
+		exit 1
+	}
+fi
+
+printf 'Published %s: %s\n' "$tag" "$release_url"
+
+if (( skip_mac != 0 )); then
+	printf 'Mac installation skipped (--skip-mac).\n' >&2
+	exit 0
+fi
+if ! command -v ssh >/dev/null 2>&1 || ! command -v scp >/dev/null 2>&1; then
+	printf 'Mac installation skipped: ssh/scp are unavailable.\n' >&2
+	exit 0
+fi
+
+ssh_options=(-o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new)
+mac_target="$mac_user@$mac_host"
+if ! ssh "${ssh_options[@]}" "$mac_target" true >/dev/null 2>&1; then
+	printf 'Mac installation skipped: %s is not SSH-reachable.\n' "$mac_target" >&2
+	exit 0
+fi
+
+stage=$(mktemp -d "${TMPDIR:-/tmp}/aedicule-publish.XXXXXX") || exit 1
+cleanup() {
+	rm -rf -- "$stage"
+}
+trap cleanup EXIT
+archive_name="aedicule-$version-macos-aarch64.zip"
+if ! gh release download "$tag" --pattern "$archive_name" --pattern SHA256SUMS \
+		--dir "$stage" --clobber; then
+	printf 'publish: could not download the macOS release and checksum manifest\n' >&2
+	exit 1
+fi
+expected=$(awk -v file="$archive_name" '$2 == file { print $1; exit }' "$stage/SHA256SUMS")
+actual=$(sha256sum "$stage/$archive_name" | awk '{ print $1 }')
+if [[ -z $expected || $expected != "$actual" ]]; then
+	printf 'publish: downloaded macOS archive does not match SHA256SUMS\n' >&2
+	exit 1
+fi
+
+remote_archive="/tmp/aedicule-$tag-$$.zip"
+if ! scp "${ssh_options[@]}" "$stage/$archive_name" "$mac_target:$remote_archive"; then
+	printf 'publish: could not copy the macOS archive to %s\n' "$mac_target" >&2
+	exit 1
+fi
+
+if ! ssh "${ssh_options[@]}" "$mac_target" bash -s -- "$remote_archive" <<'REMOTE'
+set -u
+
+archive=$1
+stage=$(mktemp -d "${TMPDIR:-/tmp}/aedicule-publish.XXXXXX") || exit 1
+cleanup() {
+	rm -rf -- "$stage"
+	rm -f -- "$archive"
+}
+trap cleanup EXIT
+
+ditto -x -k "$archive" "$stage" || exit 1
+app="$stage/Aedicule/Aedicule.app"
+executable="$app/Contents/MacOS/aedicule"
+if [[ ! -d $app || ! -x $executable ]]; then
+	printf 'publish: macOS archive does not contain Aedicule.app\n' >&2
+	exit 1
+fi
+
+if ! codesign --verify --deep --strict "$app" >/dev/null 2>&1; then
+	codesign --force --sign - "$executable" || exit 1
+	codesign --force --sign - "$app" || exit 1
+fi
+codesign --verify --deep --strict --verbose=2 "$app" || exit 1
+
+applications="$HOME/Applications"
+destination="$applications/Aedicule.app"
+mkdir -p "$applications" "$HOME/.Trash" || exit 1
+incoming_root=$(mktemp -d "$applications/.aedicule-install.XXXXXX") || exit 1
+incoming="$incoming_root/Aedicule.app"
+if ! ditto --hfsCompression "$app" "$incoming"; then
+	rm -rf -- "$incoming_root"
+	exit 1
+fi
+if [[ -e $destination ]]; then
+	backup="$HOME/.Trash/Aedicule.app.$(date -u +%Y%m%dT%H%M%SZ).$$"
+	if ! mv "$destination" "$backup"; then
+		rm -rf -- "$incoming_root"
+		exit 1
+	fi
+fi
+if ! mv "$incoming" "$destination"; then
+	if [[ -n ${backup:-} && -e $backup && ! -e $destination ]]; then
+		mv "$backup" "$destination" 2>/dev/null || true
+	fi
+	rm -rf -- "$incoming_root"
+	exit 1
+fi
+rmdir "$incoming_root" 2>/dev/null || true
+printf 'Installed %s\n' "$destination"
+REMOTE
+then
+	printf 'publish: public release succeeded, but Mac installation failed\n' >&2
+	exit 1
+fi
+
+printf 'Mac test install complete: ~/Applications/Aedicule.app\n'

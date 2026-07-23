@@ -1,0 +1,313 @@
+#!/usr/bin/env bash
+
+set -u
+
+root=$(cd "$(dirname "$0")/../.." && pwd -P)
+work="$TMPDIR/aedicule-publish-test-$$"
+failures=0
+bash_executable=$(command -v bash)
+
+mkdir -p "$work"
+trap 'rm -rf -- "$work"' EXIT
+
+fail() {
+	printf 'publish contract: %s\n' "$1" >&2
+	failures=$((failures + 1))
+}
+
+require_log() {
+	local log=$1 needle=$2 description=$3
+	if ! rg -F -- "$needle" "$log" >/dev/null 2>&1; then
+		fail "$description"
+	fi
+}
+
+reject_log() {
+	local log=$1 needle=$2 description=$3
+	if rg -F -- "$needle" "$log" >/dev/null 2>&1; then
+		fail "$description"
+	fi
+}
+
+if [[ ! -x $root/publish ]]; then
+	fail 'top-level ./publish is missing or not executable'
+	exit "$failures"
+fi
+
+fixture="$work/repo"
+fake_bin="$work/bin"
+release_source="$work/release-source"
+log="$work/invocations"
+stdout="$work/stdout"
+stderr="$work/stderr"
+reported_application_path="~"'/Applications/Aedicule.app'
+mkdir -p "$fixture" "$fake_bin" "$release_source"
+cp "$root/publish" "$fixture/publish"
+chmod +x "$fixture/publish"
+
+cat >"$fixture/Cargo.toml" <<'EOF'
+[package]
+name = "aedicule"
+version = "0.1.1"
+EOF
+cat >"$fixture/flake.nix" <<'EOF'
+{
+	outputs = _: let
+		version = "0.1.1";
+	in {};
+}
+EOF
+
+printf '#!%s\n' "$bash_executable" >"$fixture/test"
+cat >>"$fixture/test" <<'EOF'
+printf 'test\n' >>"$AEDICULE_PUBLISH_TEST_LOG"
+exit "${AEDICULE_TEST_SUITE_STATUS:-0}"
+EOF
+printf '#!%s\n' "$bash_executable" >"$fixture/build_all"
+cat >>"$fixture/build_all" <<'EOF'
+printf 'build_all\n' >>"$AEDICULE_PUBLISH_TEST_LOG"
+status=${AEDICULE_BUILD_ALL_STATUS:-0}
+if (( status != 0 )); then exit "$status"; fi
+mkdir -p result-all
+for target in web macos-aarch64 linux-aarch64 windows-aarch64 linux-x86_64 windows-x86_64; do
+	case $target in
+		linux-*) extension=tar.gz ;;
+		*) extension=zip ;;
+	esac
+	printf '%s\n' "$target" >"result-all/aedicule-0.1.1-$target.$extension"
+done
+(
+	cd result-all || exit 1
+	sha256sum aedicule-0.1.1-* >SHA256SUMS
+)
+EOF
+chmod +x "$fixture/test" "$fixture/build_all"
+
+printf 'mac archive\n' >"$release_source/aedicule-0.1.1-macos-aarch64.zip"
+(
+	cd "$release_source" || exit 1
+	sha256sum aedicule-0.1.1-macos-aarch64.zip >SHA256SUMS
+)
+
+printf '#!%s\n' "$bash_executable" >"$fake_bin/git"
+cat >>"$fake_bin/git" <<'EOF'
+printf 'git' >>"$AEDICULE_PUBLISH_TEST_LOG"
+printf '\t%s' "$@" >>"$AEDICULE_PUBLISH_TEST_LOG"
+printf '\n' >>"$AEDICULE_PUBLISH_TEST_LOG"
+
+case "${1:-}" in
+	fetch)
+		exit 0
+		;;
+	rev-parse)
+		case "${2:-}" in
+			HEAD|refs/remotes/origin/yolo) printf '%s\n' "${AEDICULE_TEST_REV:-1111111111111111111111111111111111111111}" ;;
+			*) exit 2 ;;
+		esac
+		;;
+	diff)
+		if [[ ${AEDICULE_TEST_DIRTY:-0} == 1 ]]; then exit 1; fi
+		exit 0
+		;;
+	tag)
+		if [[ ${2:-} == --list ]]; then
+			if [[ ${AEDICULE_TEST_TAG_EXISTS:-0} == 1 ]]; then printf '%s\n' "${3:-v0.1.1}"; fi
+			exit 0
+		fi
+		exit 0
+		;;
+	rev-list)
+		printf '%s\n' "${AEDICULE_TEST_TAG_REV:-${AEDICULE_TEST_REV:-1111111111111111111111111111111111111111}}"
+		;;
+	push)
+		exit 0
+		;;
+	*)
+		exit 2
+		;;
+esac
+EOF
+
+printf '#!%s\n' "$bash_executable" >"$fake_bin/gh"
+cat >>"$fake_bin/gh" <<'EOF'
+printf 'gh' >>"$AEDICULE_PUBLISH_TEST_LOG"
+printf '\t%s' "$@" >>"$AEDICULE_PUBLISH_TEST_LOG"
+printf '\n' >>"$AEDICULE_PUBLISH_TEST_LOG"
+
+if [[ ${1:-} == run && ${2:-} == list ]]; then
+	printf '4242\n'
+	exit 0
+fi
+if [[ ${1:-} == run && ${2:-} == watch ]]; then
+	exit "${AEDICULE_TEST_RELEASE_STATUS:-0}"
+fi
+if [[ ${1:-} == release && ${2:-} == view ]]; then
+	if [[ ${AEDICULE_TEST_RELEASE_VIEW_FAIL_ONCE:-0} == 1 \
+			&& ! -e $AEDICULE_PUBLISH_TEST_VIEW_SENTINEL ]]; then
+		: >"$AEDICULE_PUBLISH_TEST_VIEW_SENTINEL"
+		exit 1
+	fi
+	printf 'https://github.example/aedicule/releases/tag/%s\n' "${3:-unknown}"
+	exit "${AEDICULE_TEST_RELEASE_VIEW_STATUS:-0}"
+fi
+if [[ ${1:-} == release && ${2:-} == download ]]; then
+	directory=
+	shift 3
+	while (( $# != 0 )); do
+		case $1 in
+			--dir) directory=$2; shift 2 ;;
+			--pattern) shift 2 ;;
+			--clobber) shift ;;
+			*) shift ;;
+		esac
+	done
+	mkdir -p "$directory"
+	cp "$AEDICULE_TEST_RELEASE_SOURCE/aedicule-0.1.1-macos-aarch64.zip" "$directory/"
+	cp "$AEDICULE_TEST_RELEASE_SOURCE/SHA256SUMS" "$directory/"
+	if [[ ${AEDICULE_TEST_CORRUPT_DOWNLOAD:-0} == 1 ]]; then
+		printf 'corrupt\n' >>"$directory/aedicule-0.1.1-macos-aarch64.zip"
+	fi
+	exit 0
+fi
+exit 2
+EOF
+
+printf '#!%s\n' "$bash_executable" >"$fake_bin/ssh"
+cat >>"$fake_bin/ssh" <<'EOF'
+printf 'ssh' >>"$AEDICULE_PUBLISH_TEST_LOG"
+printf '\t%s' "$@" >>"$AEDICULE_PUBLISH_TEST_LOG"
+printf '\n' >>"$AEDICULE_PUBLISH_TEST_LOG"
+if [[ ${!#} == true ]]; then
+	if [[ ${AEDICULE_TEST_MAC_REACHABLE:-0} == 1 ]]; then exit 0; else exit 255; fi
+fi
+cat >/dev/null
+exit "${AEDICULE_TEST_MAC_INSTALL_STATUS:-0}"
+EOF
+
+printf '#!%s\n' "$bash_executable" >"$fake_bin/scp"
+cat >>"$fake_bin/scp" <<'EOF'
+printf 'scp' >>"$AEDICULE_PUBLISH_TEST_LOG"
+printf '\t%s' "$@" >>"$AEDICULE_PUBLISH_TEST_LOG"
+printf '\n' >>"$AEDICULE_PUBLISH_TEST_LOG"
+exit "${AEDICULE_TEST_SCP_STATUS:-0}"
+EOF
+chmod +x "$fake_bin/git" "$fake_bin/gh" "$fake_bin/ssh" "$fake_bin/scp"
+
+run_publish() {
+	: >"$log"
+	: >"$stdout"
+	: >"$stderr"
+	rm -f -- "$work/release-view-seen"
+	(
+		cd "$fixture" || exit 1
+		env PATH="$fake_bin:$PATH" \
+			AEDICULE_PUBLISH_TEST_LOG="$log" \
+			AEDICULE_TEST_RELEASE_SOURCE="$release_source" \
+			AEDICULE_PUBLISH_TEST_VIEW_SENTINEL="$work/release-view-seen" \
+			"$@" ./publish
+	) >"$stdout" 2>"$stderr"
+	return $?
+}
+
+"$fixture/publish" --help >"$stdout" 2>"$stderr"
+status=$?
+if (( status != 0 )) || ! rg -F 'GitHub Release' "$stdout" >/dev/null \
+		|| ! rg -F "$reported_application_path" "$stdout" >/dev/null \
+		|| ! rg -F -- '--skip-mac' "$stdout" >/dev/null; then
+	fail '--help does not describe publication and optional Mac installation'
+fi
+
+run_publish AEDICULE_TEST_TAG_EXISTS=0 AEDICULE_TEST_MAC_REACHABLE=0
+status=$?
+if (( status != 0 )); then
+	fail 'new clean version did not publish when the Mac was unavailable'
+	if [[ -s $stderr ]]; then
+		printf '%s\n' '--- first-publication diagnostics ---' >&2
+		cat "$stderr" >&2
+	fi
+fi
+require_log "$log" $'test' 'new publication skipped the complete test suite'
+require_log "$log" $'build_all' 'new publication skipped the six-target build'
+require_log "$log" $'git\ttag\t-a\tv0.1.1' 'new publication did not create the annotated version tag'
+require_log "$log" $'git\tpush\torigin\tv0.1.1' 'new publication did not push the version tag'
+require_log "$log" $'gh\trun\twatch\t4242\t--exit-status' 'new publication did not wait for the release workflow'
+require_log "$log" $'gh\trelease\tview\tv0.1.1' 'new publication did not verify the public release'
+reject_log "$log" $'scp\t' 'unreachable Mac unexpectedly received an artifact'
+if ! rg -F 'Mac installation skipped' "$stderr" >/dev/null; then
+	fail 'unreachable Mac was not reported as a successful publication skip'
+fi
+
+run_publish AEDICULE_TEST_DIRTY=1 AEDICULE_TEST_TAG_EXISTS=0
+status=$?
+if (( status == 0 )); then
+	fail 'tracked dirty tree was accepted for publication'
+fi
+reject_log "$log" $'test' 'dirty-tree rejection occurred after tests started'
+reject_log "$log" $'git\tpush' 'dirty tree pushed a version tag'
+
+run_publish AEDICULE_TEST_TAG_EXISTS=1 AEDICULE_TEST_MAC_REACHABLE=0
+status=$?
+if (( status != 0 )); then
+	fail 'existing exact tag/release could not resume idempotently'
+fi
+reject_log "$log" $'test' 'resumed publication reran the complete suite'
+reject_log "$log" $'build_all' 'resumed publication rebuilt all targets'
+reject_log "$log" $'git\ttag\t-a' 'resumed publication recreated its tag'
+reject_log "$log" $'gh\trun\twatch' 'completed release unnecessarily entered a workflow watch'
+require_log "$log" $'gh\trelease\tview\tv0.1.1' 'resumed publication did not verify its release'
+
+run_publish AEDICULE_TEST_TAG_EXISTS=1 AEDICULE_TEST_RELEASE_VIEW_FAIL_ONCE=1 \
+	AEDICULE_TEST_MAC_REACHABLE=0
+status=$?
+if (( status != 0 )); then
+	fail 'local exact tag with an interrupted push could not resume publication'
+fi
+reject_log "$log" $'test' 'interrupted-tag recovery reran the complete suite'
+reject_log "$log" $'build_all' 'interrupted-tag recovery rebuilt all targets'
+require_log "$log" $'git\tpush\torigin\tv0.1.1' 'interrupted-tag recovery did not retry the idempotent tag push'
+require_log "$log" $'gh\trun\twatch\t4242\t--exit-status' 'interrupted-tag recovery did not wait for its release workflow'
+
+run_publish AEDICULE_TEST_TAG_EXISTS=1 \
+	AEDICULE_TEST_TAG_REV=2222222222222222222222222222222222222222
+status=$?
+if (( status == 0 )); then
+	fail 'version tag pointing at another commit was accepted'
+fi
+reject_log "$log" $'gh\trelease\tview' 'mismatched version tag reached release verification'
+
+run_publish AEDICULE_TEST_TAG_EXISTS=1 AEDICULE_TEST_MAC_REACHABLE=1
+status=$?
+if (( status != 0 )); then
+	fail 'reachable Mac did not receive the verified release archive'
+fi
+require_log "$log" $'gh\trelease\tdownload\tv0.1.1' 'Mac deployment did not download the public release'
+require_log "$log" $'scp\t-o\tBatchMode=yes' 'Mac deployment did not copy the verified archive over SSH'
+require_log "$log" $'ssh\t-o\tBatchMode=yes' 'Mac deployment did not run its remote installer'
+if ! rg -F "$reported_application_path" "$stdout" >/dev/null; then
+	fail 'successful Mac deployment did not report the installed path'
+fi
+# These are literal source fragments; the dollar-prefixed names must not expand.
+# shellcheck disable=SC2016
+for required_remote_policy in \
+	'codesign --verify --deep --strict' \
+	'codesign --force --sign - "$executable"' \
+	'ditto --hfsCompression "$app" "$incoming"' \
+	'mv "$destination" "$backup"' \
+	'mv "$backup" "$destination"'; do
+	if ! rg -F -- "$required_remote_policy" "$root/publish" >/dev/null; then
+		fail "Mac installer lacks required policy: $required_remote_policy"
+	fi
+done
+
+run_publish AEDICULE_TEST_TAG_EXISTS=1 AEDICULE_TEST_MAC_REACHABLE=1 \
+	AEDICULE_TEST_CORRUPT_DOWNLOAD=1
+status=$?
+if (( status == 0 )); then
+	fail 'corrupt downloaded Mac archive was accepted'
+fi
+reject_log "$log" $'scp\t' 'corrupt Mac archive crossed the SSH boundary'
+
+if (( failures > 255 )); then
+	exit 255
+fi
+exit "$failures"

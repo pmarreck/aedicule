@@ -89,6 +89,7 @@ run_check ./tests/cli/document_packages
 run_check ./tests/cli/demo_snapshots
 run_check ./tests/cli/macos_reproducibility
 run_check ./tests/cli/reproducible_releases
+run_check ./tests/cli/publish
 run_check ./tests/cli/web_i18n
 run_check ./tests/cli/github_pages
 run_check ./tests/cli/ci_acceleration

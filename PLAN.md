@@ -62,7 +62,14 @@
     drawable WebGPU canvas in headless Chrome.
     (2026-07-22 11:30 EDT: Ulam Flower and Vibesteroids both passed the full
     synthetic mouse, keyboard, and multi-touch probe.)
-  - [ ] Ship and verify the public gallery, then link it from the README.
+  - [x] Ship and verify the public gallery, both direct demos, the package
+    catalog/FLAC, and the downloadable `.aed`, then link them from the README.
+    (2026-07-22 23:45 EDT; public HTTP and headless WebGPU/input probes passed.)
+  - [ ] Upgrade GitHub's Pages actions to the current Node-24 majors:
+    `configure-pages@v6`, `upload-pages-artifact@v5`, and `deploy-pages@v5`.
+    The v0.1.1 workflow passed, but GitHub annotated the older majors as
+    Node-20 compatibility shims. (Official release metadata checked
+    2026-07-22 23:23 EDT.)
   - Curiosity poke: does mobile Safari accept the service-worker-controlled
     reload and expose both SharedArrayBuffer and a usable WebGPU adapter?
 
@@ -87,7 +94,7 @@
     expose both the identical application as a direct Pages download and its
     exact package-backed WAT/FLAC as the playable browser guest.
     (2026-07-22 22:43 EDT)
-  - [ ] Produce deterministic archives with manifests/checksums and publish
+  - [x] Produce deterministic archives with manifests/checksums and publish
     them as GitHub Release assets.
     - [x] Audit v0.1.0 with independent Nix rebuilds; remove compile-time
       `ahash` seeds from Linux, canonicalize/sign the Mach-O UUID from content,
@@ -99,9 +106,25 @@
     - [x] Pass that gate on the complete v0.1.1 tree for web, macOS/ARM64,
       Linux/ARM64, Windows/ARM64, Linux/x86_64, and Windows/x86_64.
       (2026-07-22 09:24 EDT)
-    - [ ] Publish a corrective v0.1.1 release without erasing the defective
-      v0.1.0 audit trail.
-  - [ ] Expand Mechatron Prime and GitHub Actions gates to falsify the complete
+    - [x] Publish corrective v0.1.1 without erasing the defective v0.1.0 audit
+      trail. All six release archives independently reproduced, their uploaded
+      digests match the local checksum set, and manifests were published at
+      <https://github.com/pmarreck/aedicule/releases/tag/v0.1.1>.
+      (2026-07-23 00:23 EDT.)
+    - [x] Add a resumable `./publish` adapter that binds a tracked-clean pushed
+      revision to its source version/tag, runs local gates, watches the
+      independently reproduced GitHub Release, verifies its macOS checksum,
+      and optionally installs an ad-hoc-signed private test copy on Peter's
+      SSH-reachable tailnet Mac while preserving the previous app in Trash.
+      Focused red/green behavior, `./test`, the isolated Nix test derivation,
+      `./build`, `./build_all`, ShellCheck/actionlint, and all six artifact
+      checksums passed. (2026-07-23 01:26 EDT.)
+    - [ ] Make the public macOS archive Gatekeeper-clean by adapting
+      `../validate_gui`'s external release-keychain, Developer ID hardened
+      runtime/timestamp, Apple notarization, stapling, `spctl`, and receipt
+      contract. The private tailnet test install remains ad-hoc signed until
+      this separate credentialed publication gate is implemented.
+  - [x] Expand Mechatron Prime and GitHub Actions gates to falsify the complete
     target/archive matrix, then watch both after pushing.
     - [x] Pass `./test`, the isolated Nix test derivation, `./build`,
       `./build_all`, every emitted checksum, and independent realization of
@@ -134,6 +157,11 @@
       than scanning ambient system/profile roots. The isolated Nix gate, real
       packaged-FLAC browser probe, `./build`, six-target `./build_all`, and all
       emitted checksums passed. (2026-07-22 22:43 EDT)
+    - [x] Remove Nix's `DBUS_SESSION_BUS_ADDRESS=disabled:` sentinel only from
+      the headless Chrome process while preserving real Unix/abstract/TCP
+      addresses. The pure set-classifier and real packaged-FLAC browser probe
+      passed after the inherited sentinel had prevented DevTools startup.
+      (2026-07-23 00:43 EDT.)
   - [ ] Re-run the browser startup probe and obtain Peter's iPhone visual
     acceptance before describing the web demos as playable.
     (Headless Ulam Flower and Vibesteroids startup/input probes passed
