@@ -12,7 +12,7 @@
 
 	outputs = { self, nixpkgs, fenix, crane }:
 		let
-			version = "0.1.2";
+			version = "0.1.3";
 			systems = [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" ];
 			forAllSystems = nixpkgs.lib.genAttrs systems;
 			pkgsFor = system: import nixpkgs {
@@ -201,7 +201,7 @@
 					applicationCargoDeps = pkgs.rustPlatform.fetchCargoVendor {
 						name = "aedicule-cargo-deps";
 						src = cargoDependencySource;
-						hash = "sha256-YpEDpGKBsUYxjM7DATMpnBon+UOdpWc1nLXRIjVGes8=";
+						hash = "sha256-t+ANTsHd1jPMyXy32DYcWMZhlKYtkoCfDWhK3l0qrzI=";
 					};
 					nativeCommonArgs = {
 						pname = "aedicule";

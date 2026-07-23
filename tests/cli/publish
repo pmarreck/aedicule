@@ -290,8 +290,12 @@ fi
 # shellcheck disable=SC2016
 for required_remote_policy in \
 	'codesign --verify --deep --strict' \
+	'chmod -R u+w "$app"' \
 	'codesign --force --sign - "$executable"' \
 	'ditto --hfsCompression "$app" "$incoming"' \
+	'chmod -R u+w "$stage" 2>/dev/null || true' \
+	'/bin/rm -rf -- "$stage"' \
+	'/bin/rm -f -- "$archive"' \
 	'mv "$destination" "$backup"' \
 	'mv "$backup" "$destination"'; do
 	if ! rg -F -- "$required_remote_policy" "$root/publish" >/dev/null; then

@@ -254,8 +254,9 @@ set -u
 archive=$1
 stage=$(mktemp -d "${TMPDIR:-/tmp}/aedicule-publish.XXXXXX") || exit 1
 cleanup() {
-	rm -rf -- "$stage"
-	rm -f -- "$archive"
+	chmod -R u+w "$stage" 2>/dev/null || true
+	/bin/rm -rf -- "$stage"
+	/bin/rm -f -- "$archive"
 }
 trap cleanup EXIT
 
@@ -268,6 +269,7 @@ if [[ ! -d $app || ! -x $executable ]]; then
 fi
 
 if ! codesign --verify --deep --strict "$app" >/dev/null 2>&1; then
+	chmod -R u+w "$app" || exit 1
 	codesign --force --sign - "$executable" || exit 1
 	codesign --force --sign - "$app" || exit 1
 fi
@@ -279,13 +281,13 @@ mkdir -p "$applications" "$HOME/.Trash" || exit 1
 incoming_root=$(mktemp -d "$applications/.aedicule-install.XXXXXX") || exit 1
 incoming="$incoming_root/Aedicule.app"
 if ! ditto --hfsCompression "$app" "$incoming"; then
-	rm -rf -- "$incoming_root"
+	/bin/rm -rf -- "$incoming_root"
 	exit 1
 fi
 if [[ -e $destination ]]; then
 	backup="$HOME/.Trash/Aedicule.app.$(date -u +%Y%m%dT%H%M%SZ).$$"
 	if ! mv "$destination" "$backup"; then
-		rm -rf -- "$incoming_root"
+		/bin/rm -rf -- "$incoming_root"
 		exit 1
 	fi
 fi
@@ -293,7 +295,7 @@ if ! mv "$incoming" "$destination"; then
 	if [[ -n ${backup:-} && -e $backup && ! -e $destination ]]; then
 		mv "$backup" "$destination" 2>/dev/null || true
 	fi
-	rm -rf -- "$incoming_root"
+	/bin/rm -rf -- "$incoming_root"
 	exit 1
 fi
 rmdir "$incoming_root" 2>/dev/null || true

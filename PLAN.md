@@ -119,6 +119,18 @@
       Focused red/green behavior, `./test`, the isolated Nix test derivation,
       `./build`, `./build_all`, ShellCheck/actionlint, and all six artifact
       checksums passed. (2026-07-23 01:26 EDT.)
+      - [x] Dogfood both new-publication and existing-release resume paths on
+        immutable v0.1.2; all six independently rebuilt GitHub assets and both
+        CI systems passed. The first live Mac install then failed safely before
+        touching `~/Applications`: Nix's extracted app was read-only, and the
+        remote shell's `rm` resolves to the interactive rm-safe adapter.
+        (2026-07-23 03:08 EDT.)
+      - [x] Reproduce those two Mac-only assumptions under the publisher CLI
+        test, make only the private staging tree writable before ad-hoc signing,
+        and use `/bin/rm` only for publisher-owned remote temporary paths.
+        `./test`, the isolated Nix check, `./build`, `./build_all`, static
+        analysis, and all six v0.1.3 archive checksums pass before commit.
+        (2026-07-23 03:44 EDT.)
     - [ ] Make the public macOS archive Gatekeeper-clean by adapting
       `../validate_gui`'s external release-keychain, Developer ID hardened
       runtime/timestamp, Apple notarization, stapling, `spctl`, and receipt
