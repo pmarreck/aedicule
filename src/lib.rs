@@ -57,7 +57,9 @@ pub mod gpui_canvas;
 #[cfg(feature = "portable-runtime")]
 pub mod web;
 
-pub use wat_abi::{WAT_ABI_IMPORTS, WatAbiImport, wat_abi_markdown};
+pub use wat_abi::{
+    LLM_GUIDE_VERSION, WAT_ABI_IMPORTS, WatAbiImport, guide_for_llms_markdown, wat_abi_markdown,
+};
 
 pub const ABI_MAJOR: i32 = wat_abi::ABI_MAJOR;
 pub const ABI_MINOR: i32 = wat_abi::ABI_MINOR;
@@ -1752,6 +1754,28 @@ pub enum Key {
     H = 10,
     Escape = 11,
     F1 = 12,
+}
+
+impl Key {
+    /// Normalizes GPUI's cross-platform physical key names into Aedicule's
+    /// stable guest IDs so native and browser adapters cannot drift.
+    pub fn from_gpui_name(name: &str) -> Option<Self> {
+        match name {
+            "left" => Some(Self::ArrowLeft),
+            "right" => Some(Self::ArrowRight),
+            "up" => Some(Self::ArrowUp),
+            "space" | " " => Some(Self::Space),
+            "p" => Some(Self::P),
+            "r" => Some(Self::R),
+            "f" => Some(Self::F),
+            "k" => Some(Self::K),
+            "b" => Some(Self::B),
+            "h" => Some(Self::H),
+            "escape" => Some(Self::Escape),
+            "f1" => Some(Self::F1),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

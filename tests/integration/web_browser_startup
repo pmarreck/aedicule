@@ -21,14 +21,16 @@ const EXPECTED_STAGES = [
 	"settled",
 ];
 
-const HELP = `usage: web_browser_startup [--chrome PATH] [--timeout-ms N] [--require-audio-request] URL
-       web_browser_startup [--chrome PATH] [--timeout-ms N] [--require-audio-request] --static-root PATH
+const HELP = `usage: web_browser_startup [--chrome PATH] [--timeout-ms N] [--require-audio-request] [--require-key-delivery] [--require-controls] URL
+       web_browser_startup [--chrome PATH] [--timeout-ms N] [--require-audio-request] [--require-key-delivery] [--require-controls] --static-root PATH
 
 Launch a headless Chromium browser, stream Aedicule's structured startup
 timeline, and reject browser exceptions or a missing/1x1 GPUI canvas.
 
 --static-root serves PATH without isolation headers, matching GitHub Pages.
 --require-audio-request rejects a guest that never reaches the Web Audio adapter.
+--require-key-delivery rejects a static guest whose frame does not change after ArrowLeft.
+--require-controls requires AVP buttons/sliders and proves their events reach the guest.
 
 Environment:
   AEDICULE_CHROME               Chromium-family executable (overridden by --chrome)
@@ -39,6 +41,8 @@ function parseArguments(arguments_) {
 	let chrome;
 	let timeoutMs = 15_000;
 	let requireAudioRequest = false;
+	let requireControls = false;
+	let requireKeyDelivery = false;
 	let staticRoot;
 	let url;
 	for (let index = 0; index < arguments_.length; index += 1) {
@@ -67,6 +71,14 @@ function parseArguments(arguments_) {
 			requireAudioRequest = true;
 			continue;
 		}
+		if (argument === "--require-controls") {
+			requireControls = true;
+			continue;
+		}
+		if (argument === "--require-key-delivery") {
+			requireKeyDelivery = true;
+			continue;
+		}
 		if (argument.startsWith("-")) {
 			throw new Error(`unknown option: ${argument}`);
 		}
@@ -84,6 +96,8 @@ function parseArguments(arguments_) {
 	return {
 		chrome,
 		requireAudioRequest,
+		requireControls,
+		requireKeyDelivery,
 		staticRoot,
 		timeoutMs,
 		url: url === undefined ? undefined : new URL(url).href,
@@ -344,6 +358,11 @@ async function pageSnapshot(protocol) {
 			serviceWorkerControlled: navigator.serviceWorker?.controller !== null,
 			status: document.getElementById("aedicule-startup-status")?.textContent ?? null,
 			audioRequestCount: globalThis.__AEDICULE_AUDIO_REQUEST_COUNT ?? 0,
+			deliveredEventCount: globalThis.__AEDICULE_DELIVERED_EVENT_COUNT ?? 0,
+			deliveredEventCounts: globalThis.__AEDICULE_DELIVERED_EVENT_COUNTS
+				?? { total: 0, controls: 0, menuActions: 0, pointer: 0 },
+			frameBackground: globalThis.__AEDICULE_FRAME_BACKGROUND ?? null,
+			ui: globalThis.__AEDICULE_UI_SNAPSHOT ?? null,
 			canvases: Array.from(document.querySelectorAll("canvas"), canvas => {
 				const bounds = canvas.getBoundingClientRect();
 				return { bufferWidth: canvas.width, bufferHeight: canvas.height,
@@ -379,6 +398,8 @@ async function synthesizeInput(protocol, snapshot, verboseEvents) {
 		["secondary-down", "Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "right", buttons: 2, clickCount: 1 }],
 		["secondary-up", "Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "right", buttons: 0, clickCount: 1 }],
 		["two-axis-wheel", "Input.dispatchMouseEvent", { type: "mouseWheel", x, y, deltaX: 12.5, deltaY: -24.5 }],
+	];
+	const keyEvents = [
 		["arrow-left-down", "Input.dispatchKeyEvent", { type: "rawKeyDown", code: "ArrowLeft", key: "ArrowLeft", windowsVirtualKeyCode: 37, nativeVirtualKeyCode: 37 }],
 		["arrow-left-up", "Input.dispatchKeyEvent", { type: "keyUp", code: "ArrowLeft", key: "ArrowLeft", windowsVirtualKeyCode: 37, nativeVirtualKeyCode: 37 }],
 	];
@@ -431,7 +452,19 @@ async function synthesizeInput(protocol, snapshot, verboseEvents) {
 		expression: "new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
 		awaitPromise: true,
 	});
+	const beforeKey = await pageSnapshot(protocol);
+	for (const [name, method, params] of keyEvents) {
+		if (verboseEvents) {
+			process.stdout.write(`${JSON.stringify({ type: "input-dispatch", name, method, params })}\n`);
+		}
+		await protocol.send(method, params);
+	}
+	await protocol.send("Runtime.evaluate", {
+		expression: "new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+		awaitPromise: true,
+	});
 	const after = await screenshotDigest(protocol);
+	const afterKey = await pageSnapshot(protocol);
 	const probe = await protocol.send("Runtime.evaluate", {
 		expression: "globalThis.__AEDICULE_INPUT_PROBE",
 		returnByValue: true,
@@ -454,12 +487,100 @@ async function synthesizeInput(protocol, snapshot, verboseEvents) {
 		]),
 	);
 	return {
-		dispatched: events.length + touchEvents.length,
+		dispatched: events.length + keyEvents.length + touchEvents.length,
+		keyFrameChanged: beforeKey.frameBackground !== afterKey.frameBackground,
 		observed,
 		mousePointerPhases,
 		touchContacts,
 		touchPhases,
 		visualChanged: before !== after,
+	};
+}
+
+async function waitForSemanticEvent(protocol, field, priorCount) {
+	const result = await protocol.send("Runtime.evaluate", {
+		expression: `(async () => {
+			for (let frame = 0; frame < 30; frame += 1) {
+				const counts = globalThis.__AEDICULE_DELIVERED_EVENT_COUNTS;
+				if ((counts?.[${JSON.stringify(field)}] ?? 0) > ${priorCount}) return true;
+				await new Promise(resolve => requestAnimationFrame(resolve));
+			}
+			return false;
+		})()`,
+		awaitPromise: true,
+		returnByValue: true,
+	});
+	return result.result.value === true;
+}
+
+async function dispatchControlClick(protocol, bounds) {
+	const x = Math.round(bounds.x + bounds.width / 2);
+	const y = Math.round(bounds.y + bounds.height / 2);
+	await protocol.send("Input.dispatchMouseEvent", {
+		type: "mouseMoved", x, y, button: "none", buttons: 0,
+	});
+	await protocol.send("Input.dispatchMouseEvent", {
+		type: "mousePressed", x, y, button: "left", buttons: 1, clickCount: 1,
+	});
+	await protocol.send("Input.dispatchMouseEvent", {
+		type: "mouseReleased", x, y, button: "left", buttons: 0, clickCount: 1,
+	});
+}
+
+async function dispatchSliderDrag(protocol, bounds) {
+	const startX = Math.round(bounds.x + bounds.width * 0.25);
+	const endX = Math.round(bounds.x + bounds.width * 0.75);
+	const y = Math.round(bounds.y + bounds.height * 0.8);
+	await protocol.send("Input.dispatchMouseEvent", {
+		type: "mouseMoved", x: startX, y, button: "none", buttons: 0,
+	});
+	await protocol.send("Input.dispatchMouseEvent", {
+		type: "mousePressed", x: startX, y, button: "left", buttons: 1, clickCount: 1,
+	});
+	await protocol.send("Input.dispatchMouseEvent", {
+		type: "mouseMoved", x: endX, y, button: "left", buttons: 1,
+	});
+	await protocol.send("Input.dispatchMouseEvent", {
+		type: "mouseReleased", x: endX, y, button: "left", buttons: 0, clickCount: 1,
+	});
+}
+
+async function exerciseControls(protocol, snapshot) {
+	const button = snapshot.ui?.buttons?.[0];
+	const slider = snapshot.ui?.sliders?.[0];
+	if (button === undefined || slider === undefined) {
+		return {
+			buttonDelivered: false,
+			buttons: snapshot.ui?.buttons?.length ?? 0,
+			pointerLeaked: false,
+			sliderDelivered: false,
+			sliders: snapshot.ui?.sliders?.length ?? 0,
+		};
+	}
+
+	const beforeButton = snapshot.deliveredEventCounts;
+	await dispatchControlClick(protocol, button);
+	const buttonDelivered = await waitForSemanticEvent(
+		protocol, "menuActions", beforeButton.menuActions,
+	);
+	const afterButton = await pageSnapshot(protocol);
+	const buttonPointerLeaked =
+		afterButton.deliveredEventCounts.pointer !== beforeButton.pointer;
+
+	await dispatchSliderDrag(protocol, slider);
+	const sliderDelivered = await waitForSemanticEvent(
+		protocol, "controls", afterButton.deliveredEventCounts.controls,
+	);
+	const afterSlider = await pageSnapshot(protocol);
+	const sliderPointerLeaked =
+		afterSlider.deliveredEventCounts.pointer !== afterButton.deliveredEventCounts.pointer;
+
+	return {
+		buttonDelivered,
+		buttons: snapshot.ui.buttons.length,
+		pointerLeaked: buttonPointerLeaked || sliderPointerLeaked,
+		sliderDelivered,
+		sliders: snapshot.ui.sliders.length,
 	};
 }
 
@@ -591,6 +712,15 @@ async function inspect(options) {
 			diagnostics: inputDiagnostics.length,
 		})}\n`);
 		const finalSnapshot = await pageSnapshot(protocol);
+		const controlSummary = options.requireControls
+			? await exerciseControls(protocol, finalSnapshot)
+			: undefined;
+		if (controlSummary !== undefined) {
+			process.stdout.write(`${JSON.stringify({
+				type: "control-summary",
+				...controlSummary,
+			})}\n`);
+		}
 
 		const missingStages = EXPECTED_STAGES.filter(stage => !stages.has(stage));
 		const drawableCanvas = finalSnapshot.canvases.some(canvas =>
@@ -622,6 +752,20 @@ async function inspect(options) {
 		if (finalSnapshot.status !== null) failures.push(`startup status remained visible: ${finalSnapshot.status}`);
 		if (options.requireAudioRequest && finalSnapshot.audioRequestCount < 1) {
 			failures.push("guest produced no sampled-audio request at the Web Audio adapter");
+		}
+		if (options.requireKeyDelivery && !inputSummary.keyFrameChanged) {
+			failures.push("ArrowLeft reached the guest but produced no committed frame change");
+		}
+		if (options.requireControls && (
+			controlSummary.buttons < 1
+			|| controlSummary.sliders < 1
+			|| !controlSummary.buttonDelivered
+			|| !controlSummary.sliderDelivered
+			|| controlSummary.pointerLeaked
+		)) {
+			failures.push(
+				"AVP controls were absent, failed semantic delivery, or leaked into canvas input",
+			);
 		}
 		if (missingInput.length > 0) {
 			failures.push(`synthetic input was not observed: ${missingInput.map(([type]) => type).join(", ")}`);

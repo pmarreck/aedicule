@@ -156,7 +156,10 @@ fn native_cli_serves_an_aed_through_the_bundled_web_runtime() {
             "aedicule_web.js",
             b"export default function() {}".as_slice(),
         ),
-        ("aedicule_web_bg.wasm", b"\0asm".as_slice()),
+        (
+            "aedicule_web_bg.0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef.wasm",
+            b"\0asm".as_slice(),
+        ),
     ] {
         fs::write(runtime.join(name), bytes).unwrap();
     }
@@ -187,6 +190,7 @@ fn native_cli_serves_an_aed_through_the_bundled_web_runtime() {
     assert!(response.starts_with("HTTP/1.1 200 OK\r\n"), "{response}");
     assert!(response.contains("Cross-Origin-Opener-Policy: same-origin\r\n"));
     assert!(response.contains("Cross-Origin-Embedder-Policy: require-corp\r\n"));
+    assert!(response.contains("Cache-Control: no-store\r\n"));
     assert!(response.ends_with("(module $served)"), "{response}");
 
     let mut connection = TcpStream::connect(address).unwrap();
@@ -202,6 +206,7 @@ fn native_cli_serves_an_aed_through_the_bundled_web_runtime() {
         response.contains("Content-Type: application/json; charset=utf-8\r\n"),
         "{response}"
     );
+    assert!(response.contains("Cache-Control: no-store\r\n"));
     assert!(
         response.ends_with("[\"assets/audio/sample.flac\"]\n"),
         "{response}"
@@ -220,6 +225,32 @@ fn native_cli_serves_an_aed_through_the_bundled_web_runtime() {
         response.ends_with(b"fLaC exact packaged bytes"),
         "{response:?}"
     );
+    assert!(
+        response
+            .windows(b"Cache-Control: no-store\r\n".len())
+            .any(|window| { window == b"Cache-Control: no-store\r\n" })
+    );
+
+    let mut connection = TcpStream::connect(address).unwrap();
+    connection
+        .write_all(
+            b"GET /aedicule_web_bg.0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef.wasm HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        )
+        .unwrap();
+    let mut response = Vec::new();
+    connection.read_to_end(&mut response).unwrap();
+    assert!(response.starts_with(b"HTTP/1.1 200 OK\r\n"), "{response:?}");
+    assert!(
+        response
+            .windows(b"Content-Type: application/wasm\r\n".len())
+            .any(|window| { window == b"Content-Type: application/wasm\r\n" })
+    );
+    assert!(
+        response
+            .windows(b"Cache-Control: public, max-age=31536000, immutable\r\n".len())
+            .any(|window| { window == b"Cache-Control: public, max-age=31536000, immutable\r\n" })
+    );
+    assert!(response.ends_with(b"\0asm"), "{response:?}");
 
     child.kill().unwrap();
     let status = child.wait().unwrap();

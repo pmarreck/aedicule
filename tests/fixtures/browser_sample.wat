@@ -9,6 +9,7 @@
 	(memory (export "memory") 1)
 	(data (i32.const 0) "assets/audio/satellite-destroyed.flac")
 	(global $played (mut i32) (i32.const 0))
+	(global $background (mut i32) (i32.const 0x081020ff))
 
 	(func (export "AE_abi_major") (result i32) i32.const 0)
 	(func (export "AE_abi_minor") (result i32) i32.const 1)
@@ -23,12 +24,14 @@
 			i32.const 77 f32.const 1 f32.const 1 i32.const 0 call $sample_play drop
 			i32.const 1 global.set $played
 		end
+		local.get $kind i32.const 1 i32.eq
+		if i32.const 0xd94b64ff global.set $background end
 		i32.const 0)
 	(func (export "AE_tick") (param i32) (result i32) i32.const 0)
 	(func (export "AE_tick_rate") (param i32 i32) (result i32 i32)
 		i32.const 60 i32.const 1)
 	(func (export "AE_render") (result i32)
-		i32.const 0x081020ff call $frame_begin drop
+		global.get $background call $frame_begin drop
 		call $frame_end drop
 		i32.const 0)
 	(func (export "AE_state_ptr") (result i32) i32.const 0)

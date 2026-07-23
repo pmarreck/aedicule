@@ -4,8 +4,9 @@
 use std::time::Duration;
 
 use crate::{
-    ApplicationAssets, Event, FrameOutput, Frontplane, FrontplaneError, Limits, PluginInit,
-    SimulationCall, SimulationScheduler, initialize_frontplane, wav::AUDIO_FIXED_SCALE,
+    ApplicationAssets, Event, FrameOutput, Frontplane, FrontplaneError, Limits, Metadata,
+    PluginInit, SimulationCall, SimulationScheduler, UiSnapshot, initialize_frontplane,
+    wav::AUDIO_FIXED_SCALE,
 };
 
 const MAX_TICKS_PER_BROWSER_FRAME: u32 = 8;
@@ -27,6 +28,16 @@ pub struct BrowserSamplePlayback {
     pub pitch: f32,
 }
 
+/// Separates semantic AVP delivery from raw canvas input so browser tests can
+/// prove controls neither vanish nor leak their gestures through the canvas.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct BrowserDeliveredEventCounts {
+    pub total: u64,
+    pub controls: u64,
+    pub menu_actions: u64,
+    pub pointer: u64,
+}
+
 /// Requires a non-empty WAT document supplied by the delivery bootstrap.
 ///
 /// A web bundle must never silently substitute the host's fallback guest:
@@ -45,6 +56,7 @@ pub struct BrowserRuntime {
     frontplane: Frontplane,
     scheduler: SimulationScheduler,
     frame: FrameOutput,
+    delivered_events: BrowserDeliveredEventCounts,
 }
 
 impl BrowserRuntime {
@@ -77,6 +89,7 @@ impl BrowserRuntime {
             frontplane,
             scheduler,
             frame,
+            delivered_events: BrowserDeliveredEventCounts::default(),
         })
     }
 
@@ -93,7 +106,28 @@ impl BrowserRuntime {
         let pump = self.scheduler.pump(now);
         for call in pump.calls {
             match call {
-                SimulationCall::Event(event) => self.frontplane.event(event)?,
+                SimulationCall::Event(event) => {
+                    match &event {
+                        Event::Control { .. } => {
+                            self.delivered_events.controls =
+                                self.delivered_events.controls.saturating_add(1);
+                        }
+                        Event::MenuAction(_) => {
+                            self.delivered_events.menu_actions =
+                                self.delivered_events.menu_actions.saturating_add(1);
+                        }
+                        Event::PointerMove { .. }
+                        | Event::PointerDown { .. }
+                        | Event::PointerUp { .. }
+                        | Event::PointerScroll { .. } => {
+                            self.delivered_events.pointer =
+                                self.delivered_events.pointer.saturating_add(1);
+                        }
+                        _ => {}
+                    }
+                    self.frontplane.event(event)?;
+                    self.delivered_events.total = self.delivered_events.total.saturating_add(1);
+                }
                 SimulationCall::Tick(ticks) => self.frontplane.tick(ticks)?,
             }
         }
@@ -109,6 +143,30 @@ impl BrowserRuntime {
     /// callback, keeping guest execution outside paint replay.
     pub fn frame(&self) -> &FrameOutput {
         &self.frame
+    }
+
+    /// Exposes immutable configure-time declarations to the browser adapter so
+    /// it can render the same guest-authored controls as native.
+    pub fn metadata(&self) -> &Metadata {
+        self.frontplane.metadata()
+    }
+
+    /// Exposes the last transactionally accepted UI document; browser layout
+    /// must never render a partially submitted guest revision.
+    pub fn ui_snapshot(&self) -> Option<&UiSnapshot> {
+        self.frontplane.ui_snapshot()
+    }
+
+    /// Reports guest-accepted browser events for opt-in adapter diagnostics;
+    /// DOM dispatch alone does not prove an edge crossed the WAT boundary.
+    pub fn delivered_event_count(&self) -> u64 {
+        self.delivered_events.total
+    }
+
+    /// Exposes semantic-versus-pointer delivery counters for browser adapter
+    /// diagnostics without revealing or mutating guest state.
+    pub fn delivered_event_counts(&self) -> BrowserDeliveredEventCounts {
+        self.delivered_events
     }
 
     /// Resolves transactional sample events against immutable admitted metadata
@@ -282,6 +340,8 @@ mod tests {
 
         assert!(!runtime.advance_to(Duration::from_millis(16)).unwrap());
         assert!(runtime.advance_to(Duration::from_millis(17)).unwrap());
+        assert_eq!(runtime.delivered_event_count(), 1);
+        assert_eq!(runtime.delivered_event_counts().pointer, 1);
 
         let Some(DrawCommand::Circle { x, .. }) = runtime.frame().commands.first() else {
             panic!("expected a pointer-controlled circle");
@@ -303,6 +363,7 @@ mod tests {
         );
 
         assert!(runtime.advance_to(Duration::from_millis(17)).unwrap());
+        assert_eq!(runtime.delivered_event_counts().pointer, 0);
 
         let Some(DrawCommand::Circle { x, y, .. }) = runtime.frame().commands.first() else {
             panic!("expected a keyboard-and-tick-controlled circle");

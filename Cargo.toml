@@ -23,6 +23,8 @@ portable-runtime = ["dep:wasmi"]
 web = [
 	"portable-runtime",
 	"dep:gpui",
+	"dep:gpui-component",
+	"dep:gpui-component-assets",
 	"dep:gpui_platform",
 	"dep:js-sys",
 	"dep:wasm-bindgen",

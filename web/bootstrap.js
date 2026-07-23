@@ -1,5 +1,10 @@
 import init from "./aedicule_web.js";
-import { directionFor, formatMessage, loadCatalog } from "./launcher-i18n.mjs";
+import {
+	directionFor,
+	formatMessage,
+	loadCatalog,
+	webGpuFailureMessage,
+} from "./launcher-i18n.mjs";
 
 const status = document.getElementById("aedicule-startup-status");
 const catalog = loadCatalog(navigator.languages);
@@ -47,11 +52,11 @@ async function preflightBrowser(capabilities) {
 		throw new Error(strings.requiresSharedMemory);
 	}
 	if (!capabilities.webGpu) {
-		throw new Error(strings.requiresWebGpu);
+		throw new Error(webGpuFailureMessage("missing", strings));
 	}
 	const adapter = await navigator.gpu.requestAdapter();
 	if (adapter === null) {
-		throw new Error(strings.unusableWebGpu);
+		throw new Error(webGpuFailureMessage("adapter", strings));
 	}
 	reportStartupDiagnostic("webgpu-adapter", {
 		featureCount: adapter.features.size,

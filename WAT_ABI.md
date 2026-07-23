@@ -4,7 +4,7 @@
 
 This is the complete client-facing ABI for WAT applications accepted by Aedicule today. The only import module is `aedicule.v0`. Every function at this boundary is named `AE_*`; the provisional `host.v0` / `fp_*` names are rejected.
 
-All imported functions return a status: `0` succeeds; any non-zero result rejects the current guest transaction. Strings are UTF-8 byte slices in the guest's exported `memory`. IDs and packed colors travel as `i32` bit patterns. The host validates pointers, finite numeric values, object limits, and frame structure.
+Except for the pure multi-result `AE_sin_cos_turn`, imported capability functions return a status: `0` succeeds; any non-zero result rejects the current guest transaction. Strings are UTF-8 byte slices in the guest's exported `memory`. IDs and packed colors travel as `i32` bit patterns. The host validates pointers, finite numeric values, object limits, and frame structure.
 
 ## Guest exports
 

@@ -19,22 +19,41 @@ if (( rc != 0 )); then
 	printf 'web fallback delivery build failed:\n%s\n' "$err" >&2
 	failures=$((failures + 1))
 else
-	for asset in index.html bootstrap.js coi-serviceworker.js aedicule_web.js aedicule_web_bg.wasm code.wat; do
+	for asset in index.html bootstrap.js coi-serviceworker.js aedicule_web.js code.wat; do
 		if [[ ! -s "$out_link/$asset" ]]; then
 			printf 'web fallback delivery is missing non-empty %s\n' "$asset" >&2
 			failures=$((failures + 1))
 		fi
 	done
+	mapfile -t runtime_wasm < <(
+		cd "$out_link" &&
+			rg --files -g 'aedicule_web_bg.*.wasm' |
+			rg '^aedicule_web_bg\.[0-9a-f]{64}\.wasm$'
+	)
+	if (( ${#runtime_wasm[@]} != 1 )); then
+		printf 'web fallback delivery has %d content-addressed runtime Wasm files; expected 1\n' \
+			"${#runtime_wasm[@]}" >&2
+		failures=$((failures + 1))
+	elif ! rg -F "${runtime_wasm[0]}" "$out_link/aedicule_web.js" >/dev/null; then
+		printf 'web runtime JavaScript does not reference its content-addressed Wasm\n' >&2
+		failures=$((failures + 1))
+	fi
+	if [[ -e "$out_link/aedicule_web_bg.wasm" ]]; then
+		printf 'web fallback delivery still exposes an unhashed runtime Wasm URL\n' >&2
+		failures=$((failures + 1))
+	fi
 	if ! rg -F 'fetch("./code.wat"' "$out_link/bootstrap.js" >/dev/null; then
 		printf 'web fallback delivery bootstrap does not load external code.wat\n' >&2
 		failures=$((failures + 1))
 	fi
-	wasm_bytes=$(stat -c '%s' "$out_link/aedicule_web_bg.wasm")
-	max_wasm_bytes=$((11 * 1024 * 1024))
-	if (( wasm_bytes > max_wasm_bytes )); then
-		printf 'web fallback Wasm is %d bytes; delivery budget is %d bytes\n' \
-			"$wasm_bytes" "$max_wasm_bytes" >&2
-		failures=$((failures + 1))
+	if (( ${#runtime_wasm[@]} == 1 )); then
+		wasm_bytes=$(stat -c '%s' "$out_link/${runtime_wasm[0]}")
+		max_wasm_bytes=$((18 * 1024 * 1024))
+		if (( wasm_bytes > max_wasm_bytes )); then
+			printf 'web fallback Wasm is %d bytes; delivery budget is %d bytes\n' \
+				"$wasm_bytes" "$max_wasm_bytes" >&2
+			failures=$((failures + 1))
+		fi
 	fi
 fi
 

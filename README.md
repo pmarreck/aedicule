@@ -85,8 +85,9 @@ native launcher also writes one stable stderr line:
 <embedded fallback|previous plugin> remains active`. The existing recoverable
 GUI message remains visible; the terminal line is for launchers, CI, and logs.
 
-See [WAT_ABI.md](WAT_ABI.md) for the generated client ABI reference and
-[SPEC.md](SPEC.md) for the threat model.
+See the self-contained [Guide for LLMs](GUIDE_FOR_LLMS.md) for current guest
+writing, testing, packaging, and failure-avoidance guidance; [WAT_ABI.md](WAT_ABI.md)
+is its generated exact ABI appendix, and [SPEC.md](SPEC.md) defines the threat model.
 
 ABI v0.2 adds a portable text-face selector. Existing `AE_text` calls retain
 the platform UI face; `AE_text_font` and its zero-float Q16.16 counterpart can

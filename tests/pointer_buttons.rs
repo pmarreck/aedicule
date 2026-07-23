@@ -1,4 +1,4 @@
-use aedicule::{DrawCommand, Event, Frontplane, Limits, PointerButton, PointerScrollUnit};
+use aedicule::{DrawCommand, Event, Frontplane, Key, Limits, PointerButton, PointerScrollUnit};
 
 const SECONDARY_BUTTON_WAT: &str = r#"
     (module
@@ -56,6 +56,36 @@ const SECONDARY_BUTTON_WAT: &str = r#"
         (func (export "AE_state_len") (result i32) i32.const 0)
         (func (export "AE_state_schema") (result i32) i32.const 1))
 "#;
+
+#[test]
+fn gpui_key_names_classify_the_complete_native_and_browser_key_set() {
+    let cases = [
+        ("left", Some(Key::ArrowLeft)),
+        ("right", Some(Key::ArrowRight)),
+        ("up", Some(Key::ArrowUp)),
+        ("space", Some(Key::Space)),
+        (" ", Some(Key::Space)),
+        ("p", Some(Key::P)),
+        ("r", Some(Key::R)),
+        ("f", Some(Key::F)),
+        ("k", Some(Key::K)),
+        ("b", Some(Key::B)),
+        ("h", Some(Key::H)),
+        ("escape", Some(Key::Escape)),
+        ("f1", Some(Key::F1)),
+        ("down", None),
+        ("P", None),
+        ("", None),
+    ];
+
+    for (name, expected) in cases {
+        assert_eq!(
+            Key::from_gpui_name(name),
+            expected,
+            "classification mismatch for {name:?}"
+        );
+    }
+}
 
 #[test]
 fn pointer_buttons_and_two_axis_scroll_reach_ae_event_with_stable_codes() {

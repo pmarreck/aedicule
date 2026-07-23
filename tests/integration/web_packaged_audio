@@ -52,7 +52,7 @@ IFS= read -r -t 10 url <"$url_pipe"
 (( $? == 0 )) || fail 'server did not emit its URL'
 [[ $url == http://127.0.0.1:*\/ ]] || fail 'server emitted an invalid loopback URL'
 
-"$root/tests/integration/web_browser_startup" --require-audio-request "$url" \
+"$root/tests/integration/web_browser_startup" --require-audio-request --require-key-delivery "$url" \
 	>"$temporary/browser.out" 2>"$temporary/browser.err"
 (( $? == 0 )) || fail 'headless browser rejected sampled-audio delivery'
 [[ ! -s $temporary/browser.err ]] || fail 'headless browser emitted diagnostics'

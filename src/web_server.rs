@@ -30,12 +30,13 @@ const RUNTIME_FILES: &[&str] = &[
     "manifest.webmanifest",
     "icon.png",
     "aedicule_web.js",
-    "aedicule_web_bg.wasm",
 ];
+const IMMUTABLE_CACHE_CONTROL: &str = "public, max-age=31536000, immutable";
+const MUTABLE_CACHE_CONTROL: &str = "no-store";
 
 pub struct WebServer {
     listener: TcpListener,
-    files: HashMap<&'static str, Vec<u8>>,
+    files: HashMap<String, Vec<u8>>,
     code: Vec<u8>,
     asset_catalog: Vec<u8>,
     assets: ApplicationAssets,
@@ -58,8 +59,23 @@ impl WebServer {
             if bytes.is_empty() {
                 return Err(format!("web runtime asset is empty: {}", path.display()));
             }
-            files.insert(name, bytes);
+            files.insert(name.to_owned(), bytes);
         }
+        let runtime_wasm = find_immutable_runtime_wasm(runtime)?;
+        let runtime_wasm_name = runtime_wasm
+            .file_name()
+            .and_then(|name| name.to_str())
+            .expect("validated runtime Wasm filename is UTF-8")
+            .to_owned();
+        let runtime_wasm_bytes = fs::read(&runtime_wasm)
+            .map_err(|error| format!("read web runtime {}: {error}", runtime_wasm.display()))?;
+        if runtime_wasm_bytes.is_empty() {
+            return Err(format!(
+                "web runtime asset is empty: {}",
+                runtime_wasm.display()
+            ));
+        }
+        files.insert(runtime_wasm_name, runtime_wasm_bytes);
         let code = read_application_file(source, DEFAULT_PLUGIN_FILE)?;
         let assets = read_application_assets(source)?;
         let asset_catalog = json_asset_catalog(assets.keys().map(String::as_str));
@@ -120,15 +136,25 @@ impl WebServer {
                 "text/plain; charset=utf-8",
                 b"method not allowed\n",
                 method == "HEAD",
+                MUTABLE_CACHE_CONTROL,
             );
         }
         let path = target.split('?').next().unwrap_or_default();
-        let (content_type, body) = match path {
-            "/" | "/index.html" => (mime_type("index.html"), self.files["index.html"].as_slice()),
-            "/code.wat" => (mime_type(DEFAULT_PLUGIN_FILE), self.code.as_slice()),
+        let (content_type, body, cache_control) = match path {
+            "/" | "/index.html" => (
+                mime_type("index.html"),
+                self.files["index.html"].as_slice(),
+                MUTABLE_CACHE_CONTROL,
+            ),
+            "/code.wat" => (
+                mime_type(DEFAULT_PLUGIN_FILE),
+                self.code.as_slice(),
+                MUTABLE_CACHE_CONTROL,
+            ),
             "/application-assets.json" => (
                 "application/json; charset=utf-8",
                 self.asset_catalog.as_slice(),
+                MUTABLE_CACHE_CONTROL,
             ),
             path if path.starts_with('/') => {
                 let name = percent_decode_path(&path[1..]);
@@ -139,7 +165,11 @@ impl WebServer {
                         .or_else(|| self.assets.get(name).map(Vec::as_slice))
                 });
                 match body {
-                    Some(body) => (mime_type(name.as_deref().unwrap()), body),
+                    Some(body) => (
+                        mime_type(name.as_deref().unwrap()),
+                        body,
+                        cache_control(name.as_deref().unwrap()),
+                    ),
                     None => {
                         return write_response(
                             connection,
@@ -147,6 +177,7 @@ impl WebServer {
                             "text/plain; charset=utf-8",
                             b"not found\n",
                             method == "HEAD",
+                            MUTABLE_CACHE_CONTROL,
                         );
                     }
                 }
@@ -158,10 +189,64 @@ impl WebServer {
                     "text/plain; charset=utf-8",
                     b"bad request\n",
                     method == "HEAD",
+                    MUTABLE_CACHE_CONTROL,
                 );
             }
         };
-        write_response(connection, "200 OK", content_type, body, method == "HEAD")
+        write_response(
+            connection,
+            "200 OK",
+            content_type,
+            body,
+            method == "HEAD",
+            cache_control,
+        )
+    }
+}
+
+/// Locates the one hash-named Wasm payload emitted by the web build, rejecting
+/// ambiguous runtime directories before their assets can become HTTP routes.
+fn find_immutable_runtime_wasm(runtime: &Path) -> Result<PathBuf, String> {
+    let mut candidates = fs::read_dir(runtime)
+        .map_err(|error| format!("read web runtime {}: {error}", runtime.display()))?
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(is_immutable_runtime_asset)
+        })
+        .collect::<Vec<_>>();
+    candidates.sort();
+    match candidates.as_slice() {
+        [path] => Ok(path.clone()),
+        [] => Err("web runtime has no content-addressed Aedicule Wasm".to_owned()),
+        _ => Err("web runtime has multiple content-addressed Aedicule Wasm files".to_owned()),
+    }
+}
+
+/// Recognizes only the lowercase SHA-256 URL form produced by the Nix build,
+/// making a one-year immutable cache lifetime safe by construction.
+fn is_immutable_runtime_asset(name: &str) -> bool {
+    const PREFIX: &str = "aedicule_web_bg.";
+    const SUFFIX: &str = ".wasm";
+    let Some(hash) = name
+        .strip_prefix(PREFIX)
+        .and_then(|rest| rest.strip_suffix(SUFFIX))
+    else {
+        return false;
+    };
+    hash.len() == 64
+        && hash
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+fn cache_control(name: &str) -> &'static str {
+    if is_immutable_runtime_asset(name) {
+        IMMUTABLE_CACHE_CONTROL
+    } else {
+        MUTABLE_CACHE_CONTROL
     }
 }
 
@@ -307,11 +392,12 @@ fn write_response(
     content_type: &str,
     body: &[u8],
     head_only: bool,
+    cache_control: &str,
 ) -> std::io::Result<()> {
     write!(
         connection,
-        "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nCross-Origin-Opener-Policy: same-origin\r\nCross-Origin-Embedder-Policy: require-corp\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n",
-        body.len()
+        "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nCross-Origin-Opener-Policy: same-origin\r\nCross-Origin-Embedder-Policy: require-corp\r\nCache-Control: {cache_control}\r\nConnection: close\r\n\r\n",
+        body.len(),
     )?;
     if !head_only {
         connection.write_all(body)?;
@@ -324,7 +410,8 @@ mod tests {
     use std::io::ErrorKind;
 
     use super::{
-        is_recoverable_connection_error, json_asset_catalog, mime_type, percent_decode_path,
+        cache_control, is_immutable_runtime_asset, is_recoverable_connection_error,
+        json_asset_catalog, mime_type, percent_decode_path,
     };
 
     #[test]
@@ -405,5 +492,47 @@ mod tests {
         ] {
             assert_eq!(mime_type(name), expected, "{name}");
         }
+    }
+
+    #[test]
+    fn immutable_runtime_cache_policy_is_classified_over_a_set() {
+        let hash = "0123456789abcdef".repeat(4);
+        let cases = [
+            (
+                format!("aedicule_web_bg.{hash}.wasm"),
+                true,
+                "public, max-age=31536000, immutable",
+            ),
+            (
+                format!("aedicule_web_bg.{}.wasm", hash.to_uppercase()),
+                false,
+                "no-store",
+            ),
+            (format!("aedicule_web_bg.{}0.wasm", hash), false, "no-store"),
+            ("aedicule_web_bg.wasm".to_owned(), false, "no-store"),
+            ("bootstrap.js".to_owned(), false, "no-store"),
+            ("code.wat".to_owned(), false, "no-store"),
+        ];
+
+        assert_eq!(
+            cases
+                .iter()
+                .map(|(name, _, _)| is_immutable_runtime_asset(name))
+                .collect::<Vec<_>>(),
+            cases
+                .iter()
+                .map(|(_, expected, _)| *expected)
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            cases
+                .iter()
+                .map(|(name, _, _)| cache_control(name))
+                .collect::<Vec<_>>(),
+            cases
+                .iter()
+                .map(|(_, _, expected)| *expected)
+                .collect::<Vec<_>>()
+        );
     }
 }

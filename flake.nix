@@ -126,6 +126,8 @@
 									"/Cargo.toml"
 									"/Cargo.lock"
 									"/WAT_ABI.md"
+									"/GUIDE_FOR_LLMS.md"
+									"/GUIDE_FOR_LLMS.template.md"
 									"/assets"
 									"/assets/fonts"
 									"/assets/icons"
@@ -158,6 +160,8 @@
 									"/Cargo.lock"
 									"/README.md"
 									"/WAT_ABI.md"
+									"/GUIDE_FOR_LLMS.md"
+									"/GUIDE_FOR_LLMS.template.md"
 									"/build"
 									"/build_all"
 									"/check_reproducible"
@@ -399,6 +403,7 @@
 								$out/share/aedicule/demos/vibesteroids.aed
 							install -Dm644 ${./demos/manifest.tsv} \
 								$out/share/aedicule/demos/manifest.tsv
+							install -Dm644 ${./GUIDE_FOR_LLMS.md} $out/share/aedicule/demos/GUIDE_FOR_LLMS.md
 							install -Dm644 ${./assets/fonts/OFL.txt} \
 								$out/share/licenses/aedicule/GeistMono-OFL.txt
 							${pkgs.lib.optionalString (system == "x86_64-linux" && targetName == "linux-x86_64") ''
@@ -423,6 +428,7 @@
 							cp ${./demos/vibesteroids.wat} $out/Demos/vibesteroids.wat
 							cp ${./demos/vibesteroids.aed} $out/Demos/vibesteroids.aed
 							cp ${./demos/manifest.tsv} $out/Demos/manifest.tsv
+							cp ${./GUIDE_FOR_LLMS.md} $out/Demos/GUIDE_FOR_LLMS.md
 							install -Dm644 ${./assets/fonts/OFL.txt} \
 								$out/ThirdPartyLicenses/GeistMono-OFL.txt
 						'';
@@ -454,6 +460,7 @@
 							cp ${./demos/vibesteroids.wat} $app/Contents/Resources/Demos/vibesteroids.wat
 							cp ${./demos/vibesteroids.aed} $app/Contents/Resources/Demos/vibesteroids.aed
 							cp ${./demos/manifest.tsv} $app/Contents/Resources/Demos/manifest.tsv
+							cp ${./GUIDE_FOR_LLMS.md} $app/Contents/Resources/Demos/GUIDE_FOR_LLMS.md
 							install -Dm644 ${./assets/fonts/OFL.txt} \
 								$app/Contents/Resources/ThirdPartyLicenses/GeistMono-OFL.txt
 						'';
@@ -642,6 +649,12 @@
 							wasm-opt --enable-threads -Oz bindgen/aedicule_web_bg.wasm \
 								-o bindgen/aedicule_web_bg.optimized.wasm
 							mv bindgen/aedicule_web_bg.optimized.wasm bindgen/aedicule_web_bg.wasm
+							wasm_hash=$(sha256sum bindgen/aedicule_web_bg.wasm)
+							wasm_hash=''${wasm_hash%% *}
+							wasm_name="aedicule_web_bg.$wasm_hash.wasm"
+							mv bindgen/aedicule_web_bg.wasm "bindgen/$wasm_name"
+							substituteInPlace bindgen/aedicule_web.js \
+								--replace-fail 'aedicule_web_bg.wasm' "$wasm_name"
 							runHook postBuild
 						'';
 						installPhase = ''
@@ -654,7 +667,8 @@
 							install -Dm644 ${./assets/icons/aedicule-app.png} $out/icon.png
 							install -Dm644 ${./assets/fonts/OFL.txt} \
 								$out/ThirdPartyLicenses/GeistMono-OFL.txt
-							cp bindgen/aedicule_web.js bindgen/aedicule_web_bg.wasm $out/
+							cp bindgen/aedicule_web.js $out/
+							install -Dm644 "bindgen/$wasm_name" "$out/$wasm_name"
 						'';
 					};
 					webFallback = self.lib.${system}.webBundle {
@@ -706,6 +720,8 @@
 							cp ${./assets/icons/aedicule-app.png} $out/icon.png
 							cp -R ${ulam}/. $out/ulam-flower/
 							cp -R ${vibesteroids}/. $out/vibesteroids/
+							cp ${./GUIDE_FOR_LLMS.md} $out/ulam-flower/GUIDE_FOR_LLMS.md
+							cp ${./GUIDE_FOR_LLMS.md} $out/vibesteroids/GUIDE_FOR_LLMS.md
 							cp ${./demos/vibesteroids.aed} $out/vibesteroids.aed
 							cp ${./demos/manifest.tsv} $out/manifest.tsv
 						'';

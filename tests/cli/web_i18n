@@ -25,7 +25,9 @@ assert.deepEqual(Object.keys(i18n.english).sort(), [
 	"loadingApplicationAssets", "loadingWat", "no", "open", "requiresIsolation",
 	"requiresSecureContext", "requiresSharedMemory", "requiresWebGpu", "source",
 	"starting", "title", "ulamDescription", "ulamName", "unusableWebGpu",
-	"vibesteroidsDescription", "vibesteroidsName", "vibesteroidsPackage", "yes",
+	"vibesteroidsDescription", "vibesteroidsName", "vibesteroidsPackage",
+	"webGpuChromeHelp", "webGpuFirefoxHelp", "webGpuRetryHelp", "webGpuSafariHelp",
+	"yes",
 ]);
 assert.equal(i18n.formatMessage(i18n.english.couldNotLoadAsset, {
 	name: "assets/a.flac",
@@ -42,6 +44,23 @@ assert.equal(i18n.resolveLocale(["zh-TW"]), "zh_hant");
 assert.equal(i18n.resolveLocale(["zh-Hant-HK"]), "zh_hant");
 assert.equal(i18n.directionFor("ar"), "rtl");
 assert.equal(i18n.directionFor("en"), "ltr");
+const missingWebGpu = i18n.webGpuFailureMessage("missing", i18n.english);
+assert.match(missingWebGpu, /about:config/);
+assert.match(missingWebGpu, /dom\.webgpu\.enabled/);
+assert.match(missingWebGpu, /chrome:\/\/settings\/system/);
+assert.match(missingWebGpu, /chrome:\/\/gpu/);
+assert.match(missingWebGpu, /Safari 26/);
+assert.match(missingWebGpu, /reload this page/i);
+assert.match(missingWebGpu, /restart/i);
+assert.ok(missingWebGpu.startsWith(i18n.english.requiresWebGpu));
+assert.ok(
+	i18n.webGpuFailureMessage("adapter", i18n.english)
+		.startsWith(i18n.english.unusableWebGpu),
+);
+assert.throws(
+	() => i18n.webGpuFailureMessage("mystery", i18n.english),
+	/unknown WebGPU failure kind/,
+);
 
 const warnings = [];
 assert.deepEqual(i18n.loadCatalog(["de-DE"], warning => warnings.push(warning)), {

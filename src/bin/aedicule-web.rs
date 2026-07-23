@@ -5,16 +5,27 @@ use std::{borrow::Cow, cell::OnceCell};
 
 #[cfg_attr(not(target_family = "wasm"), allow(unused_imports))]
 use aedicule::{
-    ApplicationAssets, Event, GEIST_MONO_REGULAR, PluginInit, PointerButton, PointerScrollUnit,
+    ApplicationAssets, ControlLabelPlacement, ControlPhase, Event, GEIST_MONO_REGULAR, Key,
+    PluginInit, PointerButton, PointerScrollUnit, Rect, SliderControl, UiSnapshot,
     gpui_canvas::paint_frame,
-    web::{BROWSER_ASSETS_GLOBAL, BROWSER_WAT_GLOBAL, BrowserRuntime, required_browser_wat},
+    web::{
+        BROWSER_ASSETS_GLOBAL, BROWSER_WAT_GLOBAL, BrowserDeliveredEventCounts, BrowserRuntime,
+        required_browser_wat,
+    },
 };
 #[cfg_attr(not(target_family = "wasm"), allow(unused_imports))]
 use gpui::{
-    App, AppContext as _, Bounds, Context, InteractiveElement as _, IntoElement, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement as _, Render, ScrollDelta,
-    ScrollWheelEvent, Styled as _, Window, WindowBounds, WindowOptions, canvas, div,
-    prelude::FluentBuilder as _, px, rgba, size,
+    App, AppContext as _, Bounds, Context, Entity, FocusHandle, Focusable, InteractiveElement as _,
+    IntoElement, KeyDownEvent, KeyUpEvent, MouseButton, MouseDownEvent, MouseMoveEvent,
+    MouseUpEvent, ParentElement as _, Render, ScrollDelta, ScrollWheelEvent, Styled as _,
+    Subscription, Window, WindowBounds, WindowOptions, canvas, div, prelude::FluentBuilder as _,
+    px, rgba, size,
+};
+#[cfg_attr(not(target_family = "wasm"), allow(unused_imports))]
+use gpui_component::{
+    Root, Selectable as _, Theme, ThemeMode,
+    button::Button,
+    slider::{Slider, SliderEvent, SliderState},
 };
 #[cfg(target_family = "wasm")]
 use wasm_bindgen::JsValue;
@@ -31,6 +42,9 @@ extern "C" {
         volume: f32,
         pitch: f32,
     );
+
+    #[wasm_bindgen::prelude::wasm_bindgen(js_namespace = console, js_name = info)]
+    fn browser_console_info(prefix: &str, phase: &str, detail: &str);
 }
 
 #[cfg_attr(not(target_family = "wasm"), allow(dead_code))]
@@ -57,24 +71,233 @@ fn retain_browser_application(application: gpui::ApplicationHandle) {
     });
 }
 
+/// Extends the opt-in DOM input trace across the Rust adapter boundary so a
+/// browser probe can distinguish dispatch, frontplane admission, and guest
+/// behavior without making production consoles noisy.
+#[cfg(target_family = "wasm")]
+fn trace_browser_detail(phase: &str, detail: &str) {
+    let enabled = js_sys::Reflect::get(
+        &js_sys::global(),
+        &JsValue::from_str("__AEDICULE_TRACE_EVENTS"),
+    )
+    .ok()
+    .and_then(|value| value.as_bool())
+    .unwrap_or(false);
+    if enabled {
+        browser_console_info("[Aedicule input]", phase, detail);
+    }
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn trace_browser_detail(_: &str, _: &str) {}
+
+fn trace_browser_input(event: &Event) {
+    trace_browser_detail("frontplane", &format!("{event:?}"));
+}
+
+/// Publishes the last accepted guest background as a compact browser
+/// diagnostic; unlike headless GPU screenshots, this observes the committed
+/// Aedicule frame without depending on Chromium's shared-image readback.
+#[cfg(target_family = "wasm")]
+fn publish_browser_frame_background(background: u32) {
+    js_sys::Reflect::set(
+        &js_sys::global(),
+        &JsValue::from_str("__AEDICULE_FRAME_BACKGROUND"),
+        &JsValue::from_f64(f64::from(background)),
+    )
+    .expect("publish accepted browser frame background");
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn publish_browser_frame_background(_: u32) {}
+
+#[cfg(target_family = "wasm")]
+fn set_js_property(target: &js_sys::Object, name: &str, value: &JsValue) {
+    js_sys::Reflect::set(target, &JsValue::from_str(name), value)
+        .expect("publish Aedicule browser diagnostic property");
+}
+
+/// Publishes guest-delivery progress independently of DOM event observation so
+/// browser acceptance can wait on semantic WAT delivery without wall-clock
+/// sleeps.
+#[cfg(target_family = "wasm")]
+fn publish_browser_delivered_events(counts: BrowserDeliveredEventCounts) {
+    js_sys::Reflect::set(
+        &js_sys::global(),
+        &JsValue::from_str("__AEDICULE_DELIVERED_EVENT_COUNT"),
+        &JsValue::from_f64(counts.total as f64),
+    )
+    .expect("publish browser guest event count");
+    let diagnostic = js_sys::Object::new();
+    for (name, value) in [
+        ("total", counts.total),
+        ("controls", counts.controls),
+        ("menuActions", counts.menu_actions),
+        ("pointer", counts.pointer),
+    ] {
+        set_js_property(&diagnostic, name, &JsValue::from_f64(value as f64));
+    }
+    js_sys::Reflect::set(
+        &js_sys::global(),
+        &JsValue::from_str("__AEDICULE_DELIVERED_EVENT_COUNTS"),
+        &diagnostic,
+    )
+    .expect("publish browser semantic event counts");
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn publish_browser_delivered_events(_: BrowserDeliveredEventCounts) {}
+
+/// Publishes the exact accepted AVP placement bounds as read-only diagnostics;
+/// the adapter still renders from the typed snapshot rather than this JS copy.
+#[cfg(target_family = "wasm")]
+fn publish_browser_ui_snapshot(ui: &UiSnapshot) {
+    let diagnostic = js_sys::Object::new();
+    set_js_property(
+        &diagnostic,
+        "revision",
+        &JsValue::from_f64(f64::from(ui.revision)),
+    );
+    let panels = js_sys::Array::new();
+    let sliders = js_sys::Array::new();
+    let buttons = js_sys::Array::new();
+    for (id, bounds, output) in ui
+        .control_panels
+        .iter()
+        .map(|panel| (panel.id, panel.bounds, &panels))
+        .chain(
+            ui.sliders
+                .iter()
+                .map(|slider| (slider.id, slider.bounds, &sliders)),
+        )
+        .chain(
+            ui.buttons
+                .iter()
+                .map(|button| (button.id, button.bounds, &buttons)),
+        )
+    {
+        let placement = js_sys::Object::new();
+        set_js_property(&placement, "id", &JsValue::from_f64(f64::from(id)));
+        set_js_property(&placement, "x", &JsValue::from_f64(f64::from(bounds.x)));
+        set_js_property(&placement, "y", &JsValue::from_f64(f64::from(bounds.y)));
+        set_js_property(
+            &placement,
+            "width",
+            &JsValue::from_f64(f64::from(bounds.width)),
+        );
+        set_js_property(
+            &placement,
+            "height",
+            &JsValue::from_f64(f64::from(bounds.height)),
+        );
+        output.push(&placement);
+    }
+    set_js_property(&diagnostic, "panels", &panels);
+    set_js_property(&diagnostic, "sliders", &sliders);
+    set_js_property(&diagnostic, "buttons", &buttons);
+    js_sys::Reflect::set(
+        &js_sys::global(),
+        &JsValue::from_str("__AEDICULE_UI_SNAPSHOT"),
+        &diagnostic,
+    )
+    .expect("publish accepted browser UI snapshot");
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn publish_browser_ui_snapshot(_: &UiSnapshot) {}
+
 /// Bridges GPUI Web animation/input callbacks to Aedicule's tested rational
 /// scheduler, keeping guest execution outside the canvas paint callback.
 #[cfg_attr(not(target_family = "wasm"), allow(dead_code))]
 struct WebFrontplane {
     runtime: BrowserRuntime,
     origin: Instant,
+    focus_handle: FocusHandle,
+    reported_delivered_events: u64,
     viewport_bits: Option<(u32, u32)>,
     fatal_error: Option<String>,
+    pressed_pointer_buttons: [u16; 3],
+    sliders: Vec<WebSlider>,
+    _slider_subscriptions: Vec<Subscription>,
+}
+
+#[cfg_attr(not(target_family = "wasm"), allow(dead_code))]
+#[derive(Clone)]
+struct WebSlider {
+    control: SliderControl,
+    state: Entity<SliderState>,
+    synced_ui_revision: Option<u32>,
 }
 
 #[cfg_attr(not(target_family = "wasm"), allow(dead_code))]
 impl WebFrontplane {
-    fn new(runtime: BrowserRuntime, origin: Instant) -> Self {
+    /// Adapts exact guest integer lattices to GPUI Component step indices while
+    /// scheduling semantic values, never toolkit floats, back into WAT.
+    fn build_sliders(
+        controls: &[SliderControl],
+        cx: &mut Context<Self>,
+    ) -> (Vec<WebSlider>, Vec<Subscription>) {
+        let mut sliders = Vec::with_capacity(controls.len());
+        let mut subscriptions = Vec::with_capacity(controls.len());
+        for control in controls {
+            let initial_index =
+                (i64::from(control.initial) - i64::from(control.min)) / i64::from(control.step);
+            let state = cx.new(|_| {
+                SliderState::new()
+                    .min(0.0)
+                    .max(control.step_count() as f32)
+                    .step(1.0)
+                    .default_value(initial_index as f32)
+            });
+            let subscribed_control = control.clone();
+            subscriptions.push(
+                cx.subscribe(&state, move |this, _, event: &SliderEvent, cx| {
+                    let (slider_value, phase) = match event {
+                        SliderEvent::Change(value) => (*value, ControlPhase::Change),
+                        SliderEvent::Release(value) => (*value, ControlPhase::Release),
+                    };
+                    let index = slider_value.end().round();
+                    if !index.is_finite() || index < 0.0 {
+                        return;
+                    }
+                    if let Some(value) = subscribed_control.value_at_step(index as u32) {
+                        if let Some(slider) = this
+                            .sliders
+                            .iter_mut()
+                            .find(|slider| slider.control.id == subscribed_control.id)
+                        {
+                            slider.synced_ui_revision = None;
+                        }
+                        this.queue_event(Event::Control {
+                            id: subscribed_control.id,
+                            value,
+                            phase,
+                        });
+                        cx.notify();
+                    }
+                }),
+            );
+            sliders.push(WebSlider {
+                control: control.clone(),
+                state,
+                synced_ui_revision: None,
+            });
+        }
+        (sliders, subscriptions)
+    }
+
+    fn new(runtime: BrowserRuntime, origin: Instant, cx: &mut Context<Self>) -> Self {
+        let (sliders, slider_subscriptions) = Self::build_sliders(&runtime.metadata().controls, cx);
         Self {
             runtime,
             origin,
+            focus_handle: cx.focus_handle(),
+            reported_delivered_events: 0,
             viewport_bits: None,
             fatal_error: None,
+            pressed_pointer_buttons: [0; 3],
+            sliders,
+            _slider_subscriptions: slider_subscriptions,
         }
     }
 
@@ -85,7 +308,15 @@ impl WebFrontplane {
             return;
         }
         match self.runtime.advance_to(self.origin.elapsed()) {
-            Ok(_) => self.play_pending_samples(),
+            Ok(_) => {
+                let delivered = self.runtime.delivered_event_count();
+                if delivered != self.reported_delivered_events {
+                    trace_browser_detail("guest", &format!("delivered-events={delivered}"));
+                    publish_browser_delivered_events(self.runtime.delivered_event_counts());
+                    self.reported_delivered_events = delivered;
+                }
+                self.play_pending_samples();
+            }
             Err(error) => self.fatal_error = Some(error.to_string()),
         }
     }
@@ -113,13 +344,43 @@ impl WebFrontplane {
     /// decides which fixed-step boundary must observe it.
     fn queue_event(&mut self, event: Event) {
         if self.fatal_error.is_none() {
+            trace_browser_input(&event);
             self.runtime.queue_event(self.origin.elapsed(), event);
         }
+    }
+
+    /// Delivers browser keyboard presses through the same physical-key
+    /// classifier as native and suppresses browser actions only for admitted
+    /// guest keys.
+    fn key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(key) = Key::from_gpui_name(&event.keystroke.key) else {
+            return;
+        };
+        window.prevent_default();
+        cx.stop_propagation();
+        if !event.is_held {
+            self.queue_event(Event::KeyDown(key));
+            cx.notify();
+        }
+    }
+
+    /// Pairs every admitted browser key press with a release edge so a guest
+    /// cannot retain a stuck control after focus remains inside the canvas.
+    fn key_up(&mut self, event: &KeyUpEvent, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(key) = Key::from_gpui_name(&event.keystroke.key) else {
+            return;
+        };
+        window.prevent_default();
+        cx.stop_propagation();
+        self.queue_event(Event::KeyUp(key));
+        cx.notify();
     }
 
     /// Gives browser button presses the same numeric ABI identity as native
     /// GPUI before the shared scheduler orders the edge before a tick.
     fn queue_pointer_down(&mut self, button: PointerButton, event: &MouseDownEvent) {
+        let index = button as usize - 1;
+        self.pressed_pointer_buttons[index] = self.pressed_pointer_buttons[index].saturating_add(1);
         self.queue_event(button.down(f32::from(event.position.x), f32::from(event.position.y)));
     }
 
@@ -127,6 +388,11 @@ impl WebFrontplane {
     /// `contextmenu` on its event element, so right-click gameplay stays in
     /// this callback rather than opening the browser menu.
     fn queue_pointer_up(&mut self, button: PointerButton, event: &MouseUpEvent) {
+        let index = button as usize - 1;
+        if self.pressed_pointer_buttons[index] == 0 {
+            return;
+        }
+        self.pressed_pointer_buttons[index] -= 1;
         self.queue_event(button.up(f32::from(event.position.x), f32::from(event.position.y)));
     }
 
@@ -162,6 +428,24 @@ impl WebFrontplane {
     }
 }
 
+impl Focusable for WebFrontplane {
+    fn focus_handle(&self, _: &App) -> FocusHandle {
+        self.focus_handle.clone()
+    }
+}
+
+/// Claims browser pointer ownership for a native control so its gesture cannot
+/// also reach the guest drawing canvas underneath.
+fn browser_control_layer(bounds: Rect) -> gpui::Div {
+    div()
+        .occlude()
+        .absolute()
+        .left(px(bounds.x))
+        .top(px(bounds.y))
+        .w(px(bounds.width))
+        .h(px(bounds.height))
+}
+
 impl Render for WebFrontplane {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.observe_viewport(window);
@@ -170,10 +454,101 @@ impl Render for WebFrontplane {
             window.request_animation_frame();
         }
         let frame = self.runtime.frame().clone();
+        publish_browser_frame_background(frame.background);
         let fatal_error = self.fatal_error.clone();
-        div()
+        let ui = self.runtime.ui_snapshot().cloned();
+        if let Some(ui) = ui.as_ref() {
+            publish_browser_ui_snapshot(ui);
+        }
+        let control_panels = ui
+            .iter()
+            .flat_map(|snapshot| snapshot.control_panels.iter())
+            .map(|panel| {
+                browser_control_layer(panel.bounds)
+                    .id(("control-panel", panel.id as usize))
+                    .rounded_lg()
+                    .bg(rgba(panel.rgba))
+            })
+            .collect::<Vec<_>>();
+        let mut slider_layers =
+            Vec::with_capacity(ui.as_ref().map_or(0, |snapshot| snapshot.sliders.len()));
+        for placement in ui.iter().flat_map(|snapshot| snapshot.sliders.iter()) {
+            let Some(slider) = self
+                .sliders
+                .iter_mut()
+                .find(|slider| slider.control.id == placement.id)
+            else {
+                continue;
+            };
+            let ui_revision = ui
+                .as_ref()
+                .expect("slider placement belongs to an accepted UI snapshot")
+                .revision;
+            if slider.synced_ui_revision != Some(ui_revision) {
+                let index = slider
+                    .control
+                    .step_index(placement.value)
+                    .expect("validated slider placement stays on its declared lattice");
+                slider.synced_ui_revision = Some(ui_revision);
+                slider.state.update(cx, |state, slider_cx| {
+                    state.set_value(index as f32, window, slider_cx);
+                });
+            }
+            let track = div().w_full().child(Slider::new(&slider.state));
+            let content = match placement.label_placement {
+                ControlLabelPlacement::Hidden => div().size_full().flex().child(track),
+                ControlLabelPlacement::Above => div()
+                    .size_full()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .child(
+                        div()
+                            .w_full()
+                            .text_sm()
+                            .child(format!("{}: {}", slider.control.label, placement.value)),
+                    )
+                    .child(track),
+            };
+            slider_layers.push(
+                browser_control_layer(placement.bounds)
+                    .id(("native-slider", placement.id as usize))
+                    .child(content),
+            );
+        }
+        let button_layers = ui
+            .iter()
+            .flat_map(|snapshot| snapshot.buttons.iter())
+            .filter_map(|placement| {
+                let action_id = placement.action_id;
+                let label = self
+                    .runtime
+                    .metadata()
+                    .menu_items
+                    .iter()
+                    .find(|item| item.id == Some(action_id))?
+                    .label
+                    .clone();
+                let button = Button::new(("native-button-control", placement.id as usize))
+                    .label(label)
+                    .selected(placement.selected)
+                    .w_full()
+                    .h_full()
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.queue_event(Event::MenuAction(action_id));
+                        cx.notify();
+                    }));
+                Some(
+                    browser_control_layer(placement.bounds)
+                        .id(("native-button", placement.id as usize))
+                        .child(button),
+                )
+            })
+            .collect::<Vec<_>>();
+        let canvas_layer = div()
             .id("aedicule-web-canvas")
-            .size_full()
+            .absolute()
+            .inset_0()
             .bg(rgba(frame.background))
             .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, cx| {
                 this.queue_event(Event::PointerMove {
@@ -255,7 +630,17 @@ impl Render for WebFrontplane {
                     move |_, (bounds, frame), window, cx| paint_frame(&frame, bounds, window, cx),
                 )
                 .size_full(),
-            )
+            );
+        div()
+            .relative()
+            .size_full()
+            .track_focus(&self.focus_handle)
+            .on_key_down(cx.listener(Self::key_down))
+            .on_key_up(cx.listener(Self::key_up))
+            .child(canvas_layer)
+            .children(control_panels)
+            .children(slider_layers)
+            .children(button_layers)
             .when_some(fatal_error, |this, error| {
                 this.child(
                     div()
@@ -322,20 +707,28 @@ fn main() {
     )
     .expect("Aedicule browser code.wat initializes and renders");
 
-    let application = gpui_platform::single_threaded_web().run_embedded(move |cx: &mut App| {
-        cx.text_system()
-            .add_fonts(vec![Cow::Borrowed(GEIST_MONO_REGULAR)])
-            .expect("register bundled Geist Mono Regular");
-        let bounds = Bounds::centered(None, size(px(1024.0), px(768.0)), cx);
-        cx.open_window(
-            WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
-                ..Default::default()
-            },
-            |_, cx| cx.new(|_| WebFrontplane::new(runtime, origin)),
-        )
-        .expect("open Aedicule browser window");
-    });
+    let application = gpui_platform::single_threaded_web()
+        .with_assets(gpui_component_assets::Assets::default())
+        .run_embedded(move |cx: &mut App| {
+            gpui_component::init(cx);
+            cx.text_system()
+                .add_fonts(vec![Cow::Borrowed(GEIST_MONO_REGULAR)])
+                .expect("register bundled Geist Mono Regular");
+            let bounds = Bounds::centered(None, size(px(1024.0), px(768.0)), cx);
+            cx.open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(bounds)),
+                    ..Default::default()
+                },
+                |window, cx| {
+                    Theme::change(ThemeMode::Dark, Some(window), cx);
+                    let view = cx.new(|cx| WebFrontplane::new(runtime, origin, cx));
+                    view.focus_handle(cx).focus(window, cx);
+                    cx.new(|cx| Root::new(view, window, cx))
+                },
+            )
+            .expect("open Aedicule browser window");
+        });
     retain_browser_application(application);
 }
 

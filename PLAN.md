@@ -1,5 +1,27 @@
 # Plan
 
+- [ ] Publish a versioned, self-contained `GUIDE_FOR_LLMS.md` for writing and
+  maintaining Aedicule guests without access to the host source.
+  - [x] Compose the checked-in guide during the build from an authored teaching
+    template plus the typed/generated ABI source of truth, and fail tests on
+    drift. (2026-07-23 14:45 EDT)
+  - [x] Explain the complete current lifecycle/import/export surface with
+    minimal commented WAT patterns, transactional reload/state rules, exact
+    arithmetic profiles, capabilities, packaging, testing, and host parity.
+    (2026-07-23 14:45 EDT)
+  - [x] Clearly fence proposed/future APIs from callable current APIs, with
+    links to the canonical online guide and semantic guide versioning.
+    (2026-07-23 14:45 EDT)
+  - [x] Add a practical LLM mistake checklist and recommend maintained WAT/Wasm
+    formatters, validators, analyzers, and deterministic Aedicule test tools.
+    (2026-07-23 14:45 EDT)
+  - [ ] Include the guide in release demo directories and `.aed` packages,
+    coordinating new immutable downstream demo pins rather than silently
+    mutating their published snapshots.
+  - Curiosity poke: copied guides can outlive both host and guest, so every
+    package needs an explicit guide/ABI compatibility statement that remains
+    useful offline but points to the canonical current copy when online.
+
 - [ ] Make `.aed` the portable application unit without sacrificing the bare
   WAT edit/run loop.
   - [x] Specify and test deterministic stored-ZIP packaging, safe depackaging,
@@ -24,6 +46,41 @@
       Primary/Command/Control/Alt/Shift modifiers, atomically reject duplicate
       guest chords, reserve chords by runner/appified capability profile, and
       emit one menu-action event without also leaking a raw key event.
+  - [ ] When at least one actionable guest `AE_menu_item` is declared, render
+    its menu model through an in-window title-bar hamburger on every native
+    platform while retaining platform-native menus where available; both
+    surfaces dispatch the same ordered action ID and occlude guest pointer
+    input. Omit the hamburger when no actionable items exist (separators alone
+    do not count).
+    Curiosity poke: preserve declared separator order and keyboard focus while
+    bounding menu height/overflow for a hostile or simply very large menu.
+  - [ ] Add a semantic window-mode contract: package metadata may request the
+    initial mode and WAT may request runtime windowed/fullscreen transitions,
+    but Aedicule owns the platform mechanism, may reject the request, and emits
+    the actual committed mode once as an ordered event followed by viewport
+    geometry. Fullscreen hides the entire custom title bar and its contents;
+    the host retains an unshadowable human exit/recovery action.
+    - [ ] Default to standard windowed chrome, then resolve safety floor >
+      current human override > runtime guest request > package initial
+      preference > host default; suppress repeated guest requests while a
+      human override is pinned and report the actual mode.
+    - [ ] In native Aedicule, reserve Shift–Escape as the non-overridable safety
+      toggle. Supply configurable aliases Control–Command–F and
+      Command–Shift–F on macOS, plus Alt–Enter, F11, and Control–Shift–F on
+      Windows/Linux; consume a recognized semantic chord exactly once without
+      leaking raw key events.
+    - [ ] On every native fullscreen entry, briefly show an italic,
+      noninteractive, click-through adapter-owned safety notice that
+      guest/package code cannot suppress: “Press Shift–Escape to toggle
+      fullscreen.”
+    - [ ] In browsers, leave fullscreen entry, exit, shortcuts, and guidance
+      entirely to the browser. Aedicule only observes `fullscreenchange` plus
+      viewport geometry and reacts to actual state—for example, hiding its own
+      in-page title bar while fullscreen—without adding a competing web
+      fullscreen controller or mandatory web safety overlay.
+    Curiosity poke: keep title-bar guest-menu invocation distinct from the
+    platform window-operations context convention; do not steal canvas
+    right-click when fullscreen removes the title bar.
   - [x] Make `--test` require `tests/main.wast`, run every direct
     `tests/*.wast` suite in deterministic PCG32/Fisher-Yates order with an
     emitted replay seed, and ignore nested WAST composition fragments across
@@ -61,6 +118,13 @@
     (2026-07-23 08:44 EDT.)
   - [ ] Expose packaged image assets by virtual name without granting arbitrary
     virtual-filesystem reads, then add browser image-adapter parity.
+  - [ ] Add an event-driven safe-area inset contract for full-bleed hosts:
+    logical-unit left/top/right/bottom insets emitted initially and only when
+    native chrome or platform cutouts change, independently of drawable
+    viewport geometry.
+    Curiosity poke: browser and native adapters have different occlusions, so
+    report measured zero/nonzero insets rather than baking the desktop footer
+    height into guest layout policy.
   - Curiosity poke: non-loopback browsers require a secure context as well as
     COOP/COEP, so remote/tailnet serving needs an explicit TLS/reverse-proxy
     contract rather than silently printing an unusable HTTP URL.
@@ -69,6 +133,44 @@
     byte-identical appify/deappify/appify round trip.
 
 - [ ] Publish the bundled browser demos as a concise, modern GitHub Pages site.
+  - [ ] Add a generic, demo-free browser runner that opens `.wat` or `.aed`
+    through an explicit file picker and drag/drop, resolves selected packages
+    through the same bounded virtual application root as native, and keeps all
+    selected bytes local to the browser.
+    - [x] Content-address the optimized Aedicule runtime Wasm by SHA-256, patch
+      its loader to the exact immutable URL, retain it cache-first on static
+      Pages, and emit one-year immutable headers from Caddy/native `--web`
+      while every guest/bootstrap/application asset remains `no-store`.
+      (2026-07-23 14:15 EDT; exact hash classifier, real 15 MiB optimized Nix
+      bundle, loader reference, mutable/immutable HTTP policy, and service-
+      worker cache path pass.)
+    Curiosity poke: a lone dropped `code.wat` cannot carry sibling assets, so
+    reject or clearly explain incomplete loose-project drops instead of
+    pretending asset lookup succeeded.
+  - [x] Render the accepted v0 AVP panel/slider/button document in the browser
+    adapter with the same values, action/control events, stable IDs, and canvas
+    occlusion as native.
+    (2026-07-23 14:05 EDT; the optimized Pages bundle exposes the real Ulam
+    panel, 4 buttons, and 2 sliders. Headless WebGPU click/drag acceptance
+    proves MenuAction/Control delivery and zero raw-pointer leakage.)
+    Curiosity poke: browser controls must emit one semantic event and must not
+    leak the same gesture through to the underlying canvas.
+  - [x] Give the browser frontplane a focusable keyboard surface and deliver
+    the same supported physical key-down/key-up IDs as native; Vibesteroids
+    previously received no web keyboard events.
+    (2026-07-23 13:49 EDT; shared set-classifier, Wasm compile, and real
+    Chrome→GPUI→scheduler→WAT→committed-frame regression pass. Opt-in traces
+    now distinguish DOM dispatch, frontplane admission, and guest delivery.)
+    Curiosity poke: suppress browser defaults only for admitted guest keys and
+    preserve both edges so held controls cannot become stuck.
+  - [x] When WebGPU admission fails, show concise current enablement steps for
+    Firefox, Chrome, and Safari, with a reload-first/restart-if-still-blocked
+    diagnostic path and links to browser-owned documentation.
+    (2026-07-23 14:10 EDT; pure i18n tests cover missing-API and null-adapter
+    paths plus every browser setting/diagnostic and official help URL.)
+    Curiosity poke: distinguish “API disabled by preference” from unsupported
+    OS/GPU/driver/blocklist failures instead of prescribing unsafe force flags
+    for every rejection.
   - [x] Add a deterministic Pages workflow that deploys the exact
     `delivery-web` output from `yolo`.
     (2026-07-22 11:30 EDT)
@@ -463,6 +565,44 @@
   - [ ] Run the native pure-Nix verification after the deferred Nix-store work.
   - Curiosity poke: can the pure formatter prove source, full error, and
     survivor status without a GUI timing test?
+  - [ ] Make every explicitly loaded native `.wat`, directory, or `.aed` source
+    live-watched by default; add an explicit `--no-watch` escape hatch for
+    fixed-run workflows while retaining `--watch` for compatibility.
+  - [ ] Make `--package` publish through a complete sibling temporary plus an
+    atomic same-filesystem replacement, so an active watcher can observe only
+    the old or complete new `.aed`, never a half-written ZIP.
+  - [ ] Show initial/reload syntax and candidate-admission errors briefly in a
+    noninteractive pass-through overlay while retaining the last known-good
+    guest, frame, and pre-candidate state; also preserve terminal stderr and an
+    optional durable-log sink without making either the only visible report.
+  - [ ] Prove candidate events/ticks/rendering cannot mutate the active guest:
+    any failed candidate is discarded whole, and the prior runtime-modified
+    state resumes byte-for-byte until a fully admitted replacement commits.
+  - Curiosity poke: editors and atomic package writers commonly emit rename
+    bursts; debounce by source identity and content generation, not sleeps, so
+    one complete candidate is evaluated without suppressing a later change.
+- [ ] Define a host-scheduled guest-suspension ABI that consumes no guest CPU
+  while paused but leaves pause presentation and application state guest-owned.
+  Compare two explicit boundaries before implementation: host-converted
+  registered input triggers versus a guest suspension request made after an
+  ordinary event, paired with bounded host-owned wake selectors.
+  - [ ] Specify exact suspend/resume ordering, the one final paused render,
+    cached-scene repaint, and monotonic scheduler-baseline reset with no
+    accumulated paused-time catch-up.
+  - [ ] Reconcile releases, cancellation, focus loss, and new presses observed
+    while suspended; a held or repeated pause trigger must not self-resume.
+  - [ ] Keep native window/menu/file-watch/reload machinery live, teach a
+    replacement guest that suspension was restored, and define resize as
+    viewport event plus at most one paused render without restarting ticks.
+  - [ ] Freeze a per-guest audio transport at the same logical pause barrier:
+    retain FLAC sample cursors, synth phase/envelopes, and cooldown time; resume
+    without restart, duplication, truncation, pitch drift, or wall-time expiry.
+    Keep host-chrome audio on a separate bus, specify reload preservation versus
+    deterministic cancellation, and test/document unavoidable device-buffer
+    latency without leaking it into guest simulation time.
+  - Curiosity poke: controller, menu, and future network wake sources should use
+    typed semantic selectors rather than making raw keyboard IDs the permanent
+    suspension policy language.
 - [x] Prove exact rational tick accumulation, bounded catch-up, deterministic
   snapshots, hostile-input containment, and state-preserving reload. (2026-07-17 EDT)
   - Curiosity poke: should a production policy add Wasmtime epochs as a second

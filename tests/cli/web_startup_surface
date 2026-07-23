@@ -67,18 +67,38 @@ expect_text "$root/flake.nix" '<dir>${pkgs.dejavu_fonts}/share/fonts/truetype</d
 	'sandboxed Chrome acceptance does not pin a small deterministic font set'
 reject_text "$root/flake.nix" 'FONTCONFIG_FILE = pkgs.makeFontsConf' \
 	'sandboxed Chrome acceptance still scans ambient system/profile font roots'
-expect_text "$root/src/bin/aedicule-web.rs" 'gpui_platform::single_threaded_web().run_embedded' \
+expect_text "$root/src/bin/aedicule-web.rs" 'gpui_platform::single_threaded_web()' \
 	'browser entrypoint does not use GPUI embedded-run lifetime ownership'
+expect_text "$root/src/bin/aedicule-web.rs" '.run_embedded' \
+	'browser entrypoint does not retain the externally driven WebAssembly run loop'
 expect_text "$root/src/bin/aedicule-web.rs" 'BrowserRuntime::new_with_assets' \
 	'browser entrypoint does not instantiate guests with their admitted asset catalog'
+expect_text "$root/src/bin/aedicule-web.rs" 'runtime.ui_snapshot()' \
+	'browser adapter ignores accepted guest-authored control placement snapshots'
+expect_text "$root/src/bin/aedicule-web.rs" 'Slider::new' \
+	'browser adapter does not render declared sliders through GPUI Component'
+expect_text "$root/src/bin/aedicule-web.rs" 'Button::new' \
+	'browser adapter does not render declared buttons through GPUI Component'
 expect_text "$root/src/bin/aedicule-web.rs" 'retain_browser_application(application)' \
 	'browser entrypoint drops its strong GPUI application handle'
 expect_text "$root/web/Caddyfile" '{$AEDICULE_WEB_LISTEN::8080}' \
 	'browser delivery server cannot select a non-default loopback listener'
+expect_text "$root/web/Caddyfile" 'path_regexp immutable_runtime ^/aedicule_web_bg\.[0-9a-f]{64}\.wasm$' \
+	'browser delivery server does not recognize content-addressed runtime Wasm'
+expect_text "$root/web/Caddyfile" 'Cache-Control "public, max-age=31536000, immutable"' \
+	'browser delivery server does not retain content-addressed runtime Wasm'
 expect_text "$root/web/Caddyfile" 'Cache-Control "no-store"' \
-	'browser development server can reuse stale runtime assets'
+	'browser development server can reuse stale mutable application assets'
+expect_text "$root/web/coi-serviceworker.js" 'aedicule-runtime-v1' \
+	'headerless static hosting does not cache immutable runtime Wasm'
+expect_text "$root/web/coi-serviceworker.js" 'cache.match(request)' \
+	'headerless static hosting lacks cache-first lookup for content-addressed runtime Wasm'
 expect_text "$root/tests/integration/web_browser_startup" 'AEDICULE_BROWSER_TRACE_EVENTS' \
 	'headless browser input detail has no opt-in environment gate'
+expect_text "$root/src/bin/aedicule-web.rs" '__AEDICULE_TRACE_EVENTS' \
+	'browser input tracing stops at the DOM instead of observing frontplane admission'
+expect_text "$root/src/bin/aedicule-web.rs" '"[Aedicule input]"' \
+	'browser frontplane events cannot be correlated with headless DOM diagnostics'
 expect_text "$root/tests/integration/web_browser_startup" 'Input.dispatchMouseEvent' \
 	'headless browser probe does not synthesize pointer input through Chrome'
 expect_text "$root/tests/integration/web_browser_startup" 'Input.dispatchTouchEvent' \
@@ -89,6 +109,10 @@ expect_text "$root/tests/integration/web_browser_startup" 'type: "input-summary"
 	'headless browser probe does not compact its synthetic input result'
 expect_text "$root/tests/integration/web_browser_startup" '--require-audio-request' \
 	'headless browser probe cannot require a real sampled-audio handoff'
+expect_text "$root/tests/integration/web_browser_startup" '--require-key-delivery' \
+	'headless browser probe cannot distinguish DOM dispatch from WAT keyboard delivery'
+expect_text "$root/tests/integration/web_browser_startup" '--require-controls' \
+	'headless browser probe cannot require rendered and guest-delivered AVP controls'
 expect_text "$root/tests/integration/web_browser_startup" '"--mute-audio"' \
 	'headless browser acceptance can emit physical audio during automated tests'
 expect_text "$root/tests/integration/web_packaged_audio" 'server_pid=$!' \

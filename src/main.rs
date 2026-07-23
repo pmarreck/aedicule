@@ -1129,7 +1129,7 @@ impl FrontplaneView {
     }
 
     fn key_down(&mut self, event: &KeyDownEvent, _: &mut Window, cx: &mut Context<Self>) {
-        let Some(key) = map_key(&event.keystroke.key) else {
+        let Some(key) = Key::from_gpui_name(&event.keystroke.key) else {
             return;
         };
         if event.is_held {
@@ -1139,7 +1139,7 @@ impl FrontplaneView {
     }
 
     fn key_up(&mut self, event: &KeyUpEvent, _: &mut Window, cx: &mut Context<Self>) {
-        let Some(key) = map_key(&event.keystroke.key) else {
+        let Some(key) = Key::from_gpui_name(&event.keystroke.key) else {
             return;
         };
         self.queue_native_event(Event::KeyUp(key), cx);
@@ -1665,26 +1665,6 @@ impl Render for FrontplaneView {
     }
 }
 
-/// Normalizes GPUI's portable key names into versioned physical-key IDs,
-/// leaving all application meaning inside the guest.
-fn map_key(key: &str) -> Option<Key> {
-    match key {
-        "left" => Some(Key::ArrowLeft),
-        "right" => Some(Key::ArrowRight),
-        "up" => Some(Key::ArrowUp),
-        "space" | " " => Some(Key::Space),
-        "p" => Some(Key::P),
-        "escape" => Some(Key::Escape),
-        "r" => Some(Key::R),
-        "f" => Some(Key::F),
-        "k" => Some(Key::K),
-        "b" => Some(Key::B),
-        "h" => Some(Key::H),
-        "f1" => Some(Key::F1),
-        _ => None,
-    }
-}
-
 /// Instantiates the stable conformance fallback through the same lifecycle as
 /// external applications when no usable runtime plugin is available.
 fn load_fallback(plugin_init: PluginInit) -> (Frontplane, FrameOutput) {
@@ -2041,10 +2021,10 @@ fn main() -> ExitCode {
 mod tests {
     use super::{
         DECIMAL_SCALE, OpenPathKind, StandardMenuEntry, TITLE_BAR_GLYPH_RGBA, ViewportTracker,
-        fixed_sine, guest_positioned_control_layer, host_title_bar_layer, map_key,
-        menu_action_event, menu_action_label, native_menus, open_path_prompt_options,
-        render_sample_for_host, render_synth_program_fixed, standard_menu_entries,
-        title_bar_control_glyph_overlay, title_bar_control_glyphs,
+        fixed_sine, guest_positioned_control_layer, host_title_bar_layer, menu_action_event,
+        menu_action_label, native_menus, open_path_prompt_options, render_sample_for_host,
+        render_synth_program_fixed, standard_menu_entries, title_bar_control_glyph_overlay,
+        title_bar_control_glyphs,
     };
     use aedicule::{
         Event, Key, MenuItem as PluginMenuItem, Metadata, SampleAsset, SynthFilter, SynthVoice,
@@ -2331,18 +2311,18 @@ mod tests {
 
     #[test]
     fn native_key_mapping_exposes_physical_keys_without_guest_semantics() {
-        assert_eq!(map_key("left"), Some(Key::ArrowLeft));
-        assert_eq!(map_key("right"), Some(Key::ArrowRight));
-        assert_eq!(map_key("up"), Some(Key::ArrowUp));
-        assert_eq!(map_key("space"), Some(Key::Space));
-        assert_eq!(map_key("p"), Some(Key::P));
-        assert_eq!(map_key("escape"), Some(Key::Escape));
-        assert_eq!(map_key("r"), Some(Key::R));
-        assert_eq!(map_key("f"), Some(Key::F));
-        assert_eq!(map_key("k"), Some(Key::K));
-        assert_eq!(map_key("b"), Some(Key::B));
-        assert_eq!(map_key("h"), Some(Key::H));
-        assert_eq!(map_key("f1"), Some(Key::F1));
+        assert_eq!(Key::from_gpui_name("left"), Some(Key::ArrowLeft));
+        assert_eq!(Key::from_gpui_name("right"), Some(Key::ArrowRight));
+        assert_eq!(Key::from_gpui_name("up"), Some(Key::ArrowUp));
+        assert_eq!(Key::from_gpui_name("space"), Some(Key::Space));
+        assert_eq!(Key::from_gpui_name("p"), Some(Key::P));
+        assert_eq!(Key::from_gpui_name("escape"), Some(Key::Escape));
+        assert_eq!(Key::from_gpui_name("r"), Some(Key::R));
+        assert_eq!(Key::from_gpui_name("f"), Some(Key::F));
+        assert_eq!(Key::from_gpui_name("k"), Some(Key::K));
+        assert_eq!(Key::from_gpui_name("b"), Some(Key::B));
+        assert_eq!(Key::from_gpui_name("h"), Some(Key::H));
+        assert_eq!(Key::from_gpui_name("f1"), Some(Key::F1));
     }
 
     #[test]

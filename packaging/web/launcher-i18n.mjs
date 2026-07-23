@@ -36,9 +36,13 @@ export const english = Object.freeze({
 	requiresIsolation: "Aedicule requires cross-origin isolation for shared WebAssembly memory.",
 	requiresSecureContext: "Aedicule requires a secure HTTPS browser context.",
 	requiresSharedMemory: "This browser does not expose shared WebAssembly memory.",
-	requiresWebGpu: "This browser does not expose WebGPU. Safari requires version 26 or newer.",
+	requiresWebGpu: "This browser does not expose WebGPU.",
 	starting: "Starting Aedicule…",
 	unusableWebGpu: "WebGPU is present, but the browser did not provide a usable GPU adapter.",
+	webGpuFirefoxHelp: "Firefox: open about:config, set dom.webgpu.enabled to true, then reload. Details: https://developer.mozilla.org/en-US/docs/Mozilla/Firefox/Experimental_features#webgpu_api",
+	webGpuChromeHelp: "Chrome/Chromium: update first, enable “Use graphics acceleration when available” at chrome://settings/system, then inspect chrome://gpu. Advanced unsupported/blocklisted systems can try chrome://flags/#enable-unsafe-webgpu (plus #enable-vulkan on Linux). Details: https://developer.chrome.com/docs/web-platform/webgpu/troubleshooting-tips",
+	webGpuSafariHelp: "Safari: update to Safari 26 or newer. In Safari Technology Preview, enable WebGPU, GPU Process: DOM Rendering, and GPU Process: Canvas Rendering under Settings → Feature Flags. Details: https://webkit.org/blog/17333/webkit-features-in-safari-26-0/#webgpu",
+	webGpuRetryHelp: "Reload this page first. Restart the browser only if the change does not take effect; if WebGPU is still unusable, update the browser, OS, and GPU driver.",
 	yes: "yes",
 });
 
@@ -79,6 +83,29 @@ export function formatMessage(message, values) {
 		if (!Object.hasOwn(values, name)) throw new Error(`unknown message value: ${name}`);
 		return String(values[name]);
 	});
+}
+
+/**
+ * Keeps browser-owned WebGPU recovery steps beside the capability failure so
+ * a blank/black page never forces visitors to search for hidden preferences.
+ */
+export function webGpuFailureMessage(kind, strings) {
+	const heading = {
+		adapter: strings.unusableWebGpu,
+		missing: strings.requiresWebGpu,
+	}[kind];
+	if (heading === undefined) throw new Error(`unknown WebGPU failure kind: ${kind}`);
+	return [
+		heading,
+		"",
+		strings.webGpuFirefoxHelp,
+		"",
+		strings.webGpuChromeHelp,
+		"",
+		strings.webGpuSafariHelp,
+		"",
+		strings.webGpuRetryHelp,
+	].join("\n");
 }
 
 /**

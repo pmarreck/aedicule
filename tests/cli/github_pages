@@ -30,6 +30,7 @@ if [[ -s $workflow ]]; then
 	require_text "$workflow" 'id-token: write' 'Pages identity permission'
 	require_text "$workflow" 'nix build .#delivery-web' 'canonical web delivery build'
 	require_text "$workflow" '--static-root pages-site/ulam-flower' 'headerless Pages browser gate'
+	require_text "$workflow" '--require-controls' 'Ulam Pages control-delivery gate'
 	require_text "$workflow" 'actions/configure-pages@v5' 'official Pages configuration action'
 	require_text "$workflow" 'actions/upload-pages-artifact@v4' 'official Pages upload action'
 	require_text "$workflow" 'actions/deploy-pages@v4' 'official Pages deployment action'

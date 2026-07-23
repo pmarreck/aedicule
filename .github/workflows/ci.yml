@@ -68,6 +68,7 @@ jobs:
           ./tests/integration/web_browser_startup \
             --chrome "$chrome" \
             --timeout-ms 60000 \
+            --require-controls \
             --static-root pages-site/ulam-flower
 
       - name: Configure GitHub Pages
