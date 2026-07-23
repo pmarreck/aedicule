@@ -101,6 +101,10 @@ expect_text "$root/tests/integration/web_browser_startup" '--static-root serves 
 	'headless browser probe cannot emulate GitHub Pages response headers'
 expect_text "$root/tests/integration/web_browser_startup" 'serviceWorkerControlled' \
 	'headless browser snapshot does not expose service-worker control'
+expect_text "$root/.github/workflows/ci.yml" 'chrome=$(command -v google-chrome)' \
+	'GitHub Pages acceptance does not select the runner-provided stable Chrome explicitly'
+expect_text "$root/.github/workflows/ci.yml" '--timeout-ms 60000' \
+	'GitHub Pages acceptance retains a browser-launch timeout too short for contended hosted runners'
 expect_text "$root/test" 'run_web_build() {' \
 	'full suite does not capture and classify expected browser compiler diagnostics'
 expect_text "$root/test" 'warning: unstable feature specified for `-Ctarget-feature`: `atomics`' \

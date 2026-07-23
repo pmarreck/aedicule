@@ -63,7 +63,12 @@ jobs:
 
       - name: Prove headerless Pages browser startup
         if: matrix.target == 'web'
-        run: ./tests/integration/web_browser_startup --static-root pages-site/ulam-flower
+        run: |
+          chrome=$(command -v google-chrome)
+          ./tests/integration/web_browser_startup \
+            --chrome "$chrome" \
+            --timeout-ms 60000 \
+            --static-root pages-site/ulam-flower
 
       - name: Configure GitHub Pages
         if: matrix.target == 'web' && github.event_name == 'push' && github.ref == 'refs/heads/yolo'

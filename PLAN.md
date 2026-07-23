@@ -72,6 +72,10 @@
   - [x] Ship and verify the public gallery, both direct demos, the package
     catalog/FLAC, and the downloadable `.aed`, then link them from the README.
     (2026-07-22 23:45 EDT; public HTTP and headless WebGPU/input probes passed.)
+  - [x] Make hosted Pages acceptance select the runner-provided stable Chrome
+    explicitly and allow a bounded 60-second cold/contended browser launch,
+    after an otherwise-green build timed out before publishing DevTools.
+    (2026-07-23 08:54 EDT; policy failed first, then the complete suite passed.)
   - [ ] Upgrade GitHub's Pages actions to the current Node-24 majors:
     `configure-pages@v6`, `upload-pages-artifact@v5`, and `deploy-pages@v5`.
     The v0.1.1 workflow passed, but GitHub annotated the older majors as
