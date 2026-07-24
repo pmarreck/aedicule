@@ -1,6 +1,7 @@
 # Aedicule View Protocol
 
-Status: design proposal; not yet a WAT ABI contract.
+Status: the absolute-positioned v0 kernel is an implemented WAT ABI contract;
+the general semantic-tree profile below remains a design proposal.
 
 The **Aedicule View Protocol (AVP)** is the platform-neutral semantic UI plane
 for Aedicule applications. A guest publishes an immutable **view document**;
@@ -9,7 +10,8 @@ into GPUI desktop controls, browser controls, accessibility nodes, and
 headless test models.
 
 The existing `AE_ui_begin` / `AE_ui_end` transaction is the working kernel of
-this design. Its current panels, sliders, and buttons form a narrow
+this design. Its current panels, sliders, buttons, and external HTTPS links
+form a narrow
 **v0 native-controls profile**, not the completed general application
 protocol. “LiveView-like” describes its inspiration, but is not its name or a
 claim that Aedicule uses Phoenix LiveView's server, transport, or diff model.
@@ -110,6 +112,7 @@ The first useful general-application slice should remain deliberately small:
 - checkbox or toggle;
 - exact integer slider;
 - single-line text input;
+- external link;
 - image; and
 - canvas region containing the existing custom scene frame.
 

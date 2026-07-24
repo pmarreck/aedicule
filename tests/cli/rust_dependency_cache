@@ -98,7 +98,9 @@ mkdir -p "$snapshot"
 tar -C "$root" --exclude=.git --exclude=target --exclude=result \
 	--exclude=result-all --exclude=result-web -cf - . | tar -C "$snapshot" -xf -
 
-before=$(nix eval --raw "$snapshot#$artifact" 2>/dev/null)
+# Explicit path: prevents an unrelated ancestor .git entry from making Nix
+# reinterpret this isolated snapshot as a malformed parent Git worktree.
+before=$(nix eval --raw "path:$snapshot#$artifact" 2>/dev/null)
 status=$?
 if (( status != 0 )); then
 	printf 'could not evaluate the dependency artifact from an isolated source snapshot\n' >&2
@@ -106,7 +108,7 @@ if (( status != 0 )); then
 fi
 
 printf '\n// Dependency-cache classifier source-only mutation.\n' >> "$snapshot/src/lib.rs"
-after=$(nix eval --raw "$snapshot#$artifact" 2>/dev/null)
+after=$(nix eval --raw "path:$snapshot#$artifact" 2>/dev/null)
 status=$?
 if (( status != 0 )); then
 	printf 'could not re-evaluate the dependency artifact after a source-only change\n' >&2

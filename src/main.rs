@@ -30,12 +30,12 @@ use aedicule::{
     run_application_tests,
 };
 use gpui::{
-    AnyWindowHandle, App, AppContext as _, Context, Entity, FocusHandle, Focusable,
+    AnyWindowHandle, App, AppContext as _, ClickEvent, Context, Entity, FocusHandle, Focusable,
     InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent, KeyUpEvent, Menu, MenuItem,
     MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement as _,
-    PathPromptOptions, PromptLevel, Render, ScrollDelta, ScrollWheelEvent, Styled as _,
-    Subscription, Window, WindowBounds, WindowOptions, actions, canvas, div,
-    prelude::FluentBuilder as _, px, rgba, size,
+    PathPromptOptions, PromptLevel, Render, Role, ScrollDelta, ScrollWheelEvent, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Subscription, Window, WindowBounds,
+    WindowOptions, actions, canvas, div, prelude::FluentBuilder as _, px, rgba, size,
 };
 use gpui_component::{
     ActiveTheme as _, Root, Selectable as _, Theme, ThemeMode, TitleBar,
@@ -1319,6 +1319,30 @@ fn guest_positioned_control_layer(bounds: Rect) -> gpui::Div {
         .h(px(bounds.height))
 }
 
+/// Presents guest-declared navigation as a focusable semantic link while
+/// keeping activation inside the platform's trusted click callback.
+fn external_link_control(
+    id: u32,
+    label: impl Into<SharedString>,
+    on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+) -> impl IntoElement {
+    let label = label.into();
+    div()
+        .id(("external-link-semantic", id as usize))
+        .role(Role::Link)
+        .aria_label(label.clone())
+        .w_full()
+        .h_full()
+        .child(
+            Button::new(("external-link-control", id as usize))
+                .link()
+                .label(label)
+                .w_full()
+                .h_full()
+                .on_click(on_click),
+        )
+}
+
 impl Render for FrontplaneView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let viewport = window.viewport_size();
@@ -1413,6 +1437,40 @@ impl Render for FrontplaneView {
                 guest_positioned_control_layer(placement.bounds)
                     .id(("native-button", placement.id as usize))
                     .child(button)
+            })
+            .collect::<Vec<_>>();
+        let external_link_layers = ui
+            .iter()
+            .flat_map(|snapshot| {
+                let revision = snapshot.revision;
+                snapshot
+                    .external_links
+                    .iter()
+                    .map(move |placement| (revision, placement))
+            })
+            .map(|(revision, placement)| {
+                let id = placement.id;
+                let label = self
+                    .frontplane
+                    .metadata()
+                    .external_links
+                    .iter()
+                    .find(|link| link.id == id)
+                    .expect("validated external-link placement remains declared")
+                    .label
+                    .clone();
+                let link = external_link_control(
+                    id,
+                    label,
+                    cx.listener(move |this, _, _, cx| {
+                        if let Ok(request) = this.frontplane.external_link_request(revision, id) {
+                            cx.open_url(&request.url);
+                        }
+                    }),
+                );
+                guest_positioned_control_layer(placement.bounds)
+                    .id(("external-link", placement.id as usize))
+                    .child(link)
             })
             .collect::<Vec<_>>();
         let can_reload = self.source.is_some();
@@ -1553,6 +1611,7 @@ impl Render for FrontplaneView {
             .children(control_panels)
             .children(slider_layers)
             .children(button_layers)
+            .children(external_link_layers)
             .when(empty_state, |this| {
                 this.child(
                     div()
@@ -2075,10 +2134,11 @@ fn main() -> ExitCode {
 mod tests {
     use super::{
         DECIMAL_SCALE, GuestPointerButtons, OpenPathKind, StandardMenuEntry, TITLE_BAR_GLYPH_RGBA,
-        ViewportTracker, fixed_sine, guest_positioned_control_layer, host_title_bar_layer,
-        menu_action_event, menu_action_label, native_menus, open_path_prompt_options,
-        render_sample_for_host, render_synth_program_fixed, shift_audio_cooldowns,
-        standard_menu_entries, title_bar_control_glyph_overlay, title_bar_control_glyphs,
+        ViewportTracker, external_link_control, fixed_sine, guest_positioned_control_layer,
+        host_title_bar_layer, menu_action_event, menu_action_label, native_menus,
+        open_path_prompt_options, render_sample_for_host, render_synth_program_fixed,
+        shift_audio_cooldowns, standard_menu_entries, title_bar_control_glyph_overlay,
+        title_bar_control_glyphs,
     };
     use aedicule::{
         Event, Key, MenuItem as PluginMenuItem, Metadata, SampleAsset, SynthFilter, SynthVoice,
@@ -2161,6 +2221,16 @@ mod tests {
         }
     }
 
+    struct ExternalLinkProbe;
+
+    impl Render for ExternalLinkProbe {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            external_link_control(7, "What is this?", |_, _, cx| {
+                cx.open_url("https://example.com/readme#ulam");
+            })
+        }
+    }
+
     #[test]
     fn host_title_bar_occludes_guest_pointer_edges() {
         let mut app = TestApp::new();
@@ -2205,6 +2275,21 @@ mod tests {
             assert_eq!(probe.host_pointer_downs, 1);
             assert_eq!(probe.guest_pointer_downs, 1);
         });
+    }
+
+    #[test]
+    fn native_external_link_opens_only_from_its_accessible_click_control() {
+        let mut app = TestApp::new();
+        app.update(gpui_component::init);
+        let mut window = app.open_window(|_, _| ExternalLinkProbe);
+        window.draw();
+
+        assert_eq!(app.opened_url(), None);
+        window.simulate_click(point(px(40.0), px(16.0)), MouseButton::Left);
+        assert_eq!(
+            app.opened_url().as_deref(),
+            Some("https://example.com/readme#ulam")
+        );
     }
 
     #[test]
@@ -2275,6 +2360,7 @@ mod tests {
             ],
             pause_triggers: Vec::new(),
             controls: Vec::new(),
+            external_links: Vec::new(),
             synth_voices: Vec::new(),
             sample_assets: Vec::new(),
         };

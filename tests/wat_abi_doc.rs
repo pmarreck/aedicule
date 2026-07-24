@@ -37,6 +37,13 @@ fn checked_in_wat_abi_reference_is_the_generated_canonical_document() {
         checked_in.contains("`12` F1, `13` W, `14` A, and `15` D"),
         "generated ABI reference assigns append-only W/A/D physical-key IDs"
     );
+    assert!(
+        checked_in.contains("AE_external_link")
+            && checked_in.contains("AE_external_link_place_q16")
+            && checked_in.contains("HTTPS")
+            && checked_in.contains("noopener"),
+        "generated ABI reference documents bounded user-activated external links"
+    );
 }
 
 #[test]
@@ -66,6 +73,7 @@ fn checked_in_llm_guide_is_generated_versioned_and_complete_without_host_source(
     assert!(checked_in.contains("## Common WAT and LLM mistakes"));
     assert!(checked_in.contains("## Recommended toolchain"));
     assert!(checked_in.contains("### Host-scheduled pause"));
+    assert!(checked_in.contains("### External links"));
     assert!(checked_in.contains("does not alter or deduplicate its raw input lifecycle"));
     assert!(checked_in.contains("Comment intent, units, invariants, and state layout"));
     for import in WAT_ABI_IMPORTS {

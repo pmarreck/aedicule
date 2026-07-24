@@ -296,7 +296,7 @@ Working:
   bounded-catch-up drops;
 - deterministic snapshots, replay, SVG rendering, and seeded execution;
 - a narrow atomic keyed-view kernel for guest-owned native panels, integer
-  sliders, and action buttons;
+  sliders, action buttons, and capability-bounded external HTTPS links;
 - external WAT loading, content watching, and transactional hot reload; and
 - reproducible Nix builds with a pure deterministic test suite.
 - deterministic six-target release archives, with both bundled web demos
@@ -307,7 +307,8 @@ Known limits:
 - ABI v0 will change;
 - GPUI sprite-atlas source cropping is modeled but not fully painted natively;
 - browser delivery does not yet play guest-declared synthesized audio;
-- the current retained-view vocabulary is only panels, sliders, and buttons;
+- the current retained-view vocabulary is only panels, sliders, buttons, and
+  external links;
   the platform-neutral [Aedicule View Protocol](VIEW_PROTOCOL.md) specifies
   hierarchy, layout, dynamic text/input, accessibility, event-driven apps,
   browser parity, and explicit host services still to build;

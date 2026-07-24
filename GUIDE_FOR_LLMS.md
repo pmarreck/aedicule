@@ -2,9 +2,9 @@
 
 # Guide for LLMs writing Aedicule applications
 
-Guide version: `0.2.0`
+Guide version: `0.3.0`
 
-Current Aedicule WAT ABI: `0.3`
+Current Aedicule WAT ABI: `0.4`
 
 Canonical guide: https://github.com/pmarreck/aedicule/blob/yolo/GUIDE_FOR_LLMS.md
 
@@ -15,7 +15,7 @@ An Aedicule **guest** is a WebAssembly Text (`.wat`) application. Aedicule is th
 ## Ground rules
 
 1. Treat the exact generated appendix as the authority for names and signatures. Import only from `aedicule.v0`, use only `AE_*` names, and declare the ABI version exports.
-2. Everything under **Available now** is implemented in ABI `0.3`. Everything under **Proposed—not callable yet** is design direction, not an import or export you may emit.
+2. Everything under **Available now** is implemented in ABI `0.4`. Everything under **Proposed—not callable yet** is design direction, not an import or export you may emit.
 3. Check every status-returning host import. `0` means success. A nonzero result rejects the guest transaction that contains it; ignoring the result does not make invalid output valid.
 4. Keep application state in guest memory. Treat `AE_render` as a projection of that state, not as the place to advance simulation or fire one-shot effects.
 5. Comment intent, units, invariants, and state layout. WAT is compact enough that an uncommented correct program can still be unmaintainable.
@@ -57,7 +57,7 @@ A normal initial load is:
 6. call `AE_render`; and
 7. publish the candidate only after all of the above succeeds.
 
-`AE_configure` declares stable metadata and capabilities such as the title, action/menu labels, integer slider lattices, synth programs, and sampled FLAC assets. Do not repeatedly redeclare them during updates.
+`AE_configure` declares stable metadata and capabilities such as the title, action/menu labels, integer slider lattices, labeled external HTTPS destinations, synth programs, and sampled FLAC assets. Do not repeatedly redeclare them during updates.
 
 `AE_init*` receives a deterministic 64-bit seed as two `i32` halves and the initial logical viewport. Initialize all mutable state there. If you need randomness, implement a deterministic PRNG in guest state from that seed; do not assume an ambient source.
 
@@ -114,7 +114,8 @@ The implemented Aedicule View Protocol (AVP) kernel is a retained, declarative, 
 During `AE_configure`, declare:
 
 - exact integer sliders with stable ID, label, inclusive range, step, and initial value; and
-- action/menu items whose action IDs and labels may also back native buttons.
+- action/menu items whose action IDs and labels may also back native buttons; and
+- external links with a stable ID, nonempty visible/accessibility label, and absolute HTTPS URL.
 
 When desired UI changes, submit a complete snapshot during `AE_render`:
 
@@ -124,6 +125,7 @@ call $AE_ui_begin
 call $AE_control_panel_q16
 call $AE_slider_place_q16
 call $AE_button_place_q16
+call $AE_external_link_place_q16
 call $AE_ui_end
 ```
 
@@ -131,7 +133,13 @@ Revisions are opaque 32-bit values and must differ from the last accepted revisi
 
 Submitting no UI transaction retains the last accepted snapshot. Submitting a complete empty snapshot removes it. An invalid candidate leaves the prior snapshot intact. After a control or action event, update guest state and submit a new revision if the visible control value or selected state should change.
 
-This current profile contains panels, exact integer sliders, and buttons only. It is not the proposed general layout/tree/text-input surface.
+This current profile contains panels, exact integer sliders, buttons, and external links only. It is not the proposed general layout/tree/text-input surface.
+
+### External links
+
+ABI minor `4` adds a narrow external-navigation capability without giving the guest ambient browser or network access. `AE_external_link` is configure-only: its label must be nonempty and its destination must be an absolute, credential-free HTTPS URL without whitespace, controls, or backslashes. `AE_external_link_place_q16` places that stable ID once in the current retained UI snapshot, after its parent panel.
+
+A link activates only through a real click on the host-rendered accessible control. The native adapter delegates to its platform URL service. The browser adapter requires transient user activation and requests a new context with `_blank` and `noopener`; popup denial is diagnostic only. The guest receives no success/failure event and cannot programmatically trigger navigation. `aedicule-render --activate-link ID` is the deterministic test adapter: it validates the current accepted revision and reports the normalized request without opening anything.
 
 ### Deterministic math
 
@@ -267,6 +275,7 @@ For nontrivial code, use named helper functions and locals even when inlining wo
 - Opening a path, transform, frame, or UI transaction without closing it on every control-flow path.
 - Reusing an accepted UI revision.
 - Placing a slider before its panel or before declaring its integer lattice in `AE_configure`.
+- Placing an external link before its panel, omitting visible link text, or treating link activation as guest-observable network access.
 - Treating transient host slider position as guest state. The next accepted guest snapshot is authoritative.
 - Emitting UI every render even when unchanged; retained snapshots exist to avoid that work.
 - Assuming packaged files are automatically images/fonts. Only explicit current capabilities cross the boundary.
@@ -321,7 +330,7 @@ aedicule --test --seed 0x5eed project/
 aedicule-render project/ --ticks 1
 ```
 
-Pin tool versions in reproducible builds. Tool defaults evolve as WebAssembly proposals graduate, while Aedicule ABI `0.3` intentionally exposes a narrower core contract.
+Pin tool versions in reproducible builds. Tool defaults evolve as WebAssembly proposals graduate, while Aedicule ABI `0.4` intentionally exposes a narrower core contract.
 
 ## Proposed—not callable yet
 
@@ -329,9 +338,9 @@ The following items are roadmap material. Do not import or export names for them
 
 ### General AVP application UI
 
-The intended general Aedicule View Protocol is a retained semantic tree with stable node IDs, atomic complete revisions, host-computed layout, adapter reconciliation, accessibility, and headless inspection. Planned nodes include rows/columns, scroll containers, semantic text, text inputs with IME, toggles, images, canvas regions, tabs, split panes, dialogs, lists, tables, trees, grids, and virtualized collections.
+The intended general Aedicule View Protocol is a retained semantic tree with stable node IDs, atomic complete revisions, host-computed layout, adapter reconciliation, accessibility, and headless inspection. Planned nodes include rows/columns, scroll containers, semantic text, text inputs with IME, toggles, images, canvas regions, tabs, split panes, dialogs, lists, tables, trees, grids, and virtualized collections. The current absolute panel/slider/button/link snapshot is only the working v0 kernel.
 
-The guest will own desired state, content, semantics, and layout constraints. The host will validate and adapt them to GPUI, browser, accessibility, and headless frontplanes. The current absolute panel/slider/button snapshot is only the working v0 kernel.
+The guest will own desired state, content, semantics, and layout constraints. The host will validate and adapt them to GPUI, browser, accessibility, and headless frontplanes.
 
 ### Application shell and services
 
@@ -384,7 +393,7 @@ Before calling a guest ready:
 
 The remainder is generated from the same declarative Rust table used to check `WAT_ABI.md`. It is deliberately duplicated here so an LLM with only this file still has every current name, signature, event code, and lifecycle rule.
 
-### Aedicule WAT ABI v0.3
+### Aedicule WAT ABI v0.4
 
 This is the complete client-facing ABI for WAT applications accepted by Aedicule today. The only import module is `aedicule.v0`. Every function at this boundary is named `AE_*`; the provisional `host.v0` / `fp_*` names are rejected.
 
@@ -468,9 +477,15 @@ Paused wall time is removed from the scheduler baseline, so it produces no catch
 
 Native UI implements the v0 native-controls profile of the Aedicule View Protocol (AVP). The guest is authoritative for the desired keyed view document and submits a complete snapshot during `AE_render` only when that UI changes: `AE_ui_begin(revision)`, zero or more widget declarations, then `AE_ui_end()`. The revision is an opaque 32-bit bit pattern and must differ from the last accepted revision. An unchanged UI is omitted while ordinary `AE_frame_*` canvas rendering continues. A completed snapshot is published only when the entire surrounding `AE_render` call also returns a valid canvas frame; any rejected import, trap, missing `AE_ui_end`, or incomplete frame preserves the previously accepted snapshot. A snapshot may intentionally be empty, which removes every native widget. This profile is flat and absolute-positioned; the proposed general semantic tree, layout, text-input, accessibility, and adapter-parity contract is specified separately in `VIEW_PROTOCOL.md`.
 
-Inside the UI transaction, emit each `AE_control_panel_q16` before any slider or button that references it. Geometry is absolute viewport-relative signed Q16.16. Panel, slider, and button stable IDs are independently unique within one snapshot. A slider placement must name a configure-time declaration and carry a value on that declaration's exact lattice. The guest-provided value is authoritative; Aedicule may retain a GPUI entity only for focus, hover, drag, and accessibility mechanics, then reconciles it by stable ID when a new revision is accepted. Omitting an ID from the next snapshot removes it. Slider label placement `0` hides the visual label/value and `1` places it above a full-width track; slider and panel flags remain zero. A button placement must reference a declared action. Button flag bit `0` selects the platform-native highlighted state; every other bit is reserved and must be zero.
+Inside the UI transaction, emit each `AE_control_panel_q16` before any slider, button, or external link that references it. Geometry is absolute viewport-relative signed Q16.16. Panel, slider, button, and external-link stable IDs are independently unique within one snapshot. A slider placement must name a configure-time declaration and carry a value on that declaration's exact lattice. The guest-provided value is authoritative; Aedicule may retain a GPUI entity only for focus, hover, drag, and accessibility mechanics, then reconciles it by stable ID when a new revision is accepted. Omitting an ID from the next snapshot removes it. Slider label placement `0` hides the visual label/value and `1` places it above a full-width track; slider and panel flags remain zero. A button placement must reference a declared action. Button flag bit `0` selects the platform-native highlighted state; every other bit is reserved and must be zero.
 
 After accepting a control or action event, a guest that wants the changed value or selected state displayed must update its model and submit a new UI revision. If it does not, Aedicule reconciles transient slider interaction back to the last accepted guest value and retains the last accepted button state. Headless `aedicule-render --control ID=VALUE` arguments are repeatable, preserve argument order, use phase `2`, and execute after initialization but before requested ticks and rendering.
+
+#### External links
+
+ABI v0.4 adds a bounded, guest-owned external-navigation control rather than ambient browser or network access. During `AE_configure`, `AE_external_link` declares a stable ID, nonempty visible/accessibility label, and absolute HTTPS URL. The host rejects non-HTTPS schemes, whitespace or controls, backslashes, missing hosts, and URL credentials; `flags` must be zero. During a changed UI snapshot, `AE_external_link_place_q16` places that ID inside an already-declared panel. Its placement ID is the declaration ID, may occur only once per snapshot, and uses the same absolute Q16.16 geometry as other controls.
+
+Native and browser adapters resolve activation against the exact currently accepted `(revision, id)` only from the platform control's real click handler. Native delegates to the platform URL service. Browser activation requires transient user activation and opens a new browsing context with `_blank` and `noopener`; popup-policy failure is an adapter diagnostic, not guest-visible state. The guest receives no navigation result and cannot synthesize activation through an import. Headless `aedicule-render --activate-link ID` never opens a browser; it validates the current placement and emits the deterministic revision, ID, and normalized URL to stderr for automation.
 
 ##### `AE_title`
 
@@ -503,6 +518,14 @@ Registers one typed host-consumed pause/wake trigger during `AE_configure`; vers
 ```
 
 Declares an exact stepped integer slider during `AE_configure`; changes arrive through `AE_control_event`.
+
+##### `AE_external_link`
+
+```wat
+(func $AE_external_link (param id i32) (param label_ptr i32) (param label_len i32) (param url_ptr i32) (param url_len i32) (param flags i32) (result i32))
+```
+
+Declares one labeled, credential-free HTTPS destination during `AE_configure`; version 0 requires `flags = 0`.
 
 ##### `AE_ui_begin`
 
@@ -543,6 +566,14 @@ Places a declared native integer slider in the current UI snapshot; the guest-pr
 ```
 
 Places a declared action as a keyed native button; flag bit 0 is the guest-authored selected state and all other bits are reserved.
+
+##### `AE_external_link_place_q16`
+
+```wat
+(func $AE_external_link_place_q16 (param id i32) (param panel_id i32) (param x_q16 i32) (param y_q16 i32) (param width_q16 i32) (param height_q16 i32) (param flags i32) (result i32))
+```
+
+Places one declared external link in a guest-owned panel using Q16.16 logical-pixel geometry; version 0 requires `flags = 0`.
 
 ##### `AE_sin_cos_turn`
 
@@ -786,7 +817,7 @@ Accepts a bounded UTF-8 diagnostic message; version 0 does not expose its sink t
 
 #### Portable text faces
 
-`AE_text` remains source-compatible and uses the active platform UI face. `AE_text_font` and `AE_text_font_q16` accept stable selector `0` for that platform default or `1` for Aedicule's embedded Geist Mono Regular. Selector `1` is registered from identical OFL-1.1 font bytes in native and browser adapters, so aligned numerical data never depends on host installation. Unknown selectors reject the complete render transaction rather than silently substituting a proportional face. Package-supplied font handles are not part of ABI v0.3; they require bounded `.aed` asset transport and collision-safe family identities in every adapter.
+`AE_text` remains source-compatible and uses the active platform UI face. `AE_text_font` and `AE_text_font_q16` accept stable selector `0` for that platform default or `1` for Aedicule's embedded Geist Mono Regular. Selector `1` is registered from identical OFL-1.1 font bytes in native and browser adapters, so aligned numerical data never depends on host installation. Unknown selectors reject the complete render transaction rather than silently substituting a proportional face. Package-supplied font handles are not part of ABI v0.4; they require bounded `.aed` asset transport and collision-safe family identities in every adapter.
 
 #### Stable draw IDs
 

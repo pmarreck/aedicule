@@ -211,3 +211,21 @@ assert.equal(browser.__AEDICULE_INPUT_PROBE.hiddenInputFocusRequests, 1);
 listeners.get("mousedown")({ button: 0, buttons: 1, clientX: 4, clientY: 8 });
 assert.equal(browser.__AEDICULE_INPUT_PROBE.counts.mousedown, 1);
 assert.equal(browser.__AEDICULE_INPUT_PROBE.events.length, 1);
+
+const linkBrowser = {
+	addEventListener() {},
+	HTMLInputElement,
+	navigator: { userActivation: { isActive: true } },
+};
+vm.runInNewContext(inputObserverSource(false, true), linkBrowser);
+const popup = linkBrowser.open("https://example.com/readme#ulam", "_blank", "noopener");
+assert.equal(Object.getPrototypeOf(popup), null);
+assert.deepEqual(
+	JSON.parse(JSON.stringify(linkBrowser.__AEDICULE_INPUT_PROBE.openRequests)),
+	[{
+		features: "noopener",
+		target: "_blank",
+		url: "https://example.com/readme#ulam",
+		userActivation: true,
+	}],
+);

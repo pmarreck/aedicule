@@ -28,8 +28,8 @@ const EXPECTED_STAGES = [
 	"settled",
 ];
 
-const HELP = `usage: web_browser_startup [--chrome PATH] [--timeout-ms N] [--require-audio-playback] [--require-key-delivery] [--require-controls] URL
-       web_browser_startup [--chrome PATH] [--timeout-ms N] [--require-audio-playback] [--require-key-delivery] [--require-controls] [--local-application PATH] --static-root PATH
+const HELP = `usage: web_browser_startup [--chrome PATH] [--timeout-ms N] [--require-audio-playback] [--require-key-delivery] [--require-controls] [--require-external-link] URL
+       web_browser_startup [--chrome PATH] [--timeout-ms N] [--require-audio-playback] [--require-key-delivery] [--require-controls] [--require-external-link] [--local-application PATH] --static-root PATH
 
 Launch a headless Chromium browser, stream Aedicule's structured startup
 timeline, and reject browser exceptions or a missing/1x1 GPUI canvas.
@@ -40,6 +40,8 @@ source start, and source completion through the Web Audio adapter.
 --require-key-delivery rejects a static guest unless W/A/D down/up edges all
 cross the browser-to-WAT boundary and produce one committed frame change.
 --require-controls requires AVP buttons/sliders and proves their events reach the guest.
+--require-external-link clicks an AVP link and requires transient activation,
+the normalized destination, _blank, and noopener without opening a real popup.
 --local-application selects a .wat or .aed through the gallery and requires the
 generic origin-local runner to reach the same settled application state.
 
@@ -53,6 +55,7 @@ function parseArguments(arguments_) {
 	let timeoutMs = 15_000;
 	let requireAudioPlayback = false;
 	let requireControls = false;
+	let requireExternalLink = false;
 	let requireKeyDelivery = false;
 	let localApplication;
 	let staticRoot;
@@ -91,6 +94,10 @@ function parseArguments(arguments_) {
 			requireControls = true;
 			continue;
 		}
+		if (argument === "--require-external-link") {
+			requireExternalLink = true;
+			continue;
+		}
 		if (argument === "--require-key-delivery") {
 			requireKeyDelivery = true;
 			continue;
@@ -125,6 +132,7 @@ function parseArguments(arguments_) {
 		localApplication,
 		requireAudioPlayback,
 		requireControls,
+		requireExternalLink,
 		requireKeyDelivery,
 		staticRoot,
 		timeoutMs,
@@ -446,11 +454,22 @@ function createProtocol(socket) {
 	};
 }
 
-export function inputObserverSource(verboseEvents) {
+export function inputObserverSource(verboseEvents, interceptExternalLinks = false) {
 	return `(() => {
 		globalThis.__AEDICULE_TRACE_EVENTS = ${verboseEvents};
-		const probe = { counts: {}, events: [], hiddenInputFocusRequests: 0 };
+		const probe = { counts: {}, events: [], hiddenInputFocusRequests: 0, openRequests: [] };
 		globalThis.__AEDICULE_INPUT_PROBE = probe;
+		if (${interceptExternalLinks}) {
+			globalThis.open = function(url, target, features) {
+				probe.openRequests.push({
+					url: String(url),
+					target: String(target),
+					features: String(features),
+					userActivation: navigator.userActivation?.isActive === true,
+				});
+				return Object.create(null);
+			};
+		}
 		const originalInputFocus = HTMLInputElement.prototype.focus;
 		HTMLInputElement.prototype.focus = function(...arguments_) {
 			probe.hiddenInputFocusRequests += 1;
@@ -503,6 +522,8 @@ async function pageSnapshot(protocol) {
 			frameBackground: globalThis.__AEDICULE_FRAME_BACKGROUND ?? null,
 			runtime: globalThis.__AEDICULE_RUNTIME_DIAGNOSTIC ?? null,
 			ui: globalThis.__AEDICULE_UI_SNAPSHOT ?? null,
+			externalLinkActivation: globalThis.__AEDICULE_EXTERNAL_LINK_ACTIVATION ?? null,
+			openRequests: globalThis.__AEDICULE_INPUT_PROBE?.openRequests ?? [],
 			canvases: Array.from(document.querySelectorAll("canvas"), canvas => {
 				const bounds = canvas.getBoundingClientRect();
 				return { bufferWidth: canvas.width, bufferHeight: canvas.height,
@@ -527,7 +548,7 @@ async function screenshotDigest(protocol) {
  * an input-routing test cannot mistake intentional UI occlusion for lost guest input.
  */
 export function chooseCanvasInputPoint(canvas, ui = {}) {
-	const rectangles = ["panels", "buttons", "sliders"]
+	const rectangles = ["panels", "buttons", "sliders", "externalLinks"]
 		.flatMap(kind => ui?.[kind] ?? []);
 	const pointIsFree = ({ x, y }) => !rectangles.some(rectangle => (
 		x >= rectangle.x
@@ -865,6 +886,39 @@ async function exerciseControls(protocol, snapshot) {
 	};
 }
 
+async function exerciseExternalLink(protocol, snapshot) {
+	const link = snapshot.ui?.externalLinks?.[0];
+	if (link === undefined) {
+		return {
+			activated: false,
+			externalLinks: 0,
+			pointerLeaked: false,
+			request: null,
+		};
+	}
+	const pointerCount = snapshot.deliveredEventCounts.pointer;
+	await dispatchControlClick(protocol, link);
+	await protocol.send("Runtime.evaluate", {
+		expression: "new Promise(resolve => requestAnimationFrame(resolve))",
+		awaitPromise: true,
+	});
+	const after = await pageSnapshot(protocol);
+	const request = after.openRequests.at(-1) ?? null;
+	const diagnostic = after.externalLinkActivation;
+	return {
+		activated: diagnostic?.status === "opened"
+			&& diagnostic?.userActivation === true
+			&& diagnostic?.url === request?.url
+			&& request?.target === "_blank"
+			&& request?.features === "noopener"
+			&& request?.userActivation === true,
+		diagnostic,
+		externalLinks: snapshot.ui.externalLinks.length,
+		pointerLeaked: after.deliveredEventCounts.pointer !== pointerCount,
+		request,
+	};
+}
+
 async function stopChrome(chrome) {
 	if (chrome.exitCode !== null) return;
 	chrome.kill("SIGTERM");
@@ -998,7 +1052,7 @@ async function inspect(options) {
 		await protocol.send("Runtime.enable");
 		await protocol.send("Page.enable");
 		await protocol.send("Page.addScriptToEvaluateOnNewDocument", {
-			source: inputObserverSource(verboseEvents),
+			source: inputObserverSource(verboseEvents, options.requireExternalLink),
 		});
 		await protocol.send("Page.navigate", { url: options.url });
 		if (options.localApplication !== undefined) {
@@ -1022,6 +1076,15 @@ async function inspect(options) {
 			process.stdout.write(`${JSON.stringify({
 				type: "control-summary",
 				...controlSummary,
+			})}\n`);
+		}
+		const externalLinkSummary = options.requireExternalLink
+			? await exerciseExternalLink(protocol, await pageSnapshot(protocol))
+			: undefined;
+		if (externalLinkSummary !== undefined) {
+			process.stdout.write(`${JSON.stringify({
+				type: "external-link-summary",
+				...externalLinkSummary,
 			})}\n`);
 		}
 
@@ -1087,6 +1150,15 @@ async function inspect(options) {
 		)) {
 			failures.push(
 				"AVP controls were absent, failed semantic delivery, or leaked into canvas input",
+			);
+		}
+		if (options.requireExternalLink && (
+			externalLinkSummary.externalLinks < 1
+			|| !externalLinkSummary.activated
+			|| externalLinkSummary.pointerLeaked
+		)) {
+			failures.push(
+				"AVP external link was absent, lacked trusted noopener activation, or leaked into canvas input",
 			);
 		}
 		if (missingInput.length > 0) {

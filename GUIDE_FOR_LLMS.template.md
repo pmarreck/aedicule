@@ -57,7 +57,7 @@ A normal initial load is:
 6. call `AE_render`; and
 7. publish the candidate only after all of the above succeeds.
 
-`AE_configure` declares stable metadata and capabilities such as the title, action/menu labels, integer slider lattices, synth programs, and sampled FLAC assets. Do not repeatedly redeclare them during updates.
+`AE_configure` declares stable metadata and capabilities such as the title, action/menu labels, integer slider lattices, labeled external HTTPS destinations, synth programs, and sampled FLAC assets. Do not repeatedly redeclare them during updates.
 
 `AE_init*` receives a deterministic 64-bit seed as two `i32` halves and the initial logical viewport. Initialize all mutable state there. If you need randomness, implement a deterministic PRNG in guest state from that seed; do not assume an ambient source.
 
@@ -114,7 +114,8 @@ The implemented Aedicule View Protocol (AVP) kernel is a retained, declarative, 
 During `AE_configure`, declare:
 
 - exact integer sliders with stable ID, label, inclusive range, step, and initial value; and
-- action/menu items whose action IDs and labels may also back native buttons.
+- action/menu items whose action IDs and labels may also back native buttons; and
+- external links with a stable ID, nonempty visible/accessibility label, and absolute HTTPS URL.
 
 When desired UI changes, submit a complete snapshot during `AE_render`:
 
@@ -124,6 +125,7 @@ call $AE_ui_begin
 call $AE_control_panel_q16
 call $AE_slider_place_q16
 call $AE_button_place_q16
+call $AE_external_link_place_q16
 call $AE_ui_end
 ```
 
@@ -131,7 +133,13 @@ Revisions are opaque 32-bit values and must differ from the last accepted revisi
 
 Submitting no UI transaction retains the last accepted snapshot. Submitting a complete empty snapshot removes it. An invalid candidate leaves the prior snapshot intact. After a control or action event, update guest state and submit a new revision if the visible control value or selected state should change.
 
-This current profile contains panels, exact integer sliders, and buttons only. It is not the proposed general layout/tree/text-input surface.
+This current profile contains panels, exact integer sliders, buttons, and external links only. It is not the proposed general layout/tree/text-input surface.
+
+### External links
+
+ABI minor `4` adds a narrow external-navigation capability without giving the guest ambient browser or network access. `AE_external_link` is configure-only: its label must be nonempty and its destination must be an absolute, credential-free HTTPS URL without whitespace, controls, or backslashes. `AE_external_link_place_q16` places that stable ID once in the current retained UI snapshot, after its parent panel.
+
+A link activates only through a real click on the host-rendered accessible control. The native adapter delegates to its platform URL service. The browser adapter requires transient user activation and requests a new context with `_blank` and `noopener`; popup denial is diagnostic only. The guest receives no success/failure event and cannot programmatically trigger navigation. `aedicule-render --activate-link ID` is the deterministic test adapter: it validates the current accepted revision and reports the normalized request without opening anything.
 
 ### Deterministic math
 
@@ -267,6 +275,7 @@ For nontrivial code, use named helper functions and locals even when inlining wo
 - Opening a path, transform, frame, or UI transaction without closing it on every control-flow path.
 - Reusing an accepted UI revision.
 - Placing a slider before its panel or before declaring its integer lattice in `AE_configure`.
+- Placing an external link before its panel, omitting visible link text, or treating link activation as guest-observable network access.
 - Treating transient host slider position as guest state. The next accepted guest snapshot is authoritative.
 - Emitting UI every render even when unchanged; retained snapshots exist to avoid that work.
 - Assuming packaged files are automatically images/fonts. Only explicit current capabilities cross the boundary.
@@ -329,9 +338,9 @@ The following items are roadmap material. Do not import or export names for them
 
 ### General AVP application UI
 
-The intended general Aedicule View Protocol is a retained semantic tree with stable node IDs, atomic complete revisions, host-computed layout, adapter reconciliation, accessibility, and headless inspection. Planned nodes include rows/columns, scroll containers, semantic text, text inputs with IME, toggles, images, canvas regions, tabs, split panes, dialogs, lists, tables, trees, grids, and virtualized collections.
+The intended general Aedicule View Protocol is a retained semantic tree with stable node IDs, atomic complete revisions, host-computed layout, adapter reconciliation, accessibility, and headless inspection. Planned nodes include rows/columns, scroll containers, semantic text, text inputs with IME, toggles, images, canvas regions, tabs, split panes, dialogs, lists, tables, trees, grids, and virtualized collections. The current absolute panel/slider/button/link snapshot is only the working v0 kernel.
 
-The guest will own desired state, content, semantics, and layout constraints. The host will validate and adapt them to GPUI, browser, accessibility, and headless frontplanes. The current absolute panel/slider/button snapshot is only the working v0 kernel.
+The guest will own desired state, content, semantics, and layout constraints. The host will validate and adapt them to GPUI, browser, accessibility, and headless frontplanes.
 
 ### Application shell and services
 

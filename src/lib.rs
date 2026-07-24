@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use thiserror::Error;
+use url::Url;
 
 #[cfg(all(feature = "native-runtime", feature = "portable-runtime"))]
 compile_error!("select exactly one Aedicule guest runtime");
@@ -1024,6 +1025,7 @@ pub struct Metadata {
     pub menu_items: Vec<MenuItem>,
     pub pause_triggers: Vec<PauseTrigger>,
     pub controls: Vec<SliderControl>,
+    pub external_links: Vec<ExternalLink>,
     pub synth_voices: Vec<SynthVoice>,
     pub sample_assets: Vec<SampleAsset>,
 }
@@ -1035,6 +1037,7 @@ impl Default for Metadata {
             menu_items: Vec::new(),
             pause_triggers: Vec::new(),
             controls: Vec::new(),
+            external_links: Vec::new(),
             synth_voices: Vec::new(),
             sample_assets: Vec::new(),
         }
@@ -1059,6 +1062,15 @@ pub struct SliderControl {
     pub max: i32,
     pub step: i32,
     pub initial: i32,
+}
+
+/// One configure-time, guest-named HTTPS navigation capability. The parsed URL
+/// is normalized before adapters can present or activate it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExternalLink {
+    pub id: u32,
+    pub label: String,
+    pub url: String,
 }
 
 impl SliderControl {
@@ -1188,6 +1200,7 @@ pub struct UiSnapshot {
     pub control_panels: Vec<ControlPanel>,
     pub sliders: Vec<SliderPlacement>,
     pub buttons: Vec<ButtonPlacement>,
+    pub external_links: Vec<ExternalLinkPlacement>,
 }
 
 /// Places one host-native control surface in the guest-authored UI snapshot;
@@ -1238,6 +1251,25 @@ pub struct ButtonPlacement {
     pub action_id: u32,
     pub bounds: Rect,
     pub selected: bool,
+}
+
+/// Places one declared HTTPS link in the accepted retained UI document. Its
+/// declaration supplies accessible text and destination; geometry stays Q16.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ExternalLinkPlacement {
+    pub id: u32,
+    pub panel_id: u32,
+    pub bounds: Rect,
+}
+
+/// Immutable adapter request resolved against one exact accepted UI revision,
+/// preventing stale retained callbacks from opening a replaced destination.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExternalLinkRequest {
+    pub revision: u32,
+    pub id: u32,
+    pub label: String,
+    pub url: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -2219,6 +2251,8 @@ struct UiBuilder {
     slider_ids: HashSet<u32>,
     buttons: Vec<ButtonPlacement>,
     button_ids: HashSet<u32>,
+    external_links: Vec<ExternalLinkPlacement>,
+    external_link_ids: HashSet<u32>,
 }
 
 struct PathBuilder {
@@ -2233,6 +2267,7 @@ struct HostState {
     application_assets: ApplicationAssets,
     menu_ids: HashSet<u32>,
     control_ids: HashSet<u32>,
+    external_link_ids: HashSet<u32>,
     sample_ids: HashSet<u32>,
     images: Vec<ImageResource>,
     image_ids: HashSet<u32>,
@@ -2383,6 +2418,7 @@ impl Frontplane {
             application_assets,
             menu_ids: HashSet::new(),
             control_ids: HashSet::new(),
+            external_link_ids: HashSet::new(),
             sample_ids: HashSet::new(),
             images: Vec::new(),
             image_ids: HashSet::new(),
@@ -2483,6 +2519,7 @@ impl Frontplane {
         self.store.data_mut().metadata = Metadata::default();
         self.store.data_mut().menu_ids.clear();
         self.store.data_mut().control_ids.clear();
+        self.store.data_mut().external_link_ids.clear();
         self.store.data_mut().sample_ids.clear();
         self.store.data_mut().images.clear();
         self.store.data_mut().image_ids.clear();
@@ -2497,6 +2534,7 @@ impl Frontplane {
             state.metadata = Metadata::default();
             state.menu_ids.clear();
             state.control_ids.clear();
+            state.external_link_ids.clear();
             state.sample_ids.clear();
             state.images.clear();
             state.image_ids.clear();
@@ -2510,6 +2548,7 @@ impl Frontplane {
             state.metadata = Metadata::default();
             state.menu_ids.clear();
             state.control_ids.clear();
+            state.external_link_ids.clear();
             state.sample_ids.clear();
             state.images.clear();
             state.image_ids.clear();
@@ -2610,6 +2649,40 @@ impl Frontplane {
     /// updates leave this snapshot intact for retained adapters to reconcile.
     pub fn ui_snapshot(&self) -> Option<&UiSnapshot> {
         self.store.data().accepted_ui.as_ref()
+    }
+
+    /// Resolves a human activation only against the exact currently accepted
+    /// retained revision, so removed or stale adapter callbacks fail closed.
+    pub fn external_link_request(
+        &self,
+        revision: u32,
+        id: u32,
+    ) -> Result<ExternalLinkRequest, FrontplaneError> {
+        let state = self.store.data();
+        let placed = state.accepted_ui.as_ref().is_some_and(|snapshot| {
+            snapshot.revision == revision
+                && snapshot.external_links.iter().any(|link| link.id == id)
+        });
+        let Some(link) = placed
+            .then(|| {
+                state
+                    .metadata
+                    .external_links
+                    .iter()
+                    .find(|link| link.id == id)
+            })
+            .flatten()
+        else {
+            return Err(FrontplaneError::UnsupportedCapability {
+                operation: "external link activation",
+            });
+        };
+        Ok(ExternalLinkRequest {
+            revision,
+            id,
+            label: link.label.clone(),
+            url: link.url.clone(),
+        })
     }
 
     /// Converts portable typed input into the stable numeric ABI, keeping GPUI
@@ -3339,6 +3412,48 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
     linker
         .func_wrap(
             WAT_IMPORT_MODULE,
+            "AE_external_link_place_q16",
+            |mut caller: Caller<'_, HostState>,
+             id: i32,
+             panel_id: i32,
+             x: i32,
+             y: i32,
+             width: i32,
+             height: i32,
+             flags: i32| {
+                let max_abs = caller.data().limits.max_coordinate_abs;
+                let Some(bounds) = q16_rect(x, y, width, height, max_abs) else {
+                    return caller.data_mut().reject(
+                        PendingError::InvalidNumber("AE_external_link_place_q16"),
+                        -5,
+                    );
+                };
+                if flags != 0 {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::Unsupported("AE_external_link_place_q16"), -4);
+                }
+                let id = id as u32;
+                if !caller.data().external_link_ids.contains(&id) {
+                    return caller.data_mut().reject(
+                        PendingError::InvalidFrame("external link placement uses undeclared link"),
+                        -8,
+                    );
+                }
+                push_external_link_placement(
+                    caller.data_mut(),
+                    ExternalLinkPlacement {
+                        id,
+                        panel_id: panel_id as u32,
+                        bounds,
+                    },
+                )
+            },
+        )
+        .map_err(runtime_error)?;
+    linker
+        .func_wrap(
+            WAT_IMPORT_MODULE,
             "AE_menu_item",
             |mut caller: Caller<'_, HostState>,
              id: i32,
@@ -3446,6 +3561,71 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
                     step,
                     initial,
                 });
+                0
+            },
+        )
+        .map_err(runtime_error)?;
+    linker
+        .func_wrap(
+            WAT_IMPORT_MODULE,
+            "AE_external_link",
+            |mut caller: Caller<'_, HostState>,
+             id: i32,
+             label_ptr: i32,
+             label_len: i32,
+             url_ptr: i32,
+             url_len: i32,
+             flags: i32| {
+                if caller.data().active_operation != Some("AE_configure") {
+                    return caller.data_mut().reject(
+                        PendingError::InvalidFrame("AE_external_link is configure-only"),
+                        -8,
+                    );
+                }
+                if flags != 0 {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::Unsupported("AE_external_link"), -4);
+                }
+                if caller.data().metadata.external_links.len() >= caller.data().limits.max_controls
+                {
+                    return caller.data_mut().reject(
+                        PendingError::Budget("AE_external_link", "external link"),
+                        -2,
+                    );
+                }
+                let id = id as u32;
+                if !caller.data_mut().external_link_ids.insert(id) {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::DuplicateId("AE_external_link", id), -7);
+                }
+                let label = match read_string(&mut caller, label_ptr, label_len, "AE_external_link")
+                {
+                    Ok(label) if !label.is_empty() => label,
+                    Ok(_) => {
+                        return caller
+                            .data_mut()
+                            .reject(PendingError::InvalidFrame("empty external link label"), -8);
+                    }
+                    Err(error) => return caller.data_mut().reject(error, -3),
+                };
+                let url = match read_string(&mut caller, url_ptr, url_len, "AE_external_link") {
+                    Ok(url) => match normalize_external_https_url(&url) {
+                        Some(url) => url,
+                        None => {
+                            return caller
+                                .data_mut()
+                                .reject(PendingError::Unsupported("AE_external_link"), -4);
+                        }
+                    },
+                    Err(error) => return caller.data_mut().reject(error, -3),
+                };
+                caller
+                    .data_mut()
+                    .metadata
+                    .external_links
+                    .push(ExternalLink { id, label, url });
                 0
             },
         )
@@ -4383,6 +4563,32 @@ fn read_string(
     Ok(text.to_owned())
 }
 
+/// Reduces ambient browser navigation to a deliberately narrow capability:
+/// absolute HTTPS URLs with an unambiguous, credential-free authority.
+fn normalize_external_https_url(input: &str) -> Option<String> {
+    if input.is_empty()
+        || input.contains('\\')
+        || input
+            .chars()
+            .any(|character| character.is_control() || character.is_whitespace())
+    {
+        return None;
+    }
+    let parsed = Url::parse(input).ok()?;
+    if parsed.scheme() != "https"
+        || parsed.host_str().is_none()
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+    {
+        return None;
+    }
+    let authority = input.split_once("://")?.1.split(['/', '?', '#']).next()?;
+    if authority.contains('@') {
+        return None;
+    }
+    Some(parsed.to_string())
+}
+
 /// Converts one validated UTF-8 text import into the immutable scene command
 /// shared by floating-point and exact Q16.16 guest profiles.
 #[allow(clippy::too_many_arguments)]
@@ -4563,6 +4769,38 @@ fn push_button_placement(state: &mut HostState, button: ButtonPlacement) -> i32 
     0
 }
 
+/// Places one declared external-link control in a guest-owned panel while
+/// preserving one stable link identity per accepted retained-view revision.
+fn push_external_link_placement(state: &mut HostState, link: ExternalLinkPlacement) -> i32 {
+    let max_controls = state.limits.max_controls;
+    let Some(ui) = state.ui.as_mut() else {
+        return state.reject(
+            PendingError::InvalidFrame("external link placement outside UI snapshot"),
+            -6,
+        );
+    };
+    if !ui.control_panel_ids.contains(&link.panel_id) {
+        return state.reject(
+            PendingError::InvalidFrame("external link placement uses unknown control panel"),
+            -8,
+        );
+    }
+    if ui.external_links.len() >= max_controls {
+        return state.reject(
+            PendingError::Budget("AE_external_link_place_q16", "external link placement"),
+            -2,
+        );
+    }
+    if !ui.external_link_ids.insert(link.id) {
+        return state.reject(
+            PendingError::DuplicateId("AE_external_link_place_q16", link.id),
+            -7,
+        );
+    }
+    ui.external_links.push(link);
+    0
+}
+
 fn push_unkeyed(state: &mut HostState, command: DrawCommand, operation: &'static str) -> i32 {
     let max_commands = state.limits.max_commands;
     let Some(frame) = state.frame.as_mut() else {
@@ -4694,6 +4932,8 @@ fn begin_ui(state: &mut HostState, revision: u32) -> i32 {
         slider_ids: HashSet::new(),
         buttons: Vec::new(),
         button_ids: HashSet::new(),
+        external_links: Vec::new(),
+        external_link_ids: HashSet::new(),
     });
     0
 }
@@ -4713,6 +4953,7 @@ fn end_ui(state: &mut HostState) -> i32 {
         control_panels: ui.control_panels,
         sliders: ui.sliders,
         buttons: ui.buttons,
+        external_links: ui.external_links,
     });
     0
 }

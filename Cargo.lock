@@ -144,6 +144,7 @@ dependencies = [
  "smol",
  "thiserror 2.0.18",
  "unicode-normalization",
+ "url",
  "wasm-bindgen",
  "wasmi",
  "wasmprinter",

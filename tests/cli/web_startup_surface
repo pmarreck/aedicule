@@ -172,10 +172,18 @@ expect_text "$root/tests/integration/web_browser_startup" '--require-key-deliver
 	'headless browser probe cannot distinguish DOM dispatch from WAT keyboard delivery'
 expect_text "$root/tests/integration/web_browser_startup" '--require-controls' \
 	'headless browser probe cannot require rendered and guest-delivered AVP controls'
+expect_text "$root/tests/integration/web_browser_startup" '--require-external-link' \
+	'headless browser probe cannot require trusted AVP external-link activation'
+expect_text "$root/tests/integration/web_browser_startup" '"noopener"' \
+	'headless browser probe does not require external links to sever opener authority'
 expect_text "$root/tests/integration/web_browser_startup" '--local-application' \
 	'headless browser probe cannot launch a visitor-selected WAT from the gallery'
 expect_text "$root/test_browser" '--local-application tests/fixtures/animated.wat' \
 	'optional browser gate does not prove the gallery local-file delivery path'
+expect_text "$root/test_browser" 'tests/fixtures/external_link.wat' \
+	'optional browser gate does not exercise an external-link guest'
+expect_text "$root/tests/integration/web_external_link" '--require-external-link' \
+	'direct browser application gate does not require trusted link activation'
 expect_text "$root/tests/integration/web_browser_startup" '"--mute-audio"' \
 	'headless browser acceptance can emit physical audio during automated tests'
 expect_text "$root/tests/integration/web_packaged_audio" 'server_pid=$!' \

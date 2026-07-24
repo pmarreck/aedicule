@@ -5,8 +5,9 @@ use std::{borrow::Cow, cell::OnceCell};
 
 #[cfg_attr(not(target_family = "wasm"), allow(unused_imports))]
 use aedicule::{
-    ApplicationAssets, ControlLabelPlacement, ControlPhase, Event, GEIST_MONO_REGULAR, Key,
-    PluginInit, PointerButton, PointerScrollUnit, Rect, SliderControl, UiSnapshot,
+    ApplicationAssets, ControlLabelPlacement, ControlPhase, Event, ExternalLinkRequest,
+    GEIST_MONO_REGULAR, Key, PluginInit, PointerButton, PointerScrollUnit, Rect, SliderControl,
+    UiSnapshot,
     gpui_canvas::paint_frame,
     web::{
         BROWSER_ASSETS_GLOBAL, BROWSER_WAT_GLOBAL, BrowserDeliveredEventCounts,
@@ -15,20 +16,20 @@ use aedicule::{
 };
 #[cfg_attr(not(target_family = "wasm"), allow(unused_imports))]
 use gpui::{
-    App, AppContext as _, Bounds, Context, Entity, FocusHandle, Focusable, InteractiveElement as _,
-    IntoElement, KeyDownEvent, KeyUpEvent, MouseButton, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, ParentElement as _, Render, ScrollDelta, ScrollWheelEvent, Styled as _,
-    Subscription, Window, WindowBounds, WindowOptions, canvas, div, prelude::FluentBuilder as _,
-    px, rgba, size,
+    App, AppContext as _, Bounds, ClickEvent, Context, Entity, FocusHandle, Focusable,
+    InteractiveElement as _, IntoElement, KeyDownEvent, KeyUpEvent, MouseButton, MouseDownEvent,
+    MouseMoveEvent, MouseUpEvent, ParentElement as _, Render, Role, ScrollDelta, ScrollWheelEvent,
+    SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Window, WindowBounds,
+    WindowOptions, canvas, div, prelude::FluentBuilder as _, px, rgba, size,
 };
 #[cfg_attr(not(target_family = "wasm"), allow(unused_imports))]
 use gpui_component::{
     Root, Selectable as _, Theme, ThemeMode,
-    button::Button,
+    button::{Button, ButtonVariants as _},
     slider::{Slider, SliderEvent, SliderState},
 };
 #[cfg(target_family = "wasm")]
-use wasm_bindgen::JsValue;
+use wasm_bindgen::{JsCast as _, JsValue};
 use web_time::Instant;
 
 #[cfg(target_family = "wasm")]
@@ -179,6 +180,7 @@ fn publish_browser_ui_snapshot(ui: &UiSnapshot) {
     let panels = js_sys::Array::new();
     let sliders = js_sys::Array::new();
     let buttons = js_sys::Array::new();
+    let external_links = js_sys::Array::new();
     for (id, bounds, output) in ui
         .control_panels
         .iter()
@@ -192,6 +194,11 @@ fn publish_browser_ui_snapshot(ui: &UiSnapshot) {
             ui.buttons
                 .iter()
                 .map(|button| (button.id, button.bounds, &buttons)),
+        )
+        .chain(
+            ui.external_links
+                .iter()
+                .map(|link| (link.id, link.bounds, &external_links)),
         )
     {
         let placement = js_sys::Object::new();
@@ -213,6 +220,7 @@ fn publish_browser_ui_snapshot(ui: &UiSnapshot) {
     set_js_property(&diagnostic, "panels", &panels);
     set_js_property(&diagnostic, "sliders", &sliders);
     set_js_property(&diagnostic, "buttons", &buttons);
+    set_js_property(&diagnostic, "externalLinks", &external_links);
     js_sys::Reflect::set(
         &js_sys::global(),
         &JsValue::from_str("__AEDICULE_UI_SNAPSHOT"),
@@ -223,6 +231,62 @@ fn publish_browser_ui_snapshot(ui: &UiSnapshot) {
 
 #[cfg(not(target_family = "wasm"))]
 fn publish_browser_ui_snapshot(_: &UiSnapshot) {}
+
+/// Opens a validated destination only while the browser still reports a
+/// transient user activation, then exposes adapter outcome for diagnostics.
+#[cfg(target_family = "wasm")]
+fn activate_browser_external_link(request: &ExternalLinkRequest) {
+    let global = js_sys::global();
+    let active = js_sys::Reflect::get(&global, &JsValue::from_str("navigator"))
+        .ok()
+        .and_then(|navigator| {
+            js_sys::Reflect::get(&navigator, &JsValue::from_str("userActivation")).ok()
+        })
+        .and_then(|activation| {
+            js_sys::Reflect::get(&activation, &JsValue::from_str("isActive")).ok()
+        })
+        .and_then(|active| active.as_bool())
+        .unwrap_or(false);
+    let status = if !active {
+        "rejected-no-user-activation"
+    } else {
+        match js_sys::Reflect::get(&global, &JsValue::from_str("open"))
+            .ok()
+            .and_then(|open| open.dyn_into::<js_sys::Function>().ok())
+        {
+            Some(open) => match open.call3(
+                &global,
+                &JsValue::from_str(&request.url),
+                &JsValue::from_str("_blank"),
+                &JsValue::from_str("noopener"),
+            ) {
+                Ok(value) if value.is_null() => "blocked",
+                Ok(_) => "opened",
+                Err(_) => "failed",
+            },
+            None => "failed",
+        }
+    };
+    let diagnostic = js_sys::Object::new();
+    for (name, value) in [
+        ("revision", JsValue::from_f64(f64::from(request.revision))),
+        ("id", JsValue::from_f64(f64::from(request.id))),
+        ("url", JsValue::from_str(&request.url)),
+        ("status", JsValue::from_str(status)),
+        ("userActivation", JsValue::from_bool(active)),
+    ] {
+        set_js_property(&diagnostic, name, &value);
+    }
+    js_sys::Reflect::set(
+        &global,
+        &JsValue::from_str("__AEDICULE_EXTERNAL_LINK_ACTIVATION"),
+        &diagnostic,
+    )
+    .expect("publish browser external-link activation");
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn activate_browser_external_link(_: &ExternalLinkRequest) {}
 
 /// Bridges GPUI Web animation/input callbacks to Aedicule's tested rational
 /// scheduler, keeping guest execution outside the canvas paint callback.
@@ -502,6 +566,30 @@ fn browser_control_layer(bounds: Rect) -> gpui::Div {
         .h(px(bounds.height))
 }
 
+/// Gives browser-rendered guest navigation the same link semantics and trusted
+/// click boundary as the native adapter.
+fn browser_external_link_control(
+    id: u32,
+    label: impl Into<SharedString>,
+    on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+) -> impl IntoElement {
+    let label = label.into();
+    div()
+        .id(("external-link-semantic", id as usize))
+        .role(Role::Link)
+        .aria_label(label.clone())
+        .w_full()
+        .h_full()
+        .child(
+            Button::new(("external-link-control", id as usize))
+                .link()
+                .label(label)
+                .w_full()
+                .h_full()
+                .on_click(on_click),
+        )
+}
+
 impl Render for WebFrontplane {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         report_browser_frame_started(self.origin.elapsed().as_secs_f64() * 1000.0);
@@ -600,6 +688,41 @@ impl Render for WebFrontplane {
                     browser_control_layer(placement.bounds)
                         .id(("native-button", placement.id as usize))
                         .child(button),
+                )
+            })
+            .collect::<Vec<_>>();
+        let external_link_layers = ui
+            .iter()
+            .flat_map(|snapshot| {
+                let revision = snapshot.revision;
+                snapshot
+                    .external_links
+                    .iter()
+                    .map(move |placement| (revision, placement))
+            })
+            .filter_map(|(revision, placement)| {
+                let id = placement.id;
+                let label = self
+                    .runtime
+                    .metadata()
+                    .external_links
+                    .iter()
+                    .find(|link| link.id == id)?
+                    .label
+                    .clone();
+                let link = browser_external_link_control(
+                    id,
+                    label,
+                    cx.listener(move |this, _, _, _| {
+                        if let Ok(request) = this.runtime.external_link_request(revision, id) {
+                            activate_browser_external_link(&request);
+                        }
+                    }),
+                );
+                Some(
+                    browser_control_layer(placement.bounds)
+                        .id(("external-link", placement.id as usize))
+                        .child(link),
                 )
             })
             .collect::<Vec<_>>();
@@ -703,6 +826,7 @@ impl Render for WebFrontplane {
             .children(control_panels)
             .children(slider_layers)
             .children(button_layers)
+            .children(external_link_layers)
             .when_some(fatal_error, |this, error| {
                 this.child(
                     div()

@@ -14,6 +14,10 @@ fn animated_wat() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/animated.wat")
 }
 
+fn external_link_wat() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/external_link.wat")
+}
+
 fn render(arguments: &[&str]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_aedicule-render"))
         .env("MUTE_DEBUG_STATUS", "1")
@@ -76,6 +80,39 @@ fn cli_renders_distinct_requested_frames_to_stdout() {
     assert!(after.stderr.is_empty(), "{:?}", after.stderr);
     assert!(before.stdout.starts_with(b"<svg "));
     assert_ne!(before.stdout, after.stdout);
+}
+
+#[test]
+fn headless_link_activation_reports_the_current_request_without_opening_a_browser() {
+    let source = external_link_wat();
+    let activated = render(&[
+        source.to_str().unwrap(),
+        "--activate-link",
+        "7",
+        "--output",
+        "-",
+    ]);
+
+    assert!(activated.status.success(), "{:?}", activated.stderr);
+    assert!(activated.stdout.starts_with(b"<svg "));
+    assert_eq!(
+        activated.stderr,
+        b"aedicule-render: external-link revision=1 id=7 url=https://example.com/readme#ulam\n"
+    );
+
+    let unavailable = render(&[
+        source.to_str().unwrap(),
+        "--activate-link",
+        "99",
+        "--output",
+        "-",
+    ]);
+    assert!(!unavailable.status.success());
+    assert!(unavailable.stdout.is_empty());
+    assert_eq!(
+        unavailable.stderr,
+        b"aedicule-render: unsupported or unavailable capability in external link activation\n"
+    );
 }
 
 #[test]

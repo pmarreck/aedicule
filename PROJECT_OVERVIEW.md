@@ -65,7 +65,8 @@ package fonts remain pending browser asset transport and collision-safe IDs.
 
 **Aedicule View Protocol (AVP)** — the proposed platform-neutral semantic UI
 plane. Its immutable keyed unit is a **view document**. The implemented
-`AE_ui_*` panels/sliders/buttons prove the transactional kernel as a narrow v0
+`AE_ui_*` panels/sliders/buttons/external links prove the transactional kernel
+as a narrow v0
 native-controls profile; hierarchy, general widgets, accessibility, browser
 parity, and application services remain specified work. See
 `VIEW_PROTOCOL.md`.

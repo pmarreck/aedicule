@@ -24,6 +24,7 @@ Usage:
 Options:
   --ticks N          Advance N fixed simulation ticks before rendering
   --control ID=VALUE Apply an exact declared integer control; repeatable
+  --activate-link ID Validate/report a current external-link request; repeatable
   --seed N           Initialize the plugin with deterministic seed N
   --width N          Logical viewport width (default: 1024)
   --height N         Logical viewport height (default: 768)
@@ -44,6 +45,7 @@ struct RenderOptions {
     width: f32,
     height: f32,
     controls: Vec<ControlArgument>,
+    activate_links: Vec<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,6 +64,7 @@ impl Default for RenderOptions {
             width: DEFAULT_WIDTH,
             height: DEFAULT_HEIGHT,
             controls: Vec::new(),
+            activate_links: Vec::new(),
         }
     }
 }
@@ -131,6 +134,14 @@ fn parse_arguments(arguments: impl Iterator<Item = String>) -> Result<Action, St
             "--control" => {
                 let value = next_value(&mut arguments, "--control")?;
                 options.controls.push(parse_control(&value)?);
+            }
+            "--activate-link" => {
+                let value = next_value(&mut arguments, "--activate-link")?;
+                options.activate_links.push(
+                    value
+                        .parse()
+                        .map_err(|_| format!("invalid --activate-link ID: {value}"))?,
+                );
             }
             "--seed" => {
                 let value = next_value(&mut arguments, "--seed")?;
@@ -246,7 +257,23 @@ fn run(options: RenderOptions) -> Result<(), String> {
         remaining -= u64::from(ticks);
     }
     let frame = frontplane.render().map_err(|error| error.to_string())?;
+    let revision = frontplane
+        .ui_snapshot()
+        .map(|snapshot| snapshot.revision)
+        .unwrap_or_default();
+    let external_links = options
+        .activate_links
+        .iter()
+        .map(|id| frontplane.external_link_request(revision, *id))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
     let svg = render_svg(&frame, options.width, options.height);
+    for request in external_links {
+        eprintln!(
+            "aedicule-render: external-link revision={} id={} url={}",
+            request.revision, request.id, request.url
+        );
+    }
     write_output(&options.output, svg.as_bytes())
 }
 

@@ -255,6 +255,16 @@ impl BrowserRuntime {
         self.frontplane.ui_snapshot()
     }
 
+    /// Resolves browser navigation only from an exact accepted retained-view
+    /// revision; the adapter still decides whether a trusted click may open it.
+    pub fn external_link_request(
+        &self,
+        revision: u32,
+        id: u32,
+    ) -> Result<crate::ExternalLinkRequest, crate::FrontplaneError> {
+        self.frontplane.external_link_request(revision, id)
+    }
+
     /// Reports guest-accepted browser events for opt-in adapter diagnostics;
     /// DOM dispatch alone does not prove an edge crossed the WAT boundary.
     pub fn delivered_event_count(&self) -> u64 {

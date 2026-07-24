@@ -142,17 +142,23 @@
   - Curiosity poke: touch devices have no persistent hover, so provide a clear
     finite touch/focus behavior without leaving animation permanently running.
 
-- [ ] Add a capability-bounded, guest-authored external-link primitive to AVP.
-  - [ ] Let configure-time WAT declarations bind a stable link ID and display
+- [x] Add a capability-bounded, guest-authored external-link primitive to AVP.
+  - [x] Let configure-time WAT declarations bind a stable link ID and display
     text to one validated, bounded UTF-8 `https:` URL; expose no general browser
-    or network API.
-  - [ ] Let a retained integer/Q16 UI transaction place that declared link at
+    or network API. (2026-07-24 18:44 EDT: ABI v0.4 accepts only absolute,
+    credential-free HTTPS and normalizes it before publication.)
+  - [x] Let a retained integer/Q16 UI transaction place that declared link at
     guest-owned viewport geometry. Native and browser adapters activate it only
     from a real human gesture; headless adapters report the exact request
-    deterministically without opening a browser.
-  - [ ] Make activation, popup-blocking/platform rejection, accessibility, and
+    deterministically without opening a browser. (2026-07-24 18:44 EDT:
+    focused core/native/headless gates and wasm32 compilation pass.)
+  - [x] Make activation, popup-blocking/platform rejection, accessibility, and
     stale-snapshot behavior explicit and testable, then send the green ABI/SHA
-    to `ulam-flower-wat` for its `What is this?` README link.
+    to `ulam-flower-wat` for its `What is this?` README link. (2026-07-24
+    18:57 EDT: standard suite green in 28.2s after doc cleanup; optional
+    Chromium/WebGPU suite green in 23.8s, including transient activation,
+    `_blank`, `noopener`, and zero canvas pointer leakage. SHA handoff follows
+    the green commit.)
   - Curiosity poke: opening a new browsing context must not grant an opener
     reference or let a guest smuggle non-HTTPS schemes through URL parsing.
 
