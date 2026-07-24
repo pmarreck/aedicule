@@ -73,6 +73,9 @@ fn gpui_key_names_classify_the_complete_native_and_browser_key_set() {
         ("h", Some(Key::H)),
         ("escape", Some(Key::Escape)),
         ("f1", Some(Key::F1)),
+        ("w", Some(Key::W)),
+        ("a", Some(Key::A)),
+        ("d", Some(Key::D)),
         ("down", None),
         ("P", None),
         ("", None),
@@ -84,6 +87,37 @@ fn gpui_key_names_classify_the_complete_native_and_browser_key_set() {
             expected,
             "classification mismatch for {name:?}"
         );
+    }
+}
+
+#[test]
+fn stable_key_ids_round_trip_as_one_append_only_set() {
+    let cases = [
+        (1, Some(Key::ArrowLeft)),
+        (2, Some(Key::ArrowRight)),
+        (3, Some(Key::ArrowUp)),
+        (4, Some(Key::Space)),
+        (5, Some(Key::P)),
+        (6, Some(Key::R)),
+        (7, Some(Key::F)),
+        (8, Some(Key::K)),
+        (9, Some(Key::B)),
+        (10, Some(Key::H)),
+        (11, Some(Key::Escape)),
+        (12, Some(Key::F1)),
+        (13, Some(Key::W)),
+        (14, Some(Key::A)),
+        (15, Some(Key::D)),
+        (0, None),
+        (16, None),
+        (u32::MAX, None),
+    ];
+
+    for (code, expected) in cases {
+        assert_eq!(Key::from_abi(code), expected, "stable key ID {code}");
+        if let Some(key) = expected {
+            assert_eq!(key as u32, code, "key discriminant drifted for ID {code}");
+        }
     }
 }
 

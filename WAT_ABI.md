@@ -64,7 +64,7 @@ The major version must match exactly. Aedicule accepts guest minor versions from
 | 10 | Pointer scroll | `code` is unit ID; `a = horizontal delta`, `b = vertical delta` |
 | 15 | Pause lifecycle | `code` is `1` paused, `2` resumed, or `3` restored-paused; `a = b = 0` |
 
-Kinds 11 through 14 are reserved for the proposed touch-contact profile and are not emitted yet. Physical-key IDs are `1` left, `2` right, `3` up, `4` space, `5` P, `6` R, `7` F, `8` K, `9` B, `10` H, `11` Escape, and `12` F1. Pointer button IDs are `1` primary/left, `2` secondary/right, and `3` middle/wheel-click. Native and browser canvas adapters emit down and up edges for all three IDs.
+Kinds 11 through 14 are reserved for the proposed touch-contact profile and are not emitted yet. Physical-key IDs are `1` left, `2` right, `3` up, `4` space, `5` P, `6` R, `7` F, `8` K, `9` B, `10` H, `11` Escape, `12` F1, `13` W, `14` A, and `15` D. Pointer button IDs are `1` primary/left, `2` secondary/right, and `3` middle/wheel-click. Native and browser canvas adapters emit down and up edges for all three IDs.
 
 Pointer-scroll unit IDs are `1` lines and `2` logical pixels. Positive `a` means leftward motion; positive `b` means upward motion. Hosts preserve both axes and omit zero-delta scroll events.
 

@@ -11,6 +11,8 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+#[cfg(test)]
+use aedicule::audio::{DECIMAL_SCALE, fixed_sine, render_synth_program_fixed};
 use aedicule::{
     AudioEvent, ControlLabelPlacement, ControlPhase, DEFAULT_PLUGIN_ENV, Event, FALLBACK_WAT,
     FileRevision, FrameOutput, Frontplane, GEIST_MONO_REGULAR, GuestSuspension, HostEffect, Key,
@@ -27,8 +29,6 @@ use aedicule::{
     prepare_reload_with_assets, read_application_assets, read_application_file, resolve_launch,
     run_application_tests,
 };
-#[cfg(test)]
-use aedicule::audio::{DECIMAL_SCALE, fixed_sine, render_synth_program_fixed};
 use gpui::{
     AnyWindowHandle, App, AppContext as _, Context, Entity, FocusHandle, Focusable,
     InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent, KeyUpEvent, Menu, MenuItem,
@@ -2356,6 +2356,9 @@ mod tests {
         assert_eq!(Key::from_gpui_name("b"), Some(Key::B));
         assert_eq!(Key::from_gpui_name("h"), Some(Key::H));
         assert_eq!(Key::from_gpui_name("f1"), Some(Key::F1));
+        assert_eq!(Key::from_gpui_name("w"), Some(Key::W));
+        assert_eq!(Key::from_gpui_name("a"), Some(Key::A));
+        assert_eq!(Key::from_gpui_name("d"), Some(Key::D));
     }
 
     #[test]

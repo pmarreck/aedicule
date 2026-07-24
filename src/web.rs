@@ -333,6 +333,8 @@ mod tests {
 
     use super::{BrowserInputOutcome, BrowserRuntime, required_browser_wat};
 
+    const PHYSICAL_KEY_WAT: &str = include_str!("../tests/fixtures/browser_synth.wat");
+
     const POINTER_WAT: &str = r#"
         (module
             (import "aedicule.v0" "AE_frame_begin" (func $frame_begin (param f32 f32 f32 f32) (result i32)))
@@ -597,6 +599,36 @@ mod tests {
             panic!("expected a keyboard-and-tick-controlled circle");
         };
         assert_eq!((*x, *y), (50.0, 10.0));
+    }
+
+    #[test]
+    fn wad_down_up_edges_cross_browser_wat_boundary_as_stable_ids() {
+        let mut runtime = BrowserRuntime::new(
+            PHYSICAL_KEY_WAT,
+            PluginInit::new(7, 1024.0, 768.0),
+            Duration::ZERO,
+        )
+        .unwrap();
+        let before = runtime.delivered_event_count();
+        for (millis, event) in [
+            (5, Event::KeyDown(crate::Key::W)),
+            (6, Event::KeyUp(crate::Key::W)),
+            (7, Event::KeyDown(crate::Key::A)),
+            (8, Event::KeyUp(crate::Key::A)),
+            (9, Event::KeyDown(crate::Key::D)),
+            (10, Event::KeyUp(crate::Key::D)),
+        ] {
+            assert_eq!(
+                runtime
+                    .handle_input(Duration::from_millis(millis), event)
+                    .unwrap(),
+                BrowserInputOutcome::Queued
+            );
+        }
+
+        assert!(runtime.advance_to(Duration::from_millis(17)).unwrap());
+        assert_eq!(runtime.delivered_event_count(), before + 6);
+        assert_eq!(runtime.frame().background, 0xd94b64ff);
     }
 
     #[test]

@@ -1828,6 +1828,9 @@ pub enum Key {
     H = 10,
     Escape = 11,
     F1 = 12,
+    W = 13,
+    A = 14,
+    D = 15,
 }
 
 impl Key {
@@ -1847,6 +1850,9 @@ impl Key {
             10 => Some(Self::H),
             11 => Some(Self::Escape),
             12 => Some(Self::F1),
+            13 => Some(Self::W),
+            14 => Some(Self::A),
+            15 => Some(Self::D),
             _ => None,
         }
     }
@@ -1867,6 +1873,9 @@ impl Key {
             "h" => Some(Self::H),
             "escape" => Some(Self::Escape),
             "f1" => Some(Self::F1),
+            "w" => Some(Self::W),
+            "a" => Some(Self::A),
+            "d" => Some(Self::D),
             _ => None,
         }
     }

@@ -33,6 +33,10 @@ fn checked_in_wat_abi_reference_is_the_generated_canonical_document() {
         checked_in.contains("| 10 | Pointer scroll |"),
         "generated ABI reference documents two-axis pointer scrolling"
     );
+    assert!(
+        checked_in.contains("`12` F1, `13` W, `14` A, and `15` D"),
+        "generated ABI reference assigns append-only W/A/D physical-key IDs"
+    );
 }
 
 #[test]

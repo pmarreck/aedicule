@@ -37,7 +37,8 @@ timeline, and reject browser exceptions or a missing/1x1 GPUI canvas.
 --static-root serves PATH without isolation headers, matching GitHub Pages.
 --require-audio-playback requires activation, running context, non-zero PCM,
 source start, and source completion through the Web Audio adapter.
---require-key-delivery rejects a static guest whose frame does not change after ArrowLeft.
+--require-key-delivery rejects a static guest unless W/A/D down/up edges all
+cross the browser-to-WAT boundary and produce one committed frame change.
 --require-controls requires AVP buttons/sliders and proves their events reach the guest.
 
 Environment:
@@ -444,6 +445,12 @@ async function synthesizeInput(protocol, snapshot, verboseEvents) {
 	const keyEvents = [
 		["arrow-left-down", "Input.dispatchKeyEvent", { type: "rawKeyDown", code: "ArrowLeft", key: "ArrowLeft", windowsVirtualKeyCode: 37, nativeVirtualKeyCode: 37 }],
 		["arrow-left-up", "Input.dispatchKeyEvent", { type: "keyUp", code: "ArrowLeft", key: "ArrowLeft", windowsVirtualKeyCode: 37, nativeVirtualKeyCode: 37 }],
+		["w-down", "Input.dispatchKeyEvent", { type: "rawKeyDown", code: "KeyW", key: "w", windowsVirtualKeyCode: 87, nativeVirtualKeyCode: 87 }],
+		["w-up", "Input.dispatchKeyEvent", { type: "keyUp", code: "KeyW", key: "w", windowsVirtualKeyCode: 87, nativeVirtualKeyCode: 87 }],
+		["a-down", "Input.dispatchKeyEvent", { type: "rawKeyDown", code: "KeyA", key: "a", windowsVirtualKeyCode: 65, nativeVirtualKeyCode: 65 }],
+		["a-up", "Input.dispatchKeyEvent", { type: "keyUp", code: "KeyA", key: "a", windowsVirtualKeyCode: 65, nativeVirtualKeyCode: 65 }],
+		["d-down", "Input.dispatchKeyEvent", { type: "rawKeyDown", code: "KeyD", key: "d", windowsVirtualKeyCode: 68, nativeVirtualKeyCode: 68 }],
+		["d-up", "Input.dispatchKeyEvent", { type: "keyUp", code: "KeyD", key: "d", windowsVirtualKeyCode: 68, nativeVirtualKeyCode: 68 }],
 	];
 	const touchPoint = (id, pointX, pointY) => ({
 		id,
@@ -837,7 +844,7 @@ async function inspect(options) {
 			));
 		}
 		if (options.requireKeyDelivery && !inputSummary.keyFrameChanged) {
-			failures.push("ArrowLeft reached the guest but produced no committed frame change");
+			failures.push("W/A/D down/up edges did not all produce the guest's committed frame change");
 		}
 		if (options.requireControls && (
 			controlSummary.buttons < 1

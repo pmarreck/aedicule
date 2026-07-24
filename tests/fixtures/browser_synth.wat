@@ -11,6 +11,7 @@
 	(memory (export "memory") 1)
 	(global $played (mut i32) (i32.const 0))
 	(global $background (mut i32) (i32.const 0x081020ff))
+	(global $key_edges (mut i32) (i32.const 0))
 
 	(func (export "AE_abi_major") (result i32) i32.const 0)
 	(func (export "AE_abi_minor") (result i32) i32.const 0)
@@ -40,6 +41,24 @@
 			i32.const 1 global.set $played
 		end
 		local.get $kind i32.const 1 i32.eq
+		if
+			local.get 1 i32.const 13 i32.eq
+			if global.get $key_edges i32.const 1 i32.or global.set $key_edges end
+			local.get 1 i32.const 14 i32.eq
+			if global.get $key_edges i32.const 2 i32.or global.set $key_edges end
+			local.get 1 i32.const 15 i32.eq
+			if global.get $key_edges i32.const 4 i32.or global.set $key_edges end
+		end
+		local.get $kind i32.const 2 i32.eq
+		if
+			local.get 1 i32.const 13 i32.eq
+			if global.get $key_edges i32.const 8 i32.or global.set $key_edges end
+			local.get 1 i32.const 14 i32.eq
+			if global.get $key_edges i32.const 16 i32.or global.set $key_edges end
+			local.get 1 i32.const 15 i32.eq
+			if global.get $key_edges i32.const 32 i32.or global.set $key_edges end
+		end
+		global.get $key_edges i32.const 63 i32.eq
 		if i32.const 0xd94b64ff global.set $background end
 		i32.const 0)
 	(func (export "AE_tick") (param i32) (result i32) i32.const 0)
