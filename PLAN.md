@@ -16,12 +16,17 @@
     cache, close Chromium through CDP, and avoid rebuilding the GUI host solely
     for its browser probe. (2026-07-23 20:25 EDT: two unchanged complete-suite
     runs passed in 10.4s and 10.3s; `./build` passed in 1.9s.)
-  - [ ] Cache only reusable Cargo dependencies between trusted `yolo` CI runs,
+  - [x] Cache only reusable Cargo dependencies between trusted `yolo` CI runs,
     with the Nix toolchain included in the cache key and the cache kept below
     GitHub's repository quota. (Implementation and structural gates complete
     2026-07-23 19:50 EDT. The first cold population passed 2026-07-23 20:36
-    EDT: 39m04s suite step plus 3m24s upload for a 3.70 GB Rust cache; the
-    following warm CI measurement remains.)
+    EDT: 39m04s suite step plus 3m24s upload for a 3.70 GB Rust cache. The
+    first warm run passed 2026-07-23 21:05 EDT: 1m40s restore, 18m15s suite,
+    47s post step, 21m17s test job, and 27m10s full six-target deployment.)
+  - [ ] Move the clean-room matrix to a persistent Thelio/self-hosted Nix
+    execution path, or cache exact tested Nix derivations: GitHub dependency
+    restoration cut the suite step by 2.1×, but transfer/relinking still makes
+    hosted CI minutes-scale while unchanged local `./test` is 10–11 seconds.
   - Curiosity poke: measure both cold compile time and warm assertion time so a
     cache hit cannot conceal a pathological clean build.
 
