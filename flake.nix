@@ -173,8 +173,10 @@
 									"/packaging"
 									"/publish"
 									"/run"
+									"/serve_web"
 									"/src"
 									"/test"
+									"/test_browser"
 									"/third_party"
 									"/tests"
 									"/web"
@@ -602,7 +604,7 @@
 								tests/integration/web_browser_startup \
 								tests/integration/web_packaged_audio \
 								packaging/macos/canonicalize_uuid packaging/macos/validate_macho \
-								check_reproducible publish
+								check_reproducible publish serve_web test_browser
 							cargo test --no-default-features --features native-runtime
 							cargo test --no-default-features --features gui-test-support --bin aedicule --test gui_cli
 							cargo rustc --release --bin aedicule -- -D warnings

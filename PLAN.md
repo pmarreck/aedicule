@@ -535,6 +535,13 @@
       addresses. The pure set-classifier and real packaged-FLAC browser probe
       passed after the inherited sentinel had prevented DevTools startup.
       (2026-07-23 00:43 EDT.)
+    - [ ] Split the isolated Nix check's release, native-runtime, GUI-test, and
+      script gates into reusable derivations so a shell/script-only source
+      change does not recompile three Rust feature graphs. The browser-suite
+      partition gate measured about 14–20 seconds locally, but the exact cold
+      Nix check still took about 9.5 minutes on 2026-07-24.
+      Curiosity poke: keep each derived gate exact-commit-bound so finer cache
+      reuse cannot accidentally validate source from a different revision.
   - [ ] Re-run the browser startup probe and obtain Peter's iPhone visual
     acceptance before describing the web demos as playable.
     (Headless Ulam Flower and Vibesteroids startup/input probes passed
