@@ -207,7 +207,7 @@
 					rawApplicationCargoDeps = pkgs.rustPlatform.fetchCargoVendor {
 						name = "aedicule-cargo-deps";
 						src = cargoDependencySource;
-						hash = "sha256-AseY2YHUWjVovLMZK/vwkzIf1X41UFnpDpE/6JNLJkw=";
+						hash = "sha256-3/zNRycj8SPtn+evKIFuralJEpv1WbAM2X/2dB/8D3Y=";
 					};
 					# fetchCargoVendor reorders source-identical gpui_macros entries
 					# from the upstream and patched repositories. Cargo accepts either
@@ -639,6 +639,7 @@
 							./tests/cli/parallel_test_runner
 							node ./tests/integration/web_audio_adapter.mjs
 							node ./tests/integration/web_browser_startup_unit.mjs
+							node ./tests/integration/web_local_application.mjs
 							node ./tests/integration/web_startup_lock.mjs "$PWD"
 							runHook postCheck
 						'';
@@ -679,6 +680,7 @@
 							install -Dm644 ${./web/audio.mjs} $out/audio.mjs
 							install -Dm644 ${./web/startup-lock.mjs} $out/startup-lock.mjs
 							install -Dm644 ${./packaging/web/launcher-i18n.mjs} $out/launcher-i18n.mjs
+							install -Dm644 ${./packaging/web/local-application.mjs} $out/local-application.mjs
 							install -Dm644 ${./web/coi-serviceworker.js} $out/coi-serviceworker.js
 							install -Dm644 ${./packaging/web/manifest.webmanifest} $out/manifest.webmanifest
 							install -Dm644 ${./assets/icons/aedicule-app.png} $out/icon.png
@@ -728,11 +730,12 @@
 								title = "Vibesteroids — Aedicule";
 							};
 						in pkgs.runCommand "aedicule-delivery-web" {} ''
-							mkdir -p $out/ulam-flower $out/vibesteroids
+							mkdir -p $out/ulam-flower $out/vibesteroids $out/run
 							cp ${./packaging/web/index.html} $out/index.html
 							cp ${./packaging/web/about.html} $out/about.html
 							cp ${./packaging/web/launcher.mjs} $out/launcher.mjs
 							cp ${./packaging/web/launcher-i18n.mjs} $out/launcher-i18n.mjs
+							cp ${./packaging/web/local-application.mjs} $out/local-application.mjs
 							cp ${./web/coi-serviceworker.js} $out/coi-serviceworker.js
 							cp ${./packaging/web/manifest.webmanifest} $out/manifest.webmanifest
 							cp ${./assets/icons/aedicule-app.png} $out/icon.png
@@ -742,6 +745,7 @@
 							cp ${./GUIDE_FOR_LLMS.md} $out/vibesteroids/GUIDE_FOR_LLMS.md
 							cp ${./demos/vibesteroids.aed} $out/vibesteroids.aed
 							cp ${./demos/manifest.tsv} $out/manifest.tsv
+							cp -R ${self.packages.${system}.webRuntime}/. $out/run/
 						'';
 					delivery-all = pkgs.runCommand "aedicule-delivery-all" {} ''
 						mkdir -p $out

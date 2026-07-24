@@ -32,6 +32,52 @@
 			header img { width: clamp(4.5rem, 10vw, 6.5rem); height: auto; filter: drop-shadow(0 1rem 2rem #0008); }
 			h1 { margin: 0; font-size: clamp(2.7rem, 9vw, 5.8rem); line-height: .9; letter-spacing: -.065em; }
 			header p { margin: .85rem 0 0; color: #aeb8d4; font-size: clamp(.95rem, 2vw, 1.15rem); }
+			.local-launcher {
+				display: grid;
+				grid-template-columns: minmax(0, 1fr) auto;
+				gap: .75rem 1.5rem;
+				align-items: center;
+				margin: 0 0 clamp(1.5rem, 4vw, 2.5rem);
+				padding: 1.15rem 1.3rem;
+				border: 1px dashed #6ee7ff66;
+				border-radius: 1.25rem;
+				background: linear-gradient(120deg, #10233acc, #17132dcc);
+				box-shadow: inset 0 1px #ffffff12;
+				transition: border-color .2s ease, background .2s ease, transform .2s ease;
+			}
+			.local-launcher[data-drag="active"] {
+				border-color: #6ee7ff;
+				background: linear-gradient(120deg, #153d55, #292050);
+				transform: scale(1.012);
+			}
+			.local-launcher h2 { font-size: 1.08rem; letter-spacing: -.015em; }
+			.local-launcher p { margin: .2rem 0 0; color: #aeb8d4; }
+			.file-picker {
+				position: absolute;
+				width: 1px;
+				height: 1px;
+				overflow: hidden;
+				clip-path: inset(50%);
+				white-space: nowrap;
+			}
+			.file-button {
+				display: inline-flex;
+				align-items: center;
+				justify-content: center;
+				min-height: 2.9rem;
+				padding: .65rem 1rem;
+				border: 1px solid #6ee7ffaa;
+				border-radius: .85rem;
+				background: #6ee7ff18;
+				color: #dffbff;
+				font-weight: 800;
+				cursor: pointer;
+			}
+			.file-button:hover { background: #6ee7ff2d; }
+			.file-button:focus-within { outline: 3px solid #6ee7ff; outline-offset: 3px; }
+			.local-status { grid-column: 1 / -1; min-height: 0; margin: 0 !important; font-size: .9rem; }
+			.local-status:empty { display: none; }
+			.local-status[data-state="error"] { color: #ffb2be; }
 			.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: clamp(1rem, 3vw, 1.5rem); }
 			.card {
 				position: relative;
@@ -54,16 +100,46 @@
 				inset: -35%;
 				background: repeating-conic-gradient(from 28deg, #65e9ff 0 2deg, transparent 2deg 11deg);
 				mask-image: radial-gradient(circle, transparent 0 9%, #000 10% 48%, transparent 49%);
-				animation: turn 30s linear infinite;
 			}
+			.card:is(:hover, :focus-visible) .flower::before { animation: turn 30s linear infinite; }
 			.flower::after { inset: 18%; border: 1px solid #f2bd62aa; border-radius: 50%; box-shadow: 0 0 4rem #5de7ff66, inset 0 0 3rem #c968ff33; }
 			.asteroids {
 				background-image: radial-gradient(circle, #fff 0 1px, transparent 1.5px), radial-gradient(circle, #7ce9ff 0 1px, transparent 1.5px);
 				background-position: 0 0, 2rem 3rem;
 				background-size: 4.5rem 4.5rem, 6rem 6rem;
 			}
-			.asteroids::before { left: 50%; top: 50%; width: 5rem; height: 7rem; background: #68e8ff; clip-path: polygon(50% 0, 100% 100%, 50% 72%, 0 100%); filter: drop-shadow(0 0 1rem #68e8ff); transform: translate(-50%, -50%) rotate(18deg); }
 			.asteroids::after { left: 20%; top: 24%; width: 3rem; height: 3rem; border: .35rem solid #d296ff; border-radius: 43% 57% 62% 38%; box-shadow: 13rem 6rem 0 -.2rem #f0bd68; transform: rotate(23deg); }
+			.ship {
+				position: absolute;
+				left: 50%;
+				top: 50%;
+				width: 5rem;
+				height: 7rem;
+				transform: translate(-50%, -50%) rotate(18deg);
+				filter: drop-shadow(0 0 1rem #68e8ff);
+			}
+			.ship::before {
+				position: absolute;
+				inset: 0;
+				background: #68e8ff;
+				clip-path: polygon(50% 0, 100% 100%, 50% 72%, 0 100%);
+				content: "";
+			}
+			.ship::after {
+				position: absolute;
+				left: calc(50% - .12rem);
+				top: -1.9rem;
+				width: .24rem;
+				height: 2.2rem;
+				border-radius: 1rem;
+				background: #fff;
+				box-shadow: 0 0 .65rem .16rem #68e8ff;
+				content: "";
+				opacity: 0;
+			}
+			[data-rotation="clockwise"]:is(:hover, :focus-visible) .ship { animation: ship-clockwise 8s linear infinite; }
+			[data-rotation="counterclockwise"]:is(:hover, :focus-visible) .ship { animation: ship-counterclockwise 8s linear infinite; }
+			[data-vibesteroids-preview]:is(:hover, :focus-visible) .ship::after { animation: ship-fire .8s ease-out infinite; }
 			.copy { align-self: end; padding: 1.4rem 1.5rem 1.5rem; }
 			h2 { margin: 0; font-size: clamp(1.45rem, 4vw, 2rem); letter-spacing: -.03em; }
 			.copy p { min-height: 3rem; margin: .45rem 0 1.25rem; color: #aeb8d4; }
@@ -74,7 +150,24 @@
 			footer a { color: #aeb8d4; font-weight: 700; text-underline-offset: .25rem; }
 			footer a:hover { color: #fff; }
 			@keyframes turn { to { transform: rotate(1turn); } }
-			@media (max-width: 42rem) { .grid { grid-template-columns: 1fr; } .card { min-height: 21rem; } }
+			@keyframes ship-clockwise {
+				from { transform: translate(-50%, -50%) rotate(18deg); }
+				to { transform: translate(-50%, -50%) rotate(378deg); }
+			}
+			@keyframes ship-counterclockwise {
+				from { transform: translate(-50%, -50%) rotate(18deg); }
+				to { transform: translate(-50%, -50%) rotate(-342deg); }
+			}
+			@keyframes ship-fire {
+				0%, 28% { opacity: 0; transform: translateY(0) scaleY(.2); }
+				35% { opacity: 1; }
+				100% { opacity: 0; transform: translateY(-5rem) scaleY(1); }
+			}
+			@media (max-width: 42rem) {
+				.local-launcher { grid-template-columns: 1fr; }
+				.grid { grid-template-columns: 1fr; }
+				.card { min-height: 21rem; }
+			}
 			@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; } }
 		</style>
 	</head>
@@ -87,6 +180,17 @@
 					<p data-i18n="intro"></p>
 				</div>
 			</header>
+			<section class="local-launcher" id="local-application-dropzone">
+				<div>
+					<h2 data-i18n="openLocalTitle"></h2>
+					<p data-i18n="openLocalDescription"></p>
+				</div>
+				<label class="file-button">
+					<span data-i18n="chooseApplication"></span>
+					<input class="file-picker" id="local-application-picker" type="file" accept=".wat,.aed">
+				</label>
+				<p class="local-status" id="local-application-status" role="status" aria-live="polite"></p>
+			</section>
 			<section class="grid">
 				<a class="card" href="./ulam-flower/">
 					<span class="art flower" aria-hidden="true"></span>
@@ -96,8 +200,8 @@
 						<span class="cta" data-i18n="open"></span>
 					</span>
 				</a>
-				<a class="card" href="./vibesteroids/">
-					<span class="art asteroids" aria-hidden="true"></span>
+				<a class="card" href="./vibesteroids/" data-vibesteroids-preview>
+					<span class="art asteroids" aria-hidden="true"><span class="ship"></span></span>
 					<span class="copy">
 						<h2 data-i18n="vibesteroidsName"></h2>
 						<p data-i18n="vibesteroidsDescription"></p>

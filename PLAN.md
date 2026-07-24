@@ -119,16 +119,26 @@
     name or signature as callable, and fail the build on generated-page drift.
     - Curiosity poke: keep proposal granularity stable enough for durable links
       without prematurely freezing function names or signatures.
-  - [ ] Add a prominent keyboard-accessible dropzone/file picker to the launch
+  - [x] Add a prominent keyboard-accessible dropzone/file picker to the launch
     page for arbitrary `.wat` and `.aed` applications. Resolve `.aed` through
     the same bounded virtual application root as native, keep selected bytes
     local to the browser, and explain that a lone `.wat` cannot discover
-    unselected sibling assets.
-  - [ ] Keep the Ulam preview static until pointer rollover or keyboard focus,
+    unselected sibling assets. The browser validates the native stored-ZIP
+    package profile, paths, entry/total limits, CRCs, mimetype sentinel, and
+    `code.wat`; retains only WAT plus `assets/` in origin-local IndexedDB; and
+    launches an opaque-token generic runner without uploading bytes. Real
+    Vibesteroids `.aed` parsing and live WAT/`.aed` headless launches pass.
+    (2026-07-24 17:25 EDT)
+  - [x] Keep the Ulam preview static until pointer rollover or keyboard focus,
     animate only for that interaction, and honor reduced-motion preferences.
-  - [ ] On each Vibesteroids rollover/focus entry, choose a new random rotation
+    (2026-07-24 17:25 EDT)
+  - [x] On each Vibesteroids rollover/focus entry, choose a new random rotation
     direction; rotate and repeatedly fire only while interaction remains
-    active. Do not simulate asteroid impacts.
+    active. Do not simulate asteroid impacts. Direction selection is
+    deterministic under injected randomness and reduced-motion remains
+    authoritative. (2026-07-24 17:25 EDT)
+  - [ ] Receive Peter's visual and interaction acceptance for the gallery
+    dropzone and hover/focus preview animations.
   - Curiosity poke: touch devices have no persistent hover, so provide a clear
     finite touch/focus behavior without leaving animation permanently running.
 

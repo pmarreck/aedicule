@@ -77,6 +77,7 @@ run_remaining_checks() {
 	local failures=0
 	run_check node ./tests/integration/web_audio_adapter.mjs
 	run_check node ./tests/integration/web_browser_startup_unit.mjs
+	run_check node ./tests/integration/web_local_application.mjs
 	run_check node ./tests/integration/web_startup_lock.mjs "$PWD"
 	run_check cargo test --no-default-features --features native-runtime
 	run_check cargo test --no-default-features --features portable-runtime

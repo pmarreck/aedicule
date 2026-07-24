@@ -46,6 +46,22 @@ require_file "$root/packaging/web/about.html" 'About Aedicule page'
 require_text "$root/packaging/web/index.html" './about.html' 'gallery About Aedicule link'
 require_text "$root/packaging/web/index.html" 'data-i18n="aboutLink"' \
 	'localized gallery About Aedicule link'
+require_text "$root/packaging/web/index.html" 'id="local-application-dropzone"' \
+	'gallery local application dropzone'
+require_text "$root/packaging/web/index.html" 'accept=".wat,.aed"' \
+	'gallery local application file picker'
+require_text "$root/packaging/web/index.html" 'data-vibesteroids-preview' \
+	'Vibesteroids interactive preview'
+require_text "$root/packaging/web/index.html" '.card:is(:hover, :focus-visible) .flower::before' \
+	'Ulam preview hover/focus animation'
+require_text "$root/packaging/web/index.html" '[data-rotation="clockwise"]:is(:hover, :focus-visible) .ship' \
+	'Vibesteroids clockwise hover/focus animation'
+require_text "$root/packaging/web/index.html" '[data-rotation="counterclockwise"]:is(:hover, :focus-visible) .ship' \
+	'Vibesteroids counterclockwise hover/focus animation'
+require_text "$root/flake.nix" 'cp ${./packaging/web/local-application.mjs} $out/local-application.mjs' \
+	'local application loader delivery'
+require_text "$root/flake.nix" 'cp -R ${self.packages.${system}.webRuntime}/. $out/run/' \
+	'generic local application runner'
 require_text "$root/flake.nix" 'cp ${./packaging/web/about.html} $out/about.html' \
 	'About Aedicule page delivery'
 require_text "$root/packaging/web/about.html" 'data-i18n="aboutHeadline"' \

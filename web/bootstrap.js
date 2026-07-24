@@ -6,6 +6,7 @@ import {
 	webGpuFailureMessage,
 } from "./launcher-i18n.mjs";
 import { schedulePcmPlayback } from "./audio.mjs";
+import { loadLocalApplication } from "./local-application.mjs";
 import { withExclusiveStartupLock } from "./startup-lock.mjs";
 
 const status = document.getElementById("aedicule-startup-status");
@@ -238,6 +239,31 @@ async function loadApplicationAssets() {
 	reportStartupDiagnostic("assets-fetched", { count: names.length, bytes: totalBytes });
 }
 
+function admitLocalApplicationAssets(entries) {
+	if (!Array.isArray(entries) || entries.length > MAX_APPLICATION_ASSETS) {
+		throw new Error(strings.assetCatalogEntryLimit);
+	}
+	const assets = Object.create(null);
+	let totalBytes = 0;
+	for (const { name, bytes } of entries) {
+		if (!validAssetName(name) || Object.hasOwn(assets, name)) {
+			throw new Error(strings.assetCatalogInvalidPath);
+		}
+		if (!(bytes instanceof Uint8Array) || bytes.byteLength > MAX_APPLICATION_ASSET_BYTES) {
+			throw new Error(formatMessage(strings.assetLimit, { name }));
+		}
+		totalBytes += bytes.byteLength;
+		if (totalBytes > MAX_APPLICATION_BYTES) throw new Error(strings.assetTotalLimit);
+		assets[name] = bytes;
+	}
+	globalThis.__AEDICULE_ASSETS = assets;
+	reportStartupDiagnostic("assets-fetched", {
+		count: entries.length,
+		bytes: totalBytes,
+		source: "local-browser-storage",
+	});
+}
+
 function ensureAudioContext() {
 	if (audioContext !== undefined) return audioContext;
 	const AudioContext = globalThis.AudioContext ?? globalThis.webkitAudioContext;
@@ -343,17 +369,28 @@ async function initializeApplication() {
 	reportStartupDiagnostic("capabilities", { ...capabilities, ...browserEnvironment() });
 	await preflightBrowser(capabilities);
 	showStartupStatus(strings.loadingWat);
-	const response = await fetch("./code.wat", { cache: "no-store" });
-	if (!response.ok) {
-		throw new Error(formatMessage(strings.couldNotLoadWat, { status: response.status }));
+	const localToken = new URL(location.href).searchParams.get("local");
+	if (localToken === null) {
+		const response = await fetch("./code.wat", { cache: "no-store" });
+		if (!response.ok) {
+			throw new Error(formatMessage(strings.couldNotLoadWat, { status: response.status }));
+		}
+		const bytes = await response.arrayBuffer();
+		reportStartupDiagnostic("wat-fetched", { status: response.status, bytes: bytes.byteLength });
+		globalThis.__AEDICULE_WAT = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+		showStartupStatus(strings.loadingApplicationAssets);
+		await loadApplicationAssets();
+	} else {
+		const application = await loadLocalApplication(localToken);
+		reportStartupDiagnostic("wat-fetched", {
+			status: "local",
+			bytes: application.wat.byteLength,
+		});
+		globalThis.__AEDICULE_WAT = new TextDecoder("utf-8", { fatal: true })
+			.decode(application.wat);
+		showStartupStatus(strings.loadingApplicationAssets);
+		admitLocalApplicationAssets(application.assets);
 	}
-
-	const bytes = await response.arrayBuffer();
-	reportStartupDiagnostic("wat-fetched", { status: response.status, bytes: bytes.byteLength });
-	const source = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-	globalThis.__AEDICULE_WAT = source;
-	showStartupStatus(strings.loadingApplicationAssets);
-	await loadApplicationAssets();
 	showStartupStatus(strings.starting);
 	reportStartupDiagnostic("wasm-initializing");
 	await init();

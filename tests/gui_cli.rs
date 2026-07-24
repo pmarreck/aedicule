@@ -149,6 +149,10 @@ fn native_cli_serves_an_aed_through_the_bundled_web_runtime() {
         ),
         ("bootstrap.js", b"console.info('bootstrap')".as_slice()),
         ("audio.mjs", b"export const audio = {}".as_slice()),
+        (
+            "local-application.mjs",
+            b"export const localApplication = {}".as_slice(),
+        ),
         ("startup-lock.mjs", b"export const lock = {}".as_slice()),
         ("launcher-i18n.mjs", b"export const english = {}".as_slice()),
         ("coi-serviceworker.js", b"// service worker".as_slice()),
@@ -207,6 +211,24 @@ fn native_cli_serves_an_aed_through_the_bundled_web_runtime() {
         "{response}"
     );
     assert!(response.ends_with("export const audio = {}"), "{response}");
+
+    let mut connection = TcpStream::connect(address).unwrap();
+    connection
+        .write_all(
+            b"GET /local-application.mjs HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        )
+        .unwrap();
+    let mut response = String::new();
+    connection.read_to_string(&mut response).unwrap();
+    assert!(response.starts_with("HTTP/1.1 200 OK\r\n"), "{response}");
+    assert!(
+        response.contains("Content-Type: text/javascript; charset=utf-8\r\n"),
+        "{response}"
+    );
+    assert!(
+        response.ends_with("export const localApplication = {}"),
+        "{response}"
+    );
 
     let mut connection = TcpStream::connect(address).unwrap();
     connection

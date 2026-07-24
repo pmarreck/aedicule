@@ -29,7 +29,7 @@ const EXPECTED_STAGES = [
 ];
 
 const HELP = `usage: web_browser_startup [--chrome PATH] [--timeout-ms N] [--require-audio-playback] [--require-key-delivery] [--require-controls] URL
-       web_browser_startup [--chrome PATH] [--timeout-ms N] [--require-audio-playback] [--require-key-delivery] [--require-controls] --static-root PATH
+       web_browser_startup [--chrome PATH] [--timeout-ms N] [--require-audio-playback] [--require-key-delivery] [--require-controls] [--local-application PATH] --static-root PATH
 
 Launch a headless Chromium browser, stream Aedicule's structured startup
 timeline, and reject browser exceptions or a missing/1x1 GPUI canvas.
@@ -40,6 +40,8 @@ source start, and source completion through the Web Audio adapter.
 --require-key-delivery rejects a static guest unless W/A/D down/up edges all
 cross the browser-to-WAT boundary and produce one committed frame change.
 --require-controls requires AVP buttons/sliders and proves their events reach the guest.
+--local-application selects a .wat or .aed through the gallery and requires the
+generic origin-local runner to reach the same settled application state.
 
 Environment:
   AEDICULE_CHROME               Chromium-family executable (overridden by --chrome)
@@ -52,6 +54,7 @@ function parseArguments(arguments_) {
 	let requireAudioPlayback = false;
 	let requireControls = false;
 	let requireKeyDelivery = false;
+	let localApplication;
 	let staticRoot;
 	let url;
 	for (let index = 0; index < arguments_.length; index += 1) {
@@ -74,6 +77,10 @@ function parseArguments(arguments_) {
 		}
 		if (argument === "--static-root") {
 			staticRoot = arguments_[index += 1];
+			continue;
+		}
+		if (argument === "--local-application") {
+			localApplication = resolve(arguments_[index += 1]);
 			continue;
 		}
 		if (argument === "--require-audio-playback") {
@@ -102,8 +109,20 @@ function parseArguments(arguments_) {
 	if ((url === undefined) === (staticRoot === undefined)) {
 		throw new Error("exactly one URL or --static-root PATH is required");
 	}
+	if (localApplication !== undefined) {
+		if (staticRoot === undefined) {
+			throw new Error("--local-application requires --static-root");
+		}
+		if (![".wat", ".aed"].includes(extname(localApplication).toLowerCase())) {
+			throw new Error("--local-application requires a .wat or .aed path");
+		}
+		if (!existsSync(localApplication)) {
+			throw new Error(`local application does not exist: ${localApplication}`);
+		}
+	}
 	return {
 		chrome,
+		localApplication,
 		requireAudioPlayback,
 		requireControls,
 		requireKeyDelivery,
@@ -111,6 +130,79 @@ function parseArguments(arguments_) {
 		timeoutMs,
 		url: url === undefined ? undefined : new URL(url).href,
 	};
+}
+
+async function waitForGalleryReady(protocol, timeoutMs) {
+	await withTimeout(new Promise((resolveReady, rejectReady) => {
+		let finished = false;
+		let checking = false;
+		let pendingCheck = false;
+		const finish = error => {
+			if (finished) return;
+			finished = true;
+			removeListener();
+			if (error === undefined) resolveReady();
+			else rejectReady(error);
+		};
+		const check = async () => {
+			if (finished) return;
+			if (checking) {
+				pendingCheck = true;
+				return;
+			}
+			checking = true;
+			try {
+				const result = await protocol.send("Runtime.evaluate", {
+					expression: `globalThis.crossOriginIsolated === true
+						&& document.getElementById("local-application-picker") !== null`,
+					returnByValue: true,
+				});
+				if (result.result.value === true) finish();
+			} catch {
+				// A headerless host intentionally replaces the first execution
+				// context while its isolation service worker takes control.
+			} finally {
+				checking = false;
+				if (pendingCheck && !finished) {
+					pendingCheck = false;
+					check();
+				}
+			}
+		};
+		const removeListener = protocol.onEvent(message => {
+			if (message.method === "Page.loadEventFired"
+				|| message.method === "Page.frameNavigated") {
+				check();
+			}
+		});
+		check().catch(finish);
+	}), timeoutMs, "isolated Aedicule gallery file picker");
+}
+
+async function selectLocalApplication(protocol, path, timeoutMs) {
+	await waitForGalleryReady(protocol, timeoutMs);
+	const bytes = readFileSync(path).toString("base64");
+	const name = path.split(sep).at(-1);
+	const result = await protocol.send("Runtime.evaluate", {
+		expression: `(async () => {
+			const encoded = ${JSON.stringify(bytes)};
+			const binary = atob(encoded);
+			const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
+			const file = new File([bytes], ${JSON.stringify(name)});
+			const transfer = new DataTransfer();
+			transfer.items.add(file);
+			const picker = document.getElementById("local-application-picker");
+			Object.defineProperty(picker, "files", {
+				configurable: true,
+				value: transfer.files,
+			});
+			picker.dispatchEvent(new Event("change", { bubbles: true }));
+			return true;
+		})()`,
+		awaitPromise: true,
+		returnByValue: true,
+	});
+	if (result.result.value !== true) throw new Error("could not select local application");
 }
 
 const contentTypes = Object.freeze({
@@ -909,6 +1001,9 @@ async function inspect(options) {
 			source: inputObserverSource(verboseEvents),
 		});
 		await protocol.send("Page.navigate", { url: options.url });
+		if (options.localApplication !== undefined) {
+			await selectLocalApplication(protocol, options.localApplication, options.timeoutMs);
+		}
 		await withTimeout(settled, options.timeoutMs, "Aedicule's settled startup stage");
 		const snapshot = await pageSnapshot(protocol);
 		process.stdout.write(`${JSON.stringify({ type: "snapshot", ...snapshot })}\n`);

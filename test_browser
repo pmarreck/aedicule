@@ -48,7 +48,8 @@ source tests/lib/browser_test_freshness.bash
 source tests/lib/parallel_checks.bash
 
 browser_runtime_file=$(mktemp "${TMPDIR:-/tmp}/aedicule-browser-runtime.XXXXXX")
-trap 'rm -f -- "$browser_runtime_file"' EXIT
+gallery_delivery_file=$(mktemp "${TMPDIR:-/tmp}/aedicule-gallery-delivery.XXXXXX")
+trap 'rm -f -- "$browser_runtime_file" "$gallery_delivery_file"' EXIT
 
 # Produces the exact debug frontplane exercised by the packaged browser probe
 # while running every GUI unit and CLI integration test in one Cargo graph.
@@ -61,10 +62,14 @@ prepare_browser_runtime() {
 	nix build .#webRuntime --no-link --print-out-paths >"$browser_runtime_file"
 }
 
+prepare_gallery_delivery() {
+	nix build .#delivery-web --no-link --print-out-paths >"$gallery_delivery_file"
+}
+
 # Keeps the two expensive prerequisites concurrent without launching Chromium
 # under unrelated compiler contention from the fast standard test suite.
 prepare_packaged_audio_browser() {
-	run_parallel_checks prepare_gui_binary prepare_browser_runtime
+	run_parallel_checks prepare_gui_binary prepare_browser_runtime prepare_gallery_delivery
 }
 
 run_packaged_audio_browser() {
@@ -80,8 +85,17 @@ run_packaged_audio_browser() {
 		"$binary" "$runtime" demos/vibesteroids.aed
 }
 
+run_gallery_local_application() {
+	local delivery
+	delivery=$(<"$gallery_delivery_file")
+	./tests/integration/web_browser_startup --timeout-ms 60000 \
+		--local-application tests/fixtures/animated.wat \
+		--static-root "$delivery"
+}
+
 prepare_packaged_audio_browser || exit $?
 run_packaged_audio_browser || exit $?
+run_gallery_local_application || exit $?
 
 marker=$(git rev-parse --git-path aedicule-test-browser-success)
 case "$marker" in

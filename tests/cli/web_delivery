@@ -19,7 +19,7 @@ if (( rc != 0 )); then
 	printf 'web fallback delivery build failed:\n%s\n' "$err" >&2
 	failures=$((failures + 1))
 else
-	for asset in index.html bootstrap.js audio.mjs startup-lock.mjs coi-serviceworker.js aedicule_web.js code.wat; do
+	for asset in index.html bootstrap.js audio.mjs local-application.mjs startup-lock.mjs coi-serviceworker.js aedicule_web.js code.wat; do
 		if [[ ! -s "$out_link/$asset" ]]; then
 			printf 'web fallback delivery is missing non-empty %s\n' "$asset" >&2
 			failures=$((failures + 1))

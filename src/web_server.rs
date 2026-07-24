@@ -26,6 +26,7 @@ const RUNTIME_FILES: &[&str] = &[
     "index.html",
     "bootstrap.js",
     "audio.mjs",
+    "local-application.mjs",
     "startup-lock.mjs",
     "launcher-i18n.mjs",
     "coi-serviceworker.js",
