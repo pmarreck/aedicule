@@ -171,10 +171,16 @@ assert.equal(removeAttempts, 3);
 assert.equal(removeRetries, 2);
 
 const listeners = new Map();
+class HTMLInputElement {
+	focus() {}
+}
 const browser = {
 	addEventListener(type, listener) { listeners.set(type, listener); },
+	HTMLInputElement,
 };
 vm.runInNewContext(inputObserverSource(false), browser);
+new browser.HTMLInputElement().focus();
+assert.equal(browser.__AEDICULE_INPUT_PROBE.hiddenInputFocusRequests, 1);
 listeners.get("mousedown")({ button: 0, buttons: 1, clientX: 4, clientY: 8 });
 assert.equal(browser.__AEDICULE_INPUT_PROBE.counts.mousedown, 1);
 assert.equal(browser.__AEDICULE_INPUT_PROBE.events.length, 1);

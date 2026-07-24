@@ -357,8 +357,13 @@ function createProtocol(socket) {
 export function inputObserverSource(verboseEvents) {
 	return `(() => {
 		globalThis.__AEDICULE_TRACE_EVENTS = ${verboseEvents};
-		const probe = { counts: {}, events: [] };
+		const probe = { counts: {}, events: [], hiddenInputFocusRequests: 0 };
 		globalThis.__AEDICULE_INPUT_PROBE = probe;
+		const originalInputFocus = HTMLInputElement.prototype.focus;
+		HTMLInputElement.prototype.focus = function(...arguments_) {
+			probe.hiddenInputFocusRequests += 1;
+			return originalInputFocus.apply(this, arguments_);
+		};
 		for (const type of [
 			"mousemove", "mousedown", "mouseup", "wheel", "keydown", "keyup",
 			"pointerdown", "pointermove", "pointerup", "pointercancel",
@@ -432,6 +437,11 @@ async function synthesizeInput(protocol, snapshot, verboseEvents) {
 	}
 	const x = Math.max(1, Math.floor(canvas.cssWidth / 2));
 	const y = Math.max(1, Math.floor(canvas.cssHeight / 2));
+	const chordEvents = [
+		["secondary-down", { type: "mousePressed", x, y, button: "right", buttons: 2, clickCount: 1 }],
+		["primary-down-while-secondary-held", { type: "mousePressed", x, y, button: "left", buttons: 3, clickCount: 1 }],
+		["secondary-up-while-primary-held", { type: "mouseReleased", x, y, button: "right", buttons: 1, clickCount: 1 }],
+	];
 	const events = [
 		["pointer-move", "Input.dispatchMouseEvent", { type: "mouseMoved", x, y, button: "none", buttons: 0 }],
 		["primary-down", "Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", buttons: 1, clickCount: 1 }],
@@ -484,12 +494,42 @@ async function synthesizeInput(protocol, snapshot, verboseEvents) {
 	await protocol.send("Runtime.evaluate", {
 		expression: `document.body.tabIndex = -1; document.body.focus()`,
 	});
+	const focusRequestsBeforeInput = (await protocol.send("Runtime.evaluate", {
+		expression: "globalThis.__AEDICULE_INPUT_PROBE?.hiddenInputFocusRequests ?? 0",
+		returnByValue: true,
+	})).result.value ?? 0;
+	const pointerCountBeforeChord = (await pageSnapshot(protocol)).deliveredEventCounts.pointer;
+	for (const [name, params] of chordEvents) {
+		if (verboseEvents) {
+			process.stdout.write(`${JSON.stringify({
+				type: "input-dispatch",
+				name,
+				method: "Input.dispatchMouseEvent",
+				params,
+			})}\n`);
+		}
+		await protocol.send("Input.dispatchMouseEvent", params);
+	}
+	const chordDelivered = await waitForSemanticCount(
+		protocol,
+		"pointer",
+		pointerCountBeforeChord + chordEvents.length,
+	);
+	const chordPointerDelta = (await pageSnapshot(protocol)).deliveredEventCounts.pointer
+		- pointerCountBeforeChord;
+	await protocol.send("Input.dispatchMouseEvent", {
+		type: "mouseReleased", x, y, button: "left", buttons: 0, clickCount: 1,
+	});
 	for (const [name, method, params] of events) {
 		if (verboseEvents) {
 			process.stdout.write(`${JSON.stringify({ type: "input-dispatch", name, method, params })}\n`);
 		}
 		await protocol.send(method, params);
 	}
+	const focusRequestsBeforeTouch = (await protocol.send("Runtime.evaluate", {
+		expression: "globalThis.__AEDICULE_INPUT_PROBE?.hiddenInputFocusRequests ?? 0",
+		returnByValue: true,
+	})).result.value ?? 0;
 	await protocol.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 3 });
 	for (const [name, method, params] of touchEvents) {
 		if (verboseEvents) {
@@ -497,6 +537,10 @@ async function synthesizeInput(protocol, snapshot, verboseEvents) {
 		}
 		await protocol.send(method, params);
 	}
+	const focusRequestsAfterTouch = (await protocol.send("Runtime.evaluate", {
+		expression: "globalThis.__AEDICULE_INPUT_PROBE?.hiddenInputFocusRequests ?? 0",
+		returnByValue: true,
+	})).result.value ?? 0;
 	await protocol.send("Runtime.evaluate", {
 		expression: "new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
 		awaitPromise: true,
@@ -520,6 +564,7 @@ async function synthesizeInput(protocol, snapshot, verboseEvents) {
 	});
 	const probeValue = probe.result.value ?? { counts: {}, events: [] };
 	const observed = probeValue.counts;
+	const focusRequestsAfterInput = probeValue.hiddenInputFocusRequests ?? 0;
 	const observedMousePointerEvents = probeValue.events.filter(event => event.pointerType === "mouse");
 	const mousePointerPhases = Object.fromEntries(
 		["pointerdown", "pointerup"].map(type => [
@@ -536,14 +581,37 @@ async function synthesizeInput(protocol, snapshot, verboseEvents) {
 		]),
 	);
 	return {
-		dispatched: events.length + keyEvents.length + touchEvents.length,
+		chordDelivered,
+		chordPointerDelta,
+		dispatched: chordEvents.length + 1 + events.length + keyEvents.length + touchEvents.length,
 		keyFrameChanged: beforeKey.frameBackground !== afterKey.frameBackground,
 		observed,
 		mousePointerPhases,
+		hiddenInputTouchFocusRequests: focusRequestsAfterTouch - focusRequestsBeforeTouch,
+		hiddenInputFocusRequestsBeforeInput: focusRequestsBeforeInput,
+		hiddenInputFocusRequestsBeforeTouch: focusRequestsBeforeTouch,
+		hiddenInputFocusRequestsAfterTouch: focusRequestsAfterTouch,
+		hiddenInputFocusRequestsAfterInput: focusRequestsAfterInput,
 		touchContacts,
 		touchPhases,
 		visualChanged: before !== after,
 	};
+}
+
+async function waitForSemanticCount(protocol, field, expectedCount) {
+	const result = await protocol.send("Runtime.evaluate", {
+		expression: `(async () => {
+			for (let frame = 0; frame < 30; frame += 1) {
+				const counts = globalThis.__AEDICULE_DELIVERED_EVENT_COUNTS;
+				if ((counts?.[${JSON.stringify(field)}] ?? 0) >= ${expectedCount}) return true;
+				await new Promise(resolve => requestAnimationFrame(resolve));
+			}
+			return false;
+		})()`,
+		awaitPromise: true,
+		returnByValue: true,
+	});
+	return result.result.value === true;
 }
 
 async function waitForSemanticEvent(protocol, field, priorCount) {
@@ -845,6 +913,16 @@ async function inspect(options) {
 		}
 		if (options.requireKeyDelivery && !inputSummary.keyFrameChanged) {
 			failures.push("W/A/D down/up edges did not all produce the guest's committed frame change");
+		}
+		if (!inputSummary.chordDelivered || inputSummary.chordPointerDelta < 3) {
+			failures.push(
+				"secondary-up was lost while primary remained held in a browser mouse chord",
+			);
+		}
+		if (inputSummary.hiddenInputTouchFocusRequests !== 0) {
+			failures.push(
+				"touch input focused GPUI Web's hidden input and can summon a software keyboard",
+			);
 		}
 		if (options.requireControls && (
 			controlSummary.buttons < 1

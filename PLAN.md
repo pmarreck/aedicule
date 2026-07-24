@@ -61,15 +61,28 @@
     and future explicit text-input focus. Add a deterministic causal DOM-focus
     test rather than treating mobile emulation as proof that a keyboard did
     not appear.
-  - [ ] Preserve independent browser mouse-button release edges under chords.
+    - [x] Split input by physical modality without user-agent detection:
+      real `mousedown` restores hidden-input focus for hardware keyboard
+      delivery, while touch/pen remain on the Pointer Events path and never
+      focus that editable input. The instrumented packaged-browser gate first
+      caught the over-broad no-refocus implementation breaking W/A/D and synth
+      audio, then passed with zero focus calls during the complete multi-touch
+      stream while hardware keyboard delivery and audio remained green.
+      (2026-07-24 16:12 EDT; GPUI fork pin `1a41fe11`.)
+    - [ ] Obtain Peter's physical iOS Safari sensory acceptance that taps no
+      longer summon the software keyboard.
+  - [x] Preserve independent browser mouse-button release edges under chords.
     Peter reproduced secondary-down (thrust), primary-down (fire), then
     secondary-up while primary remains held leaving thrust latched. Start with
     a failing adapter regression for the exact button-mask transition; classify
     the native desktop adapter separately rather than assuming parity.
-    Native is confirmed unaffected. Peter selected the bold GPUI Web fix; a
-    dedicated Claude stack is reviewing the green upstream-main worktree and
-    will open a draft Zed PR, after which Aedicule must pin the transplanted
-    patch and rerun its packaged browser acceptance.
+    Native is confirmed unaffected. The bold GPUI Web fix now uses independent
+    DOM mouse edges plus the authoritative `buttons` mask, and the real guest
+    gate proves all three chord transitions reach `AE_event`. Native crate
+    tests, wasm compilation, `./test_browser`, `./test`, and `./build` passed.
+    (2026-07-24 16:12 EDT; upstream branch `12e6583a`, immutable Aedicule
+    backport `1a41fe11`; upstream PR text remains intentionally Peter-owned
+    under Zed's contribution policy.)
   - [ ] Add real acceptance lanes for Firefox, Chromium, macOS Safari, and iOS
     Safari where automation permits; do not use Chromium success as evidence
     for other browser engines.
