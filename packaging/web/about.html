@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en" dir="ltr" data-i18n-title="aboutTitle">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<title>About Aedicule</title>
+		<link rel="icon" href="./icon.png">
+		<link rel="manifest" href="./manifest.webmanifest">
+		<style>
+			:root {
+				color-scheme: dark;
+				font: 16px/1.55 Inter, ui-sans-serif, system-ui, sans-serif;
+				--ink: #f7f9ff;
+				--muted: #aeb8d4;
+				--cyan: #6ee7ff;
+				--violet: #c89aff;
+				--panel: #101629dc;
+			}
+			* { box-sizing: border-box; }
+			body {
+				min-height: 100vh;
+				margin: 0;
+				overflow-x: hidden;
+				background:
+					radial-gradient(circle at 8% 0%, #183d69 0, transparent 32rem),
+					radial-gradient(circle at 92% 20%, #4b1f65 0, transparent 32rem),
+					linear-gradient(155deg, #080b14, #060810 70%);
+				color: var(--ink);
+			}
+			body::before {
+				position: fixed;
+				inset: 0;
+				background-image:
+					linear-gradient(#ffffff08 1px, transparent 1px),
+					linear-gradient(90deg, #ffffff08 1px, transparent 1px);
+				background-size: 3rem 3rem;
+				mask-image: linear-gradient(to bottom, #000, transparent 72%);
+				content: "";
+				pointer-events: none;
+			}
+			main {
+				position: relative;
+				width: min(76rem, calc(100% - 2rem));
+				margin-inline: auto;
+				padding: 1.25rem 0 3rem;
+			}
+			nav { display: flex; align-items: center; justify-content: space-between; }
+			.brand { display: flex; align-items: center; gap: .65rem; color: var(--ink); font-weight: 850; text-decoration: none; }
+			.brand img { width: 2.5rem; height: 2.5rem; filter: drop-shadow(0 .5rem 1.2rem #0008); }
+			.back, .links a { color: var(--muted); font-weight: 750; text-underline-offset: .24rem; }
+			.back:hover, .links a:hover { color: #fff; }
+			.hero { padding: clamp(4rem, 10vw, 8rem) 0 clamp(2.5rem, 6vw, 5rem); }
+			.eyebrow {
+				margin: 0 0 1rem;
+				color: var(--cyan);
+				font: 800 .82rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+				letter-spacing: .12em;
+				text-transform: uppercase;
+			}
+			h1 {
+				max-width: 13ch;
+				margin: 0;
+				background: linear-gradient(100deg, #fff 15%, var(--cyan) 60%, var(--violet));
+				background-clip: text;
+				color: transparent;
+				font-size: clamp(3.3rem, 10vw, 8.4rem);
+				line-height: .82;
+				letter-spacing: -.075em;
+			}
+			.lead { max-width: 46rem; margin: 1.8rem 0 0; color: #d4dcf2; font-size: clamp(1.1rem, 2.5vw, 1.45rem); }
+			.targets {
+				display: grid;
+				grid-template-columns: repeat(6, minmax(0, 1fr));
+				gap: .65rem;
+				margin: 0 0 1.25rem;
+			}
+			.target {
+				padding: .8rem .65rem;
+				border: 1px solid #ffffff1d;
+				border-radius: 999px;
+				background: #10172bcc;
+				box-shadow: inset 0 1px #ffffff10;
+				text-align: center;
+				font: 750 .76rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+			}
+			.grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 1rem; }
+			.card {
+				grid-column: span 4;
+				min-height: 15rem;
+				padding: clamp(1.25rem, 3vw, 1.8rem);
+				border: 1px solid #ffffff18;
+				border-radius: 1.35rem;
+				background: linear-gradient(145deg, #151d34e8, var(--panel));
+				box-shadow: 0 1.5rem 5rem #0004, inset 0 1px #ffffff10;
+			}
+			.card.wide { grid-column: span 6; }
+			.card.hero-card {
+				grid-column: span 8;
+				background:
+					radial-gradient(circle at 100% 0%, #47dfff20, transparent 18rem),
+					linear-gradient(145deg, #16213ce8, var(--panel));
+			}
+			h2 { margin: 0 0 .75rem; font-size: clamp(1.25rem, 3vw, 1.75rem); letter-spacing: -.035em; }
+			.card p { margin: 0; color: var(--muted); }
+			.kicker { color: var(--violet); font: 800 .72rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .1em; text-transform: uppercase; }
+			.links { display: flex; flex-wrap: wrap; gap: 1rem 1.5rem; padding: 2rem .25rem 0; }
+			@media (max-width: 62rem) {
+				.targets { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+				.card, .card.wide, .card.hero-card { grid-column: span 6; }
+			}
+			@media (max-width: 42rem) {
+				h1 { font-size: clamp(3rem, 14vw, 4rem); }
+				.targets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+				.card, .card.wide, .card.hero-card { grid-column: 1 / -1; min-height: 0; }
+			}
+			@media (prefers-reduced-motion: reduce) {
+				*, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; }
+			}
+		</style>
+	</head>
+	<body>
+		<main>
+			<nav>
+				<a class="brand" href="./"><img src="./icon.png" alt=""><span>Aedicule</span></a>
+				<a class="back" href="./" data-i18n="aboutBack"></a>
+			</nav>
+			<header class="hero">
+				<p class="eyebrow" data-i18n="aboutEyebrow"></p>
+				<h1 data-i18n="aboutHeadline"></h1>
+				<p class="lead" data-i18n="aboutLead"></p>
+			</header>
+			<section class="targets" aria-label="Aedicule delivery targets" data-i18n-aria-label="aboutTargetsAria">
+				<div class="target">Web</div>
+				<div class="target">macOS · ARM64</div>
+				<div class="target">Linux · ARM64</div>
+				<div class="target">Windows · ARM64</div>
+				<div class="target">Linux · x86-64</div>
+				<div class="target">Windows · x86-64</div>
+			</section>
+			<section class="grid">
+				<article class="card wide">
+					<h2 data-i18n="aboutWhyTitle"></h2>
+					<p data-i18n="aboutWhyBody"></p>
+				</article>
+				<article class="card wide">
+					<h2 data-i18n="aboutAuthoringTitle"></h2>
+					<p data-i18n="aboutAuthoringBody"></p>
+				</article>
+				<article class="card hero-card">
+					<p class="kicker">AVP</p>
+					<h2 data-i18n="aboutLiveTitle"></h2>
+					<p data-i18n="aboutLiveBody"></p>
+				</article>
+				<article class="card">
+					<h2 data-i18n="aboutTargetsTitle"></h2>
+					<p data-i18n="aboutTargetsBody"></p>
+				</article>
+				<article class="card">
+					<h2 data-i18n="aboutGraphicsTitle"></h2>
+					<p data-i18n="aboutGraphicsBody"></p>
+				</article>
+				<article class="card">
+					<h2 data-i18n="aboutSoundTitle"></h2>
+					<p data-i18n="aboutSoundBody"></p>
+				</article>
+				<article class="card">
+					<h2 data-i18n="aboutInputTitle"></h2>
+					<p data-i18n="aboutInputBody"></p>
+				</article>
+				<article class="card wide">
+					<h2 data-i18n="aboutControlsTitle"></h2>
+					<p data-i18n="aboutControlsBody"></p>
+				</article>
+				<article class="card wide">
+					<h2 data-i18n="aboutPackagingTitle"></h2>
+					<p data-i18n="aboutPackagingBody"></p>
+				</article>
+			</section>
+			<footer class="links">
+				<a href="https://github.com/pmarreck/aedicule/blob/yolo/WAT_ABI.md" data-i18n="aboutAbiLink"></a>
+				<a href="https://github.com/pmarreck/aedicule/blob/yolo/GUIDE_FOR_LLMS.md" data-i18n="aboutGuideLink"></a>
+				<a href="https://github.com/pmarreck/aedicule" data-i18n="source"></a>
+			</footer>
+		</main>
+		<script type="module" src="./launcher.mjs"></script>
+	</body>
+</html>

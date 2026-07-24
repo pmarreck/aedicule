@@ -715,6 +715,7 @@
 						in pkgs.runCommand "aedicule-delivery-web" {} ''
 							mkdir -p $out/ulam-flower $out/vibesteroids
 							cp ${./packaging/web/index.html} $out/index.html
+							cp ${./packaging/web/about.html} $out/about.html
 							cp ${./packaging/web/launcher.mjs} $out/launcher.mjs
 							cp ${./packaging/web/launcher-i18n.mjs} $out/launcher-i18n.mjs
 							cp ${./web/coi-serviceworker.js} $out/coi-serviceworker.js

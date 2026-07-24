@@ -61,13 +61,15 @@
     must observe sustained responsiveness and page lifecycle—not startup alone.
 
 - [ ] Make the public gallery previews respond to deliberate interaction.
-  - [ ] Add a prominent “About Aedicule” link and concise standalone page
+  - [x] Add a prominent “About Aedicule” link and concise standalone page
     explaining the human-or-human/agent WAT authoring model, rationale,
     LiveView-like guest-owned update protocol, the exact currently available
     graphics/audio/input/gpui-component surface, and all six delivery targets.
     Distinguish current ABI from proposals and substantiate any “only” or
     “unique” claim; be loud about the exact combination we can prove rather
-    than making an unresearched exclusivity claim.
+    than making an unresearched exclusivity claim. (Completed 2026-07-24 09:12
+    EDT.)
+    - [ ] Receive Peter's visual approval of the desktop/mobile rendering.
   - [ ] Add a prominent keyboard-accessible dropzone/file picker to the launch
     page for arbitrary `.wat` and `.aed` applications. Resolve `.aed` through
     the same bounded virtual application root as native, keep selected bytes
@@ -630,6 +632,11 @@
   - [ ] Preserve identity-bearing multi-touch from browser Pointer Events to
     WAT clients: event kinds 11/12/13/14 are start/move/end/cancel,
     `code = pointerId`, and `a,b = logical x,y`.
+    - [ ] Add a versioned semantic input-capabilities event before the first
+      render and whenever the set changes: keyboard, fine pointer, hover,
+      wheel, touch, multi-touch, motion, and later gamepad—not OS/browser names
+      or one global mobile mode. Preserve concurrent modality-specific held
+      state, startup ordering, hot-plug, and reload/restore across changes.
     - [x] Prove at the live Chrome/DOM layer that two contacts move
       independently, end separately, and a third contact cancels while three
       opaque IDs remain distinct. (2026-07-20 21:18 EDT)

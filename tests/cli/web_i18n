@@ -18,6 +18,14 @@ assert.deepEqual(i18n.supportedLocales, [
 	"sw", "ta", "th", "tr", "uk", "ur", "vi", "yo", "zh_hans", "zh_hant",
 ]);
 assert.deepEqual(Object.keys(i18n.english).sort(), [
+	"aboutAbiLink", "aboutAuthoringBody", "aboutAuthoringTitle", "aboutBack",
+	"aboutControlsBody", "aboutControlsTitle", "aboutEyebrow",
+	"aboutGraphicsBody", "aboutGraphicsTitle", "aboutGuideLink", "aboutHeadline",
+	"aboutInputBody", "aboutInputTitle", "aboutLead", "aboutLink",
+	"aboutLiveBody", "aboutLiveTitle", "aboutPackagingBody",
+	"aboutPackagingTitle", "aboutSoundBody", "aboutSoundTitle",
+	"aboutTargetsAria", "aboutTargetsBody", "aboutTargetsTitle", "aboutTitle",
+	"aboutWhyBody", "aboutWhyTitle",
 	"assetCatalogEntryLimit", "assetCatalogHttp", "assetCatalogInvalidPath",
 	"assetLimit", "assetTotalLimit", "audioPlaybackFailed", "audioUnavailable",
 	"audioUnlockFailed", "checkingCapabilities", "couldNotLoadAsset",
@@ -62,6 +70,38 @@ assert.throws(
 	() => i18n.webGpuFailureMessage("mystery", i18n.english),
 	/unknown WebGPU failure kind/,
 );
+
+const localizedHeading = {
+	dataset: { i18n: "aboutHeadline" },
+	textContent: "",
+};
+const localizedTargets = {
+	attributes: {},
+	dataset: { i18nAriaLabel: "aboutTargetsAria" },
+	setAttribute(name, value) {
+		this.attributes[name] = value;
+	},
+};
+const localizedDocument = {
+	documentElement: {
+		dataset: { i18nTitle: "aboutTitle" },
+		dir: "",
+		lang: "",
+	},
+	querySelectorAll(selector) {
+		return {
+			"[data-i18n]": [localizedHeading],
+			"[data-i18n-aria-label]": [localizedTargets],
+		}[selector] ?? [];
+	},
+	title: "",
+};
+i18n.localizeDocument(localizedDocument, ["en-US"]);
+assert.equal(localizedDocument.documentElement.lang, "en");
+assert.equal(localizedDocument.documentElement.dir, "ltr");
+assert.equal(localizedDocument.title, "About Aedicule");
+assert.equal(localizedHeading.textContent, "SIX TARGETS. ONE WAT APPLICATION.");
+assert.equal(localizedTargets.attributes["aria-label"], "Aedicule delivery targets");
 
 const warnings = [];
 assert.deepEqual(i18n.loadCatalog(["de-DE"], warning => warnings.push(warning)), {

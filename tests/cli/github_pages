@@ -42,6 +42,28 @@ fi
 require_file "$root/web/coi-serviceworker.js" 'cross-origin-isolation service worker'
 require_text "$root/web/index.html" './coi-serviceworker.js' 'demo isolation bootstrap'
 require_text "$root/packaging/web/index.html" './coi-serviceworker.js' 'gallery isolation bootstrap'
+require_file "$root/packaging/web/about.html" 'About Aedicule page'
+require_text "$root/packaging/web/index.html" './about.html' 'gallery About Aedicule link'
+require_text "$root/packaging/web/index.html" 'data-i18n="aboutLink"' \
+	'localized gallery About Aedicule link'
+require_text "$root/flake.nix" 'cp ${./packaging/web/about.html} $out/about.html' \
+	'About Aedicule page delivery'
+require_text "$root/packaging/web/about.html" 'data-i18n="aboutHeadline"' \
+	'localized About page headline'
+require_text "$root/packaging/web/launcher-i18n.mjs" 'SIX TARGETS. ONE WAT APPLICATION.' \
+	'About page six-target headline'
+for target in 'Web' 'macOS · ARM64' 'Linux · ARM64' 'Windows · ARM64' \
+	'Linux · x86-64' 'Windows · x86-64'; do
+	require_text "$root/packaging/web/about.html" "$target" "About page target $target"
+done
+require_text "$root/packaging/web/launcher-i18n.mjs" 'quadratic and cubic Béziers' \
+	'About page current graphics inventory'
+require_text "$root/packaging/web/launcher-i18n.mjs" 'packaged FLAC' \
+	'About page current audio inventory'
+require_text "$root/packaging/web/launcher-i18n.mjs" 'panels, integer sliders, and buttons' \
+	'About page current native-control inventory'
+require_text "$root/packaging/web/launcher-i18n.mjs" 'not available yet' \
+	'About page future/current capability boundary'
 require_text "$root/README.md" 'https://pmarreck.github.io/aedicule/' 'public demo link'
 require_text "$root/README.md" 'https://pmarreck.github.io/aedicule/ulam-flower/' 'direct Ulam Flower demo link'
 require_text "$root/README.md" 'https://pmarreck.github.io/aedicule/vibesteroids/' 'direct Vibesteroids demo link'

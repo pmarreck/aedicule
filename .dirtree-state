@@ -71,6 +71,7 @@ annotate=[
 	packaging/macos/Info.plist.in = macOS application bundle metadata and WAT UTType/document association.
 	packaging/macos/canonicalize_uuid = Canonicalizes a Mach-O UUID from normalized binary content before deterministic re-signing.
 	packaging/macos/validate_macho = LuaJIT Mach-O gate rejects duplicate dylib load commands before signing.
+	packaging/web/about.html = Localized public rationale/capabilities page with six-target hero, AVP explanation, and truthful current-versus-future ABI inventory.
 	packaging/web/index.html = Localized two-demo browser delivery launcher page.
 	packaging/web/launcher-i18n.mjs = Prepare-phase locale resolution and launcher string catalog.
 	packaging/web/launcher.mjs = Browser delivery launcher entrypoint.

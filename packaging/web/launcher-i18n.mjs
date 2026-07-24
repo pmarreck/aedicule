@@ -9,6 +9,33 @@ export const supportedLocales = Object.freeze([
 export const english = Object.freeze({
 	title: "Aedicule",
 	intro: "Two tiny WAT worlds. One portable frontplane.",
+	aboutTitle: "About Aedicule",
+	aboutLink: "About Aedicule",
+	aboutBack: "Back to demos",
+	aboutEyebrow: "A portable frontplane for human–agent software",
+	aboutHeadline: "SIX TARGETS. ONE WAT APPLICATION.",
+	aboutLead: "Aedicule runs small, capability-bounded WebAssembly Text backends behind a native GPUI frontplane or directly in the browser.",
+	aboutWhyTitle: "Why Aedicule",
+	aboutWhyBody: "Application logic should be portable, inspectable, reloadable, and separated from unsafe platform APIs. Aedicule keeps the guest small and deterministic while the host owns windows, graphics, sound, input, assets, and validation.",
+	aboutAuthoringTitle: "Built with people + agents",
+	aboutAuthoringBody: "Humans can write WAT directly. The expected workflow pairs human judgment with an AI coding agent: describe behavior, generate terse commented WAT, run deterministic tests, inspect the result, and refine it together.",
+	aboutLiveTitle: "Live, without split-brain state",
+	aboutLiveBody: "The Aedicule View Protocol is LiveView-like: the guest owns its model and submits a complete keyed desired view only when it changes. Aedicule validates the transaction, reuses native controls by stable ID, returns semantic events, and keeps the last known-good app alive when a reload fails.",
+	aboutTargetsAria: "Aedicule delivery targets",
+	aboutTargetsTitle: "Six delivery targets",
+	aboutTargetsBody: "The same guest format travels to the web, Apple Silicon macOS, ARM64 and x86-64 Linux, and ARM64 and x86-64 Windows. Other frameworks span desktop and web; Aedicule’s distinction is this exact WAT guest, GPUI host, live replacement, and capability boundary.",
+	aboutGraphicsTitle: "Graphics",
+	aboutGraphicsBody: "Transactional frames; affine transforms; lines and circles; filled or stroked paths with line, quadratic and cubic Béziers; cropped and tinted sprites; encoded or raw-RGBA images; UTF-8 text; bundled Geist Mono; deterministic integer sine and cosine.",
+	aboutSoundTitle: "Sound",
+	aboutSoundBody: "Declare bounded synthesized voices or packaged FLAC samples, then trigger volume- and pitch-controlled playback. Aedicule owns decoding, PCM delivery, and pause/resume transport.",
+	aboutInputTitle: "Input",
+	aboutInputBody: "Keyboard; pointer movement; primary, secondary, and middle buttons; horizontal and vertical wheel motion; viewport, focus, display-refresh, menu-action, and pause lifecycle events. Identity-bearing multi-touch is not available yet.",
+	aboutControlsTitle: "Native controls",
+	aboutControlsBody: "The current guest-owned AVP surface places panels, integer sliders, and buttons with stable IDs and semantic events. Editable text, tabs, grids, scrolling containers, and the broader GPUI Component catalog are not available yet.",
+	aboutPackagingTitle: "Apps, not loose blobs",
+	aboutPackagingBody: "Run a bare code.wat, an unpacked project directory, or a deterministic .aed package containing code, assets, tests, documentation, and licenses. Native runs watch source by default and swap only a fully validated candidate.",
+	aboutAbiLink: "Read the exact current ABI",
+	aboutGuideLink: "Guide for humans and LLMs",
 	ulamName: "Ulam Flower",
 	ulamDescription: "Exact arithmetic, recursive motion.",
 	vibesteroidsName: "Vibesteroids",
@@ -128,5 +155,12 @@ export function localizeDocument(document, languages) {
 	for (const element of document.querySelectorAll("[data-i18n]")) {
 		element.textContent = catalog.strings[element.dataset.i18n];
 	}
-	document.title = catalog.strings.title;
+	for (const element of document.querySelectorAll("[data-i18n-aria-label]")) {
+		element.setAttribute(
+			"aria-label",
+			catalog.strings[element.dataset.i18nAriaLabel],
+		);
+	}
+	const titleKey = document.documentElement.dataset.i18nTitle ?? "title";
+	document.title = catalog.strings[titleKey];
 }
