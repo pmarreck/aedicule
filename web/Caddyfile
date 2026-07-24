@@ -1,4 +1,5 @@
 {$AEDICULE_WEB_LISTEN::8080} {
+	bind {$AEDICULE_WEB_BIND:127.0.0.1}
 	root * {env.AEDICULE_WEB_ROOT}
 	header {
 		Cross-Origin-Embedder-Policy "require-corp"

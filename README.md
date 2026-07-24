@@ -177,6 +177,9 @@ interactive `./test`, Aedicule suggests it only when its last success is at
 least 48 hours old and `HEAD` has advanced. `./serve_web` serves the exact
 static gallery that GitHub Pages receives; use
 `./serve_web --listen 0.0.0.0:8910` to make it reachable beyond loopback.
+For a WebGPU-compatible HTTPS origin on a Tailscale network, keep the default
+loopback listener and expose it separately with
+`tailscale serve --bg --https=8910 http://127.0.0.1:8910`.
 
 `./build_all` writes the archives, `SHA256SUMS`, target list, and demo
 provenance manifest through the `result-all` symlink. `./build --test` runs the

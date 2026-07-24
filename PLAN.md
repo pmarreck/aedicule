@@ -61,6 +61,15 @@
     and future explicit text-input focus. Add a deterministic causal DOM-focus
     test rather than treating mobile emulation as proof that a keyboard did
     not appear.
+  - [ ] Preserve independent browser mouse-button release edges under chords.
+    Peter reproduced secondary-down (thrust), primary-down (fire), then
+    secondary-up while primary remains held leaving thrust latched. Start with
+    a failing adapter regression for the exact button-mask transition; classify
+    the native desktop adapter separately rather than assuming parity.
+    Native is confirmed unaffected. Peter selected the bold GPUI Web fix; a
+    dedicated Claude stack is reviewing the green upstream-main worktree and
+    will open a draft Zed PR, after which Aedicule must pin the transplanted
+    patch and rerun its packaged browser acceptance.
   - [ ] Add real acceptance lanes for Firefox, Chromium, macOS Safari, and iOS
     Safari where automation permits; do not use Chromium success as evidence
     for other browser engines.
@@ -170,7 +179,11 @@
     delivery tests pass; the gallery and both demos returned HTTP 200 with
     COOP/COEP through the live local server, which then shut down cleanly.
     Default moved from commonly occupied port 8080 to 8910 at 2026-07-24 14:32
-    EDT; focused regression, 13.4-second full suite, and optimized build pass.)
+    EDT. At 2026-07-24 14:57 EDT, tailnet testing caught Caddy binding every
+    interface and matching only the loopback Host: the HTTPS proxy returned an
+    empty 200 page. Caddy now binds loopback explicitly while accepting proxy
+    Host headers; focused tests, the 12.9-second full suite, optimized build,
+    exact tailnet HTTPS assets, and isolated Chromium gallery rendering pass.)
   - [ ] Move the clean-room matrix to a persistent Thelio/self-hosted Nix
     execution path, or cache exact tested Nix derivations: GitHub dependency
     restoration cut the suite step by 2.1×, but transfer/relinking still makes
@@ -499,6 +512,12 @@
       ZIP starts but fails strict bundle-signature verification because its
       resources were assembled after the Mach-O was signed; publish only a
       post-assembly signed/stapled final ZIP once this credentialed gate exists.
+      Treat a native-M4 build of the exact release commit as the only supported
+      Mac release lane; keep Linux-to-Darwin output diagnostic-only. Before
+      signing, reject duplicate dylib load paths in every executable/helper/
+      framework; then sign nested code before the outer app, verify
+      `codesign --verify --deep --strict`, run the executable `--about`, and
+      keep notarization/stapling as a separate credentialed distribution gate.
   - [x] Expand Mechatron Prime and GitHub Actions gates to falsify the complete
     target/archive matrix, then watch both after pushing.
     - [x] Pass `./test`, the isolated Nix test derivation, `./build`,

@@ -8,7 +8,9 @@ usage() {
 	printf 'Default: http://127.0.0.1:8910/\n'
 }
 
-AEDICULE_WEB_LISTEN=http://127.0.0.1:8910
+AEDICULE_WEB_DISPLAY=http://127.0.0.1:8910
+AEDICULE_WEB_BIND=127.0.0.1
+AEDICULE_WEB_LISTEN=http://:8910
 
 while (( $# != 0 )); do
 	case "$1" in
@@ -21,11 +23,11 @@ while (( $# != 0 )); do
 				printf 'serve_web: --listen requires ADDRESS\n' >&2
 				exit 2
 			fi
-			AEDICULE_WEB_LISTEN=$2
+			AEDICULE_WEB_DISPLAY=$2
 			shift 2
 			;;
 		--listen=*)
-			AEDICULE_WEB_LISTEN=${1#--listen=}
+			AEDICULE_WEB_DISPLAY=${1#--listen=}
 			shift
 			;;
 		*)
@@ -35,16 +37,31 @@ while (( $# != 0 )); do
 	esac
 done
 
-if [[ -z $AEDICULE_WEB_LISTEN ]]; then
+if [[ -z $AEDICULE_WEB_DISPLAY ]]; then
 	printf 'serve_web: listen address must not be empty\n' >&2
 	exit 2
 fi
-case "$AEDICULE_WEB_LISTEN" in
+case "$AEDICULE_WEB_DISPLAY" in
 	http://*|https://*) ;;
-	*) AEDICULE_WEB_LISTEN="http://$AEDICULE_WEB_LISTEN" ;;
+	*) AEDICULE_WEB_DISPLAY="http://$AEDICULE_WEB_DISPLAY" ;;
 esac
+if [[ $AEDICULE_WEB_DISPLAY =~ ^(http|https)://(\[[^]]+\]|[^:/]+):([0-9]+)$ ]]; then
+	scheme=${BASH_REMATCH[1]}
+	host=${BASH_REMATCH[2]}
+	port=${BASH_REMATCH[3]}
+else
+	printf 'serve_web: invalid listen address: %s\n' "$AEDICULE_WEB_DISPLAY" >&2
+	exit 2
+fi
+if (( port < 1 || port > 65535 )); then
+	printf 'serve_web: listen port must be between 1 and 65535\n' >&2
+	exit 2
+fi
+AEDICULE_WEB_BIND=${host#[}
+AEDICULE_WEB_BIND=${AEDICULE_WEB_BIND%]}
+AEDICULE_WEB_LISTEN="$scheme://:$port"
 
 webroot=$(nix build .#delivery-web --no-link --print-out-paths) || exit $?
-export AEDICULE_WEB_LISTEN
-printf '%s/\n' "${AEDICULE_WEB_LISTEN%/}"
+export AEDICULE_WEB_BIND AEDICULE_WEB_LISTEN
+printf '%s/\n' "${AEDICULE_WEB_DISPLAY%/}"
 exec nix run .#webServe -- "$webroot"

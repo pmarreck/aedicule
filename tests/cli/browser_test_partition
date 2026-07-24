@@ -85,7 +85,13 @@ require_text "$local_server" \
 	'nix run .#webServe -- "$webroot"' \
 	'local web-delivery server'
 require_text "$local_server" \
-	'AEDICULE_WEB_LISTEN=http://127.0.0.1:8910' \
+	'AEDICULE_WEB_DISPLAY=http://127.0.0.1:8910' \
+	'local web-delivery server'
+require_text "$local_server" \
+	'AEDICULE_WEB_BIND=127.0.0.1' \
+	'local web-delivery server'
+require_text "$local_server" \
+	'AEDICULE_WEB_LISTEN=http://:8910' \
 	'local web-delivery server'
 
 out= err= rc=0
@@ -109,6 +115,13 @@ out= err= rc=0
 capture "$local_server" --unknown
 if (( rc != 2 )) || [[ -n $out ]] || [[ $err != *'unknown argument'* ]]; then
 	printf 'local web-delivery server does not reject unknown arguments cleanly\n' >&2
+	failures=$((failures + 1))
+fi
+
+out= err= rc=0
+capture "$local_server" --listen not-an-address
+if (( rc != 2 )) || [[ -n $out ]] || [[ $err != *'invalid listen address'* ]]; then
+	printf 'local web-delivery server does not reject invalid listen addresses cleanly\n' >&2
 	failures=$((failures + 1))
 fi
 
