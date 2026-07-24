@@ -482,6 +482,7 @@ struct FrontplaneView {
     open_documents: Rc<RefCell<VecDeque<PathBuf>>>,
     empty_state: bool,
     can_select_mixed_files_and_dirs: bool,
+    guest_pointer_buttons: GuestPointerButtons,
     sliders: Vec<NativeSlider>,
     _slider_subscriptions: Vec<Subscription>,
     _focus_subscriptions: Vec<Subscription>,
@@ -497,6 +498,27 @@ struct NativeSlider {
 #[derive(Default)]
 struct ViewportTracker {
     last_bits: Option<(u32, u32)>,
+}
+
+/// Tracks presses that began on the guest canvas so a host-control release
+/// cannot leak through GPUI's global `on_mouse_up_out` capture listener.
+#[derive(Default)]
+struct GuestPointerButtons(u8);
+
+impl GuestPointerButtons {
+    fn press(&mut self, button: PointerButton) -> bool {
+        let bit = 1 << (button as u8 - 1);
+        let was_up = self.0 & bit == 0;
+        self.0 |= bit;
+        was_up
+    }
+
+    fn release(&mut self, button: PointerButton) -> bool {
+        let bit = 1 << (button as u8 - 1);
+        let was_down = self.0 & bit != 0;
+        self.0 &= !bit;
+        was_down
+    }
 }
 
 impl ViewportTracker {
@@ -652,6 +674,7 @@ impl FrontplaneView {
             open_documents,
             empty_state,
             can_select_mixed_files_and_dirs: cx.can_select_mixed_files_and_dirs(),
+            guest_pointer_buttons: GuestPointerButtons::default(),
             sliders,
             _slider_subscriptions: slider_subscriptions,
             _focus_subscriptions: focus_subscriptions,
@@ -1191,6 +1214,9 @@ impl FrontplaneView {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if !self.guest_pointer_buttons.press(button) {
+            return;
+        }
         self.queue_native_event(
             button.down(f32::from(event.position.x), f32::from(event.position.y)),
             cx,
@@ -1206,6 +1232,9 @@ impl FrontplaneView {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if !self.guest_pointer_buttons.release(button) {
+            return;
+        }
         self.queue_native_event(
             button.up(f32::from(event.position.x), f32::from(event.position.y)),
             cx,
@@ -2045,11 +2074,11 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::{
-        DECIMAL_SCALE, OpenPathKind, StandardMenuEntry, TITLE_BAR_GLYPH_RGBA, ViewportTracker,
-        fixed_sine, guest_positioned_control_layer, host_title_bar_layer, menu_action_event,
-        menu_action_label, native_menus, open_path_prompt_options, render_sample_for_host,
-        render_synth_program_fixed, shift_audio_cooldowns, standard_menu_entries,
-        title_bar_control_glyph_overlay, title_bar_control_glyphs,
+        DECIMAL_SCALE, GuestPointerButtons, OpenPathKind, StandardMenuEntry, TITLE_BAR_GLYPH_RGBA,
+        ViewportTracker, fixed_sine, guest_positioned_control_layer, host_title_bar_layer,
+        menu_action_event, menu_action_label, native_menus, open_path_prompt_options,
+        render_sample_for_host, render_synth_program_fixed, shift_audio_cooldowns,
+        standard_menu_entries, title_bar_control_glyph_overlay, title_bar_control_glyphs,
     };
     use aedicule::{
         Event, Key, MenuItem as PluginMenuItem, Metadata, SampleAsset, SynthFilter, SynthVoice,
@@ -2176,6 +2205,19 @@ mod tests {
             assert_eq!(probe.host_pointer_downs, 1);
             assert_eq!(probe.guest_pointer_downs, 1);
         });
+    }
+
+    #[test]
+    fn guest_pointer_releases_require_a_matching_canvas_press() {
+        let mut buttons = GuestPointerButtons::default();
+
+        assert!(!buttons.release(aedicule::PointerButton::Secondary));
+        assert!(buttons.press(aedicule::PointerButton::Secondary));
+        assert!(!buttons.press(aedicule::PointerButton::Secondary));
+        assert!(buttons.press(aedicule::PointerButton::Primary));
+        assert!(buttons.release(aedicule::PointerButton::Secondary));
+        assert!(!buttons.release(aedicule::PointerButton::Secondary));
+        assert!(buttons.release(aedicule::PointerButton::Primary));
     }
 
     #[test]

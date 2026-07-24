@@ -204,11 +204,22 @@
 								$out/third_party/ztracing_macro/src/
 						'';
 					};
-					applicationCargoDeps = pkgs.rustPlatform.fetchCargoVendor {
+					rawApplicationCargoDeps = pkgs.rustPlatform.fetchCargoVendor {
 						name = "aedicule-cargo-deps";
 						src = cargoDependencySource;
-						hash = "sha256-Ll6O0SBb5QKcmlb0IBQCsNu6wwE7YeV04PyRKCEenaA=";
+						hash = "sha256-AseY2YHUWjVovLMZK/vwkzIf1X41UFnpDpE/6JNLJkw=";
 					};
+					# fetchCargoVendor reorders source-identical gpui_macros entries
+					# from the upstream and patched repositories. Cargo accepts either
+					# order, but cargoSetupHook requires a byte-identical lockfile.
+					applicationCargoDeps = pkgs.runCommand
+						"aedicule-cargo-deps-lock-normalized"
+						{} ''
+							mkdir -p $out
+							cp -R ${rawApplicationCargoDeps}/. $out/
+							chmod -R u+w $out
+							install -m444 ${cargoDependencySource}/Cargo.lock $out/Cargo.lock
+						'';
 					nativeCommonArgs = {
 						pname = "aedicule";
 						inherit version;

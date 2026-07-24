@@ -430,13 +430,71 @@ async function screenshotDigest(protocol) {
 	return createHash("sha256").update(screenshot.data, "base64").digest("hex");
 }
 
+/**
+ * Chooses a deterministic canvas probe point outside AVP control rectangles so
+ * an input-routing test cannot mistake intentional UI occlusion for lost guest input.
+ */
+export function chooseCanvasInputPoint(canvas, ui = {}) {
+	const rectangles = ["panels", "buttons", "sliders"]
+		.flatMap(kind => ui?.[kind] ?? []);
+	const pointIsFree = ({ x, y }) => !rectangles.some(rectangle => (
+		x >= rectangle.x
+		&& x < rectangle.x + rectangle.width
+		&& y >= rectangle.y
+		&& y < rectangle.y + rectangle.height
+	));
+	const xs = [0.5, 0.25, 0.75].map(fraction => (
+		Math.max(1, Math.floor(canvas.cssWidth * fraction))
+	));
+	const ys = [0.25, 0.5, 0.75].map(fraction => (
+		Math.max(81, Math.floor(canvas.cssHeight * fraction))
+	));
+	for (const y of ys) {
+		for (const x of xs) {
+			const point = { x, y };
+			if (pointIsFree(point)) return point;
+		}
+	}
+	return { x: xs[0], y: ys[0] };
+}
+
+/**
+ * Waits for guest semantic counters to remain unchanged across animation
+ * frames, separating prior canvas input from a later control-occlusion proof.
+ */
+export async function waitForSemanticInputQuiescence(
+	protocol,
+	{ maxFrames = 60, stableFrames = 2 } = {},
+) {
+	let previous;
+	let stable = 0;
+	for (let frame = 0; frame < maxFrames; frame += 1) {
+		const result = await protocol.send("Runtime.evaluate", {
+			expression: `(async () => {
+				await new Promise(resolve => requestAnimationFrame(resolve));
+				return globalThis.__AEDICULE_DELIVERED_EVENT_COUNTS ?? {};
+			})()`,
+			awaitPromise: true,
+			returnByValue: true,
+		});
+		const current = JSON.stringify(result.result.value ?? {});
+		if (current === previous) {
+			stable += 1;
+			if (stable >= stableFrames) return true;
+		} else {
+			stable = 0;
+			previous = current;
+		}
+	}
+	return false;
+}
+
 async function synthesizeInput(protocol, snapshot, verboseEvents) {
 	const canvas = snapshot.canvases[0];
 	if (canvas === undefined) {
 		return { dispatched: 0, observed: {}, visualChanged: false };
 	}
-	const x = Math.max(1, Math.floor(canvas.cssWidth / 2));
-	const y = Math.max(1, Math.floor(canvas.cssHeight / 2));
+	const { x, y } = chooseCanvasInputPoint(canvas, snapshot.ui);
 	const chordEvents = [
 		["secondary-down", { type: "mousePressed", x, y, button: "right", buttons: 2, clickCount: 1 }],
 		["primary-down-while-secondary-held", { type: "mousePressed", x, y, button: "left", buttons: 3, clickCount: 1 }],
@@ -552,10 +610,7 @@ async function synthesizeInput(protocol, snapshot, verboseEvents) {
 		}
 		await protocol.send(method, params);
 	}
-	await protocol.send("Runtime.evaluate", {
-		expression: "new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
-		awaitPromise: true,
-	});
+	const inputQuiesced = await waitForSemanticInputQuiescence(protocol);
 	const after = await screenshotDigest(protocol);
 	const afterKey = await pageSnapshot(protocol);
 	const probe = await protocol.send("Runtime.evaluate", {
@@ -584,6 +639,7 @@ async function synthesizeInput(protocol, snapshot, verboseEvents) {
 		chordDelivered,
 		chordPointerDelta,
 		dispatched: chordEvents.length + 1 + events.length + keyEvents.length + touchEvents.length,
+		inputQuiesced,
 		keyFrameChanged: beforeKey.frameBackground !== afterKey.frameBackground,
 		observed,
 		mousePointerPhases,
@@ -923,6 +979,9 @@ async function inspect(options) {
 			failures.push(
 				"touch input focused GPUI Web's hidden input and can summon a software keyboard",
 			);
+		}
+		if (!inputSummary.inputQuiesced) {
+			failures.push("synthetic guest input did not quiesce before control acceptance");
 		}
 		if (options.requireControls && (
 			controlSummary.buttons < 1

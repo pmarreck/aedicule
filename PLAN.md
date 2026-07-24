@@ -68,7 +68,9 @@
       caught the over-broad no-refocus implementation breaking W/A/D and synth
       audio, then passed with zero focus calls during the complete multi-touch
       stream while hardware keyboard delivery and audio remained green.
-      (2026-07-24 16:12 EDT; GPUI fork pin `1a41fe11`.)
+      Pointer cancellation now also releases the corresponding GPUI button
+      state so a cancelled touch cannot contaminate the next control gesture.
+      (2026-07-24 16:50 EDT; GPUI fork pin `cbea9c7f`.)
     - [ ] Obtain Peter's physical iOS Safari sensory acceptance that taps no
       longer summon the software keyboard.
   - [x] Preserve independent browser mouse-button release edges under chords.
@@ -78,10 +80,15 @@
     the native desktop adapter separately rather than assuming parity.
     Native is confirmed unaffected. The bold GPUI Web fix now uses independent
     DOM mouse edges plus the authoritative `buttons` mask, and the real guest
-    gate proves all three chord transitions reach `AE_event`. Native crate
-    tests, wasm compilation, `./test_browser`, `./test`, and `./build` passed.
-    (2026-07-24 16:12 EDT; upstream branch `12e6583a`, immutable Aedicule
-    backport `1a41fe11`; upstream PR text remains intentionally Peter-owned
+    gate proves all three chord transitions reach `AE_event`. The native host
+    now emits a release only for a press that began on the guest canvas, so
+    GPUI's global mouse-up-out capture cannot leak an AVP control release into
+    the guest. The Pages Ulam gate chooses an unoccluded input point and waits
+    for semantic-counter quiescence without sleeps before proving button and
+    slider occlusion. Native crate tests, wasm compilation, the exact Pages
+    Ulam gate, `./test_browser`, `./test`, and `./build` passed.
+    (2026-07-24 16:50 EDT; upstream branch `77ea846c`, immutable Aedicule
+    backport `cbea9c7f`; upstream PR text remains intentionally Peter-owned
     under Zed's contribution policy.)
   - [ ] Add real acceptance lanes for Firefox, Chromium, macOS Safari, and iOS
     Safari where automation permits; do not use Chromium success as evidence

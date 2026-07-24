@@ -4,12 +4,39 @@ import vm from "node:vm";
 import {
 	audioPlaybackFailures,
 	browserProcessEnvironment,
+	chooseCanvasInputPoint,
 	inputObserverSource,
 	requestBrowserClose,
 	removeBrowserProfile,
 	waitForFile,
 	waitForDebuggablePage,
+	waitForSemanticInputQuiescence,
 } from "./web_browser_startup";
+
+assert.deepEqual(
+	chooseCanvasInputPoint(
+		{ cssWidth: 780, cssHeight: 437 },
+		{ panels: [{ x: 12, y: 213, width: 756, height: 168 }] },
+	),
+	{ x: 390, y: 109 },
+	"browser input probes must avoid guest-owned control panels",
+);
+assert.deepEqual(
+	chooseCanvasInputPoint({ cssWidth: 780, cssHeight: 437 }, null),
+	{ x: 390, y: 109 },
+	"a guest without native controls must leave the deterministic probe unobstructed",
+);
+
+const semanticCountSequence = [1, 2, 3, 3, 3];
+let semanticCountReads = 0;
+assert.equal(await waitForSemanticInputQuiescence({
+	send: async () => ({
+		result: {
+			value: { pointer: semanticCountSequence[semanticCountReads++] },
+		},
+	}),
+}), true);
+assert.equal(semanticCountReads, semanticCountSequence.length);
 
 const completeAudioTimeline = [
 	{ stage: "unlock-event", userActivationSeen: true },
