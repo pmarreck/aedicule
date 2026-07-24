@@ -95,16 +95,24 @@ expect_text "$root/web/bootstrap.js" 'globalThis.__AEDICULE_AUDIO_REQUEST_COUNT'
 	'browser sampled-audio adapter exposes no compact request diagnostic'
 expect_text "$root/web/bootstrap.js" 'globalThis.__AEDICULE_AUDIO_DIAGNOSTIC' \
 	'browser sampled-audio adapter exposes no audio lifecycle diagnostic'
+expect_text "$root/web/bootstrap.js" 'schedulePcmPlayback(' \
+	'browser bootstrap bypasses the unit-tested Web Audio graph adapter'
+expect_text "$root/flake.nix" 'install -Dm644 ${./web/audio.mjs} $out/audio.mjs' \
+	'browser runtime delivery omits the unit-tested Web Audio graph adapter'
 for audio_stage in unlock-event context-created context-resume-requested \
-	context-resumed pcm-requested source-started source-failed; do
+	context-resumed pcm-requested source-failed; do
 	expect_text "$root/web/bootstrap.js" "\"$audio_stage\"" \
 		"browser sampled-audio trace omits $audio_stage"
+done
+for audio_stage in pcm-admitted source-started source-ended; do
+	expect_text "$root/web/audio.mjs" "\"$audio_stage\"" \
+		"unit-tested browser audio graph omits $audio_stage"
 done
 expect_text "$root/web/bootstrap.js" 'globalThis.__AEDICULE_SET_AUDIO_PAUSED' \
 	'browser sampled-audio adapter cannot preserve playback cursors across guest pause'
 expect_text "$root/src/bin/aedicule-web.rs" 'BrowserInputOutcome::Paused' \
 	'browser input adapter does not apply host-owned pause transitions'
-expect_text "$root/web/bootstrap.js" '.createBuffer(' \
+expect_text "$root/web/audio.mjs" '.createBuffer(' \
 	'browser sample adapter does not create an explicit channel-aware PCM buffer'
 expect_text "$root/flake.nix" 'install -Dm644 ${./packaging/web/launcher-i18n.mjs} $out/launcher-i18n.mjs' \
 	'browser runtime delivery omits its localization catalog'
@@ -154,8 +162,10 @@ expect_text "$root/tests/integration/web_browser_startup" 'touchCancel' \
 	'headless browser probe does not exercise touch cancellation'
 expect_text "$root/tests/integration/web_browser_startup" 'type: "input-summary"' \
 	'headless browser probe does not compact its synthetic input result'
-expect_text "$root/tests/integration/web_browser_startup" '--require-audio-request' \
-	'headless browser probe cannot require a real sampled-audio handoff'
+expect_text "$root/tests/integration/web_browser_startup" '--require-audio-playback' \
+	'headless browser probe cannot require a complete Web Audio lifecycle'
+reject_text "$root/tests/integration/web_browser_startup" '--require-audio-request' \
+	'headless browser probe still permits the false-green request-only audio gate'
 expect_text "$root/tests/integration/web_browser_startup" '--require-key-delivery' \
 	'headless browser probe cannot distinguish DOM dispatch from WAT keyboard delivery'
 expect_text "$root/tests/integration/web_browser_startup" '--require-controls' \

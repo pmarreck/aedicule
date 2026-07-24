@@ -28,14 +28,15 @@ const EXPECTED_STAGES = [
 	"settled",
 ];
 
-const HELP = `usage: web_browser_startup [--chrome PATH] [--timeout-ms N] [--require-audio-request] [--require-key-delivery] [--require-controls] URL
-       web_browser_startup [--chrome PATH] [--timeout-ms N] [--require-audio-request] [--require-key-delivery] [--require-controls] --static-root PATH
+const HELP = `usage: web_browser_startup [--chrome PATH] [--timeout-ms N] [--require-audio-playback] [--require-key-delivery] [--require-controls] URL
+       web_browser_startup [--chrome PATH] [--timeout-ms N] [--require-audio-playback] [--require-key-delivery] [--require-controls] --static-root PATH
 
 Launch a headless Chromium browser, stream Aedicule's structured startup
 timeline, and reject browser exceptions or a missing/1x1 GPUI canvas.
 
 --static-root serves PATH without isolation headers, matching GitHub Pages.
---require-audio-request rejects a guest that never reaches the Web Audio adapter.
+--require-audio-playback requires activation, running context, non-zero PCM,
+source start, and source completion through the Web Audio adapter.
 --require-key-delivery rejects a static guest whose frame does not change after ArrowLeft.
 --require-controls requires AVP buttons/sliders and proves their events reach the guest.
 
@@ -47,7 +48,7 @@ Environment:
 function parseArguments(arguments_) {
 	let chrome;
 	let timeoutMs = 15_000;
-	let requireAudioRequest = false;
+	let requireAudioPlayback = false;
 	let requireControls = false;
 	let requireKeyDelivery = false;
 	let staticRoot;
@@ -74,8 +75,8 @@ function parseArguments(arguments_) {
 			staticRoot = arguments_[index += 1];
 			continue;
 		}
-		if (argument === "--require-audio-request") {
-			requireAudioRequest = true;
+		if (argument === "--require-audio-playback") {
+			requireAudioPlayback = true;
 			continue;
 		}
 		if (argument === "--require-controls") {
@@ -102,7 +103,7 @@ function parseArguments(arguments_) {
 	}
 	return {
 		chrome,
-		requireAudioRequest,
+		requireAudioPlayback,
 		requireControls,
 		requireKeyDelivery,
 		staticRoot,
@@ -120,6 +121,38 @@ const contentTypes = Object.freeze({
 	".wasm": "application/wasm",
 	".wat": "text/plain; charset=utf-8",
 });
+
+/**
+ * Classifies the complete Web Audio lifecycle as a set of independently
+ * falsifiable boundary failures rather than trusting a request counter.
+ */
+export function audioPlaybackFailures(timeline) {
+	const failures = [];
+	if (!timeline.some(entry =>
+		entry.stage === "unlock-event" && entry.userActivationSeen === true)) {
+		failures.push("Web Audio observed no user activation");
+	}
+	if (!timeline.some(entry =>
+		["context-created", "context-resumed"].includes(entry.stage)
+		&& entry.contextState === "running")) {
+		failures.push("Web Audio observed no running context");
+	}
+	if (!timeline.some(entry =>
+		entry.stage === "pcm-admitted"
+		&& entry.nonzeroSamples > 0
+		&& entry.peak > 0
+		&& entry.rootMeanSquare > 0)) {
+		failures.push("Web Audio admitted no non-zero PCM");
+	}
+	if (!timeline.some(entry =>
+		entry.stage === "source-started" && entry.contextState === "running")) {
+		failures.push("Web Audio observed no source start in a running context");
+	}
+	if (!timeline.some(entry => entry.stage === "source-ended")) {
+		failures.push("Web Audio observed no source completion");
+	}
+	return failures;
+}
 
 /**
  * Serves a bundle with ordinary static-host headers so the browser probe
@@ -522,6 +555,22 @@ async function waitForSemanticEvent(protocol, field, priorCount) {
 	return result.result.value === true;
 }
 
+async function waitForAudioPlayback(protocol) {
+	const result = await protocol.send("Runtime.evaluate", {
+		expression: `(async () => {
+			for (let frame = 0; frame < 300; frame += 1) {
+				const timeline = globalThis.__AEDICULE_AUDIO_DIAGNOSTIC?.timeline ?? [];
+				if (timeline.some(entry => entry.stage === "source-ended")) return true;
+				await new Promise(resolve => requestAnimationFrame(resolve));
+			}
+			return false;
+		})()`,
+		awaitPromise: true,
+		returnByValue: true,
+	});
+	return result.result.value === true;
+}
+
 async function dispatchControlClick(protocol, bounds) {
 	const x = Math.round(bounds.x + bounds.width / 2);
 	const y = Math.round(bounds.y + bounds.height / 2);
@@ -738,6 +787,7 @@ async function inspect(options) {
 			...inputSummary,
 			diagnostics: inputDiagnostics.length,
 		})}\n`);
+		if (options.requireAudioPlayback) await waitForAudioPlayback(protocol);
 		const finalSnapshot = await pageSnapshot(protocol);
 		const controlSummary = options.requireControls
 			? await exerciseControls(protocol, finalSnapshot)
@@ -781,8 +831,10 @@ async function inspect(options) {
 			|| finalSnapshot.runtime?.framesCompleted <= snapshot.runtime?.framesCompleted) {
 			failures.push("Aedicule runtime did not complete another browser frame after startup");
 		}
-		if (options.requireAudioRequest && finalSnapshot.audioRequestCount < 1) {
-			failures.push("guest produced no sampled-audio request at the Web Audio adapter");
+		if (options.requireAudioPlayback) {
+			failures.push(...audioPlaybackFailures(
+				finalSnapshot.audioDiagnostic?.timeline ?? [],
+			));
 		}
 		if (options.requireKeyDelivery && !inputSummary.keyFrameChanged) {
 			failures.push("ArrowLeft reached the guest but produced no committed frame change");

@@ -4,12 +4,14 @@
 use std::time::Duration;
 
 use crate::{
-    ApplicationAssets, Event, FrameOutput, Frontplane, FrontplaneError, GuestSuspension, Limits,
-    Metadata, PausePhase, PluginInit, SampleAudioEvent, SimulationCall, SimulationScheduler,
-    SuspensionDisposition, UiSnapshot, initialize_frontplane, wav::AUDIO_FIXED_SCALE,
+    ApplicationAssets, AudioEvent, Event, FrameOutput, Frontplane, FrontplaneError,
+    GuestSuspension, Limits, Metadata, PausePhase, PluginInit, SampleAudioEvent, SimulationCall,
+    SimulationScheduler, SuspensionDisposition, UiSnapshot, audio::render_synth_program,
+    initialize_frontplane, wav::AUDIO_FIXED_SCALE,
 };
 
 const MAX_TICKS_PER_BROWSER_FRAME: u32 = 8;
+const BROWSER_SYNTH_SAMPLE_RATE: u32 = 48_000;
 
 /// Name of the JavaScript global populated by the static delivery bootstrap
 /// before wasm-bindgen enters the GPUI application.
@@ -70,6 +72,7 @@ pub struct BrowserRuntime {
     delivered_events: BrowserDeliveredEventCounts,
     suspension: GuestSuspension,
     paused_at: Option<Duration>,
+    pending_audio: Vec<AudioEvent>,
     pending_sample_audio: Vec<SampleAudioEvent>,
 }
 
@@ -107,6 +110,7 @@ impl BrowserRuntime {
             delivered_events: BrowserDeliveredEventCounts::default(),
             suspension,
             paused_at: None,
+            pending_audio: Vec::new(),
             pending_sample_audio: Vec::new(),
         })
     }
@@ -166,9 +170,8 @@ impl BrowserRuntime {
         }
     }
 
-    /// Executes one animation-frame sample. Unsupported browser audio and
-    /// effects are drained until their dedicated adapters exist, preserving the
-    /// runtime's bounded output queues without inventing JavaScript behavior.
+    /// Executes one animation-frame sample, retaining committed audio for the
+    /// browser adapter while draining effects that have no browser device yet.
     pub fn advance_to(&mut self, now: Duration) -> Result<bool, FrontplaneError> {
         if self.suspension.is_suspended() {
             return Ok(false);
@@ -214,7 +217,7 @@ impl BrowserRuntime {
     }
 
     fn collect_runtime_outputs(&mut self) {
-        self.frontplane.drain_audio();
+        self.pending_audio.extend(self.frontplane.drain_audio());
         self.pending_sample_audio
             .extend(self.frontplane.drain_sample_audio());
         self.frontplane.drain_effects();
@@ -262,6 +265,32 @@ impl BrowserRuntime {
     /// diagnostics without revealing or mutating guest state.
     pub fn delivered_event_counts(&self) -> BrowserDeliveredEventCounts {
         self.delivered_events
+    }
+
+    /// Renders committed synth events through the same deterministic fixed
+    /// point core as native, handing only bounded mono PCM to Web Audio.
+    pub fn drain_audio(&mut self) -> Vec<BrowserSamplePlayback> {
+        std::mem::take(&mut self.pending_audio)
+            .into_iter()
+            .filter_map(|event| {
+                let voices = self
+                    .frontplane
+                    .metadata()
+                    .synth_voices
+                    .iter()
+                    .filter(|voice| voice.program_id == event.id)
+                    .cloned()
+                    .collect::<Vec<_>>();
+                let samples = render_synth_program(&voices, event, BROWSER_SYNTH_SAMPLE_RATE);
+                (!samples.is_empty()).then_some(BrowserSamplePlayback {
+                    sample_rate: BROWSER_SYNTH_SAMPLE_RATE,
+                    channels: 1,
+                    samples,
+                    volume: 1.0,
+                    pitch: 1.0,
+                })
+            })
+            .collect()
     }
 
     /// Resolves transactional sample events against immutable admitted metadata
@@ -415,6 +444,57 @@ mod tests {
 				call $circle drop
 				call $frame_end drop
 				i32.const 0)
+			(func (export "AE_state_ptr") (result i32) i32.const 0)
+			(func (export "AE_state_len") (result i32) i32.const 0)
+			(func (export "AE_state_schema") (result i32) i32.const 1))
+	"#;
+
+    const SYNTH_WAT: &str = r#"
+		(module
+			(import "aedicule.v0" "AE_synth_voice"
+				(func $synth_voice
+					(param i32 i32 i32 i32 i32 i32 i32 i32 i32 i32 i32 i32 i32 i32)
+					(result i32)))
+			(import "aedicule.v0" "AE_audio"
+				(func $audio (param i32 f32 f32 i32) (result i32)))
+			(import "aedicule.v0" "AE_frame_begin_rgba"
+				(func $frame_begin (param i32) (result i32)))
+			(import "aedicule.v0" "AE_frame_end" (func $frame_end (result i32)))
+			(memory (export "memory") 1)
+			(global $played (mut i32) (i32.const 0))
+			(func (export "AE_abi_major") (result i32) i32.const 0)
+			(func (export "AE_abi_minor") (result i32) i32.const 0)
+			(func (export "AE_configure") (result i32)
+				i32.const 7
+				i32.const 1
+				i32.const 0
+				i32.const 20
+				i32.const 440000
+				i32.const 440000
+				i32.const 440000
+				i32.const 0
+				i32.const 1000000
+				i32.const 0
+				i32.const 0
+				i32.const 0
+				i32.const 0
+				i32.const 0
+				call $synth_voice)
+			(func (export "AE_init") (param i32 i32 f32 f32) (result i32) i32.const 0)
+			(func (export "AE_event")
+				(param $kind i32) (param i32) (param f32 f32) (result i32)
+				local.get $kind i32.const 4 i32.eq
+				global.get $played i32.eqz
+				i32.and
+				if
+					i32.const 7 f32.const 1 f32.const 1 i32.const 0 call $audio drop
+					i32.const 1 global.set $played
+				end
+				i32.const 0)
+			(func (export "AE_tick") (param i32) (result i32) i32.const 0)
+			(func (export "AE_render") (result i32)
+				i32.const 0x081020ff call $frame_begin drop
+				call $frame_end)
 			(func (export "AE_state_ptr") (result i32) i32.const 0)
 			(func (export "AE_state_len") (result i32) i32.const 0)
 			(func (export "AE_state_schema") (result i32) i32.const 1))
@@ -630,5 +710,41 @@ mod tests {
         assert_eq!(playback[0].samples, vec![0.0; 16]);
         assert_eq!(playback[0].volume, 0.5);
         assert_eq!(playback[0].pitch, 1.25);
+    }
+
+    #[test]
+    fn committed_synth_events_become_bounded_nonzero_browser_pcm() {
+        let mut runtime =
+            BrowserRuntime::new(SYNTH_WAT, PluginInit::new(7, 1024.0, 768.0), Duration::ZERO)
+                .unwrap();
+        assert_eq!(
+            runtime
+                .handle_input(
+                    Duration::from_millis(5),
+                    Event::PointerDown {
+                        button: 1,
+                        x: 10.0,
+                        y: 20.0,
+                    },
+                )
+                .unwrap(),
+            BrowserInputOutcome::Queued
+        );
+        assert!(runtime.advance_to(Duration::from_millis(17)).unwrap());
+
+        let playback = runtime.drain_audio();
+        assert_eq!(playback.len(), 1);
+        assert_eq!(playback[0].sample_rate, 48_000);
+        assert_eq!(playback[0].channels, 1);
+        assert_eq!(playback[0].samples.len(), 960);
+        assert!(playback[0].samples.iter().any(|sample| *sample != 0.0));
+        assert!(
+            playback[0]
+                .samples
+                .iter()
+                .all(|sample| (-1.0..=1.0).contains(sample))
+        );
+        assert_eq!(playback[0].volume, 1.0);
+        assert_eq!(playback[0].pitch, 1.0);
     }
 }

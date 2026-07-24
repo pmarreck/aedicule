@@ -44,6 +44,16 @@
     - [x] Publish bounded Web Audio lifecycle diagnostics for each of those
       stages, with failure class/message and current user-activation/context
       state. (2026-07-24 08:43 EDT)
+    - [x] Replace the request-counter-only browser gate with deterministic
+      adapter tests proving nonzero PCM reaches the expected channels, the
+      graph connects to the destination, resume precedes source start, and
+      volume/pitch are applied. The packaged-browser acceptance now uses a
+      synth-only WAT and requires trusted activation, a running context,
+      nonzero peak/RMS, `source-started`, and `source-ended`; it also caught and
+      fixed the native `--web` runtime allowlist omitting `audio.mjs`.
+      (2026-07-24 10:51 EDT; focused Rust, Node, native-server, and live muted
+      Chromium gates pass. Physical speaker/device-loopback output remains a
+      separate acceptance boundary.)
   - [ ] Fix the distinct iOS software-keyboard-on-any-touch defect at the
     GPUI-web input-handler boundary: a guest with no active text/IME control
     must not focus an editable hidden DOM input on canvas or native-control
@@ -70,6 +80,16 @@
     than making an unresearched exclusivity claim. (Completed 2026-07-24 09:12
     EDT.)
     - [ ] Receive Peter's visual approval of the desktop/mobile rendering.
+  - [ ] Publish one build-generated Current + Proposed ABI reference page.
+    Generate the current callable surface from the same typed Rust capability
+    registry as `WAT_ABI.md`, and generate future cards only from an explicit
+    non-callable proposal registry with status, evidence/spec links, and
+    adapter targets. Add a conformance test that instantiates every current
+    documented import at its exact generated signature so the reference proves
+    linker reality rather than only self-consistency. Never present a proposed
+    name or signature as callable, and fail the build on generated-page drift.
+    - Curiosity poke: keep proposal granularity stable enough for durable links
+      without prematurely freezing function names or signatures.
   - [ ] Add a prominent keyboard-accessible dropzone/file picker to the launch
     page for arbitrary `.wat` and `.aed` applications. Resolve `.aed` through
     the same bounded virtual application root as native, keep selected bytes
@@ -293,6 +313,13 @@
     now distinguish DOM dispatch, frontplane admission, and guest delivery.)
     Curiosity poke: suppress browser defaults only for admitted guest keys and
     preserve both edges so held controls cannot become stuck.
+  - [ ] Append stable physical-key IDs for W, A, and D without changing any
+    existing key number; map native GPUI and browser representations, prove
+    down/up edges cross the actual WAT boundary, regenerate ABI/LLM docs, and
+    publish the tested SHA for Vibesteroids. Gameplay aliases remain entirely
+    guest-owned.
+    Curiosity poke: focus-loss/pause reconciliation must remain a generic held-
+    key mechanism and never learn Vibesteroids thrust/rotation semantics.
   - [x] When WebGPU admission fails, show concise current enablement steps for
     Firefox, Chrome, and Safari, with a reload-first/restart-if-still-blocked
     diagnostic path and links to browser-owned documentation.

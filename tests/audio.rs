@@ -1,6 +1,6 @@
 #[test]
 fn audio_oscillators_envelopes_and_filters_are_decimal_fixed_point() {
-    let source = include_str!("../src/main.rs");
+    let source = include_str!("../src/audio.rs");
     let fixed = source
         .split_once("// FIXED_AUDIO_BEGIN")
         .expect("fixed-audio implementation start marker")

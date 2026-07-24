@@ -355,7 +355,7 @@ impl WebFrontplane {
                     publish_browser_delivered_events(self.runtime.delivered_event_counts());
                     self.reported_delivered_events = delivered;
                 }
-                self.play_pending_samples();
+                self.play_pending_audio();
             }
             Err(error) => self.fatal_error = Some(error.to_string()),
         }
@@ -363,8 +363,9 @@ impl WebFrontplane {
 
     /// Hands decoded immutable PCM to Web Audio after the deterministic runtime
     /// has committed its tick; device state never feeds back into guest time.
-    fn play_pending_samples(&mut self) {
-        let pending = self.runtime.drain_sample_audio();
+    fn play_pending_audio(&mut self) {
+        let mut pending = self.runtime.drain_audio();
+        pending.extend(self.runtime.drain_sample_audio());
         #[cfg(target_family = "wasm")]
         for playback in pending {
             let samples = js_sys::Float32Array::from(playback.samples.as_slice());
@@ -387,12 +388,12 @@ impl WebFrontplane {
             trace_browser_input(&event);
             match self.runtime.handle_input(self.origin.elapsed(), event) {
                 Ok(BrowserInputOutcome::Paused) => {
-                    self.play_pending_samples();
+                    self.play_pending_audio();
                     set_browser_audio_paused(true);
                 }
                 Ok(BrowserInputOutcome::Resumed) => {
                     set_browser_audio_paused(false);
-                    self.play_pending_samples();
+                    self.play_pending_audio();
                 }
                 Ok(
                     BrowserInputOutcome::Queued

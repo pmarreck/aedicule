@@ -25,6 +25,7 @@ const MAX_REQUEST_BYTES: usize = 8 * 1024;
 const RUNTIME_FILES: &[&str] = &[
     "index.html",
     "bootstrap.js",
+    "audio.mjs",
     "startup-lock.mjs",
     "launcher-i18n.mjs",
     "coi-serviceworker.js",
@@ -485,6 +486,7 @@ mod tests {
         for (name, expected) in [
             ("index.html", "text/html; charset=utf-8"),
             ("bootstrap.js", "text/javascript; charset=utf-8"),
+            ("audio.mjs", "text/javascript; charset=utf-8"),
             ("startup-lock.mjs", "text/javascript; charset=utf-8"),
             ("launcher-i18n.mjs", "text/javascript; charset=utf-8"),
             ("icon.png", "image/png"),

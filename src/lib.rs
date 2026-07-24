@@ -45,6 +45,8 @@ pub use package::{
 #[cfg(feature = "native-runtime")]
 pub use web_server::{WebServer, discover_web_runtime};
 
+/// Deterministic fixed-point synthesis shared by native and browser adapters.
+pub mod audio;
 /// Bounded, device-independent decoding for packaged digitized-audio clips.
 pub mod wav;
 

@@ -39,7 +39,7 @@ MUTE_DEBUG_STATUS=1 "$frontplane" --depackage "$package" "$temporary/application
 	>"$temporary/depackage.out" 2>"$temporary/depackage.err"
 (( $? == 0 )) || fail 'could not depackage application fixture'
 [[ ! -s $temporary/depackage.err ]] || fail 'depackaging emitted diagnostics'
-cp "$root/tests/fixtures/browser_sample.wat" "$temporary/application/code.wat"
+cp "$root/tests/fixtures/browser_synth.wat" "$temporary/application/code.wat"
 
 url_pipe="$temporary/server-url"
 mkfifo "$url_pipe"
@@ -52,8 +52,8 @@ IFS= read -r -t 10 url <"$url_pipe"
 (( $? == 0 )) || fail 'server did not emit its URL'
 [[ $url == http://127.0.0.1:*\/ ]] || fail 'server emitted an invalid loopback URL'
 
-"$root/tests/integration/web_browser_startup" --require-audio-request --require-key-delivery "$url" \
+"$root/tests/integration/web_browser_startup" --require-audio-playback --require-key-delivery "$url" \
 	>"$temporary/browser.out" 2>"$temporary/browser.err"
-(( $? == 0 )) || fail 'headless browser rejected sampled-audio delivery'
+(( $? == 0 )) || fail 'headless browser rejected synthesized-audio delivery'
 [[ ! -s $temporary/browser.err ]] || fail 'headless browser emitted diagnostics'
 [[ ! -s $temporary/server.err ]] || fail 'application server emitted diagnostics'

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import vm from "node:vm";
 
 import {
+	audioPlaybackFailures,
 	browserProcessEnvironment,
 	inputObserverSource,
 	requestBrowserClose,
@@ -9,6 +10,39 @@ import {
 	waitForFile,
 	waitForDebuggablePage,
 } from "./web_browser_startup";
+
+const completeAudioTimeline = [
+	{ stage: "unlock-event", userActivationSeen: true },
+	{ stage: "context-resumed", contextState: "running" },
+	{ stage: "pcm-admitted", nonzeroSamples: 24, peak: 0.75, rootMeanSquare: 0.25 },
+	{ stage: "source-started", contextState: "running" },
+	{ stage: "source-ended", contextState: "running" },
+];
+assert.deepEqual(audioPlaybackFailures(completeAudioTimeline), []);
+assert.deepEqual(audioPlaybackFailures(
+	completeAudioTimeline.map(entry => (
+		entry.stage === "context-resumed"
+			? { ...entry, stage: "context-created" }
+			: entry
+	)),
+), [], "a context created running needs no redundant resume transition");
+for (const [name, mutate, expected] of [
+	["activation", timeline => timeline.map(entry => (
+		entry.stage === "unlock-event" ? { ...entry, userActivationSeen: false } : entry
+	)), "user activation"],
+	["resume", timeline => timeline.filter(entry => entry.stage !== "context-resumed"), "running context"],
+	["nonzero", timeline => timeline.map(entry => (
+		entry.stage === "pcm-admitted"
+			? { ...entry, nonzeroSamples: 0, peak: 0, rootMeanSquare: 0 }
+			: entry
+	)), "non-zero PCM"],
+	["start", timeline => timeline.filter(entry => entry.stage !== "source-started"), "source start"],
+	["end", timeline => timeline.filter(entry => entry.stage !== "source-ended"), "source completion"],
+]) {
+	const failures = audioPlaybackFailures(mutate(structuredClone(completeAudioTimeline)));
+	assert.equal(failures.length, 1, `${name} mutation must produce one focused failure`);
+	assert.match(failures[0], new RegExp(expected));
+}
 
 const browserCloseCommands = [];
 await requestBrowserClose({

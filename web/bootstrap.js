@@ -5,6 +5,7 @@ import {
 	loadCatalog,
 	webGpuFailureMessage,
 } from "./launcher-i18n.mjs";
+import { schedulePcmPlayback } from "./audio.mjs";
 import { withExclusiveStartupLock } from "./startup-lock.mjs";
 
 const status = document.getElementById("aedicule-startup-status");
@@ -302,11 +303,6 @@ for (const eventName of ["pointerdown", "keydown", "touchstart"]) {
 }
 
 globalThis.__AEDICULE_PLAY_PCM = (sampleRate, channels, samples, volume, pitch) => {
-	if (!Number.isInteger(sampleRate) || sampleRate <= 0
-		|| !Number.isInteger(channels) || channels <= 0
-		|| !(samples instanceof Float32Array) || samples.length % channels !== 0) {
-		throw new TypeError(strings.invalidPcmRequest);
-	}
 	reportAudioDiagnostic("pcm-requested", {
 		sampleRate,
 		channels,
@@ -323,57 +319,21 @@ globalThis.__AEDICULE_PLAY_PCM = (sampleRate, channels, samples, volume, pitch) 
 	globalThis.__AEDICULE_AUDIO_REQUEST_COUNT += 1;
 	globalThis.__AEDICULE_AUDIO_DIAGNOSTIC.requestCount
 		= globalThis.__AEDICULE_AUDIO_REQUEST_COUNT;
-	const frames = samples.length / channels;
-	try {
-		const buffer = context.createBuffer(channels, frames, sampleRate);
-		for (let channel = 0; channel < channels; channel += 1) {
-			const output = buffer.getChannelData(channel);
-			for (let frame = 0; frame < frames; frame += 1) {
-				output[frame] = samples[frame * channels + channel];
-			}
-		}
-		const source = context.createBufferSource();
-		const gain = context.createGain();
-		source.buffer = buffer;
-		source.playbackRate.value = pitch;
-		gain.gain.value = volume;
-		source.connect(gain).connect(context.destination);
-		const start = () => {
-			try {
-				source.start();
-				reportAudioDiagnostic("source-started", {
-					frames,
-					durationSeconds: buffer.duration,
-				});
-			} catch (error) {
-				reportAudioDiagnostic("source-failed", {
-					errorName: error?.name ?? typeof error,
-					errorMessage: error?.message ?? String(error),
-				});
-				console.warn(strings.audioPlaybackFailed, error);
-			}
-		};
-		if (context.state === "suspended") {
-			resumeAudioContext(context, "pcm-playback")
-				.then(start)
-				.catch(error => {
-					reportAudioDiagnostic("source-failed", {
-						reason: "audio-context-resume-failed",
-						errorName: error?.name ?? typeof error,
-						errorMessage: error?.message ?? String(error),
-					});
-					console.warn(strings.audioPlaybackFailed, error);
-				});
-		} else {
-			start();
-		}
-	} catch (error) {
+	schedulePcmPlayback(
+		context,
+		{ sampleRate, channels, samples, volume, pitch },
+		{
+			report: reportAudioDiagnostic,
+			resume: candidate => resumeAudioContext(candidate, "pcm-playback"),
+			invalidRequestMessage: strings.invalidPcmRequest,
+		},
+	).catch(error => {
 		reportAudioDiagnostic("source-failed", {
 			errorName: error?.name ?? typeof error,
 			errorMessage: error?.message ?? String(error),
 		});
 		console.warn(strings.audioPlaybackFailed, error);
-	}
+	});
 };
 
 async function initializeApplication() {

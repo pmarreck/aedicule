@@ -71,6 +71,14 @@ for cache in web-library web-binary; do
 		failures=$((failures + 1))
 	fi
 done
+if [[ $(rg -F -c 'node ./tests/integration/web_audio_adapter.mjs' "$suite") != 1 ]]; then
+	printf 'complete suite does not run the deterministic Web Audio graph test exactly once\n' >&2
+	failures=$((failures + 1))
+fi
+if [[ $(rg -F -c 'node ./tests/integration/web_audio_adapter.mjs' "$flake") != 1 ]]; then
+	printf 'isolated Nix suite does not run the deterministic Web Audio graph test exactly once\n' >&2
+	failures=$((failures + 1))
+fi
 parallel_checks=(
 	./tests/cli/development_dependencies
 	./tests/cli/repository_boundary
