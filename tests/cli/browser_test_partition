@@ -85,7 +85,7 @@ require_text "$local_server" \
 	'nix run .#webServe -- "$webroot"' \
 	'local web-delivery server'
 require_text "$local_server" \
-	'AEDICULE_WEB_LISTEN=http://127.0.0.1:8080' \
+	'AEDICULE_WEB_LISTEN=http://127.0.0.1:8910' \
 	'local web-delivery server'
 
 out= err= rc=0
@@ -97,7 +97,10 @@ fi
 
 out= err= rc=0
 capture "$local_server" --help
-if (( rc != 0 )) || [[ $out != *'usage: ./serve_web'* ]] || [[ -n $err ]]; then
+if (( rc != 0 )) ||
+	[[ $out != *'usage: ./serve_web'* ]] ||
+	[[ $out != *'Default: http://127.0.0.1:8910/'* ]] ||
+	[[ -n $err ]]; then
 	printf 'local web-delivery help is not clean and current\n' >&2
 	failures=$((failures + 1))
 fi

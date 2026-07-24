@@ -5,10 +5,10 @@ set -u
 usage() {
 	printf 'usage: ./serve_web [--listen ADDRESS]\n\n'
 	printf 'Build and serve the exact browser delivery locally without deploying it.\n'
-	printf 'Default: http://127.0.0.1:8080/\n'
+	printf 'Default: http://127.0.0.1:8910/\n'
 }
 
-AEDICULE_WEB_LISTEN=http://127.0.0.1:8080
+AEDICULE_WEB_LISTEN=http://127.0.0.1:8910
 
 while (( $# != 0 )); do
 	case "$1" in

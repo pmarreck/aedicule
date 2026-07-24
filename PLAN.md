@@ -168,7 +168,9 @@
     locally on loopback by default, with an explicit `--listen` override for
     LAN/tailnet testing. (2026-07-24 12:22 EDT; clean help/error and structural
     delivery tests pass; the gallery and both demos returned HTTP 200 with
-    COOP/COEP through the live local server, which then shut down cleanly.)
+    COOP/COEP through the live local server, which then shut down cleanly.
+    Default moved from commonly occupied port 8080 to 8910 at 2026-07-24 14:32
+    EDT; focused regression, 13.4-second full suite, and optimized build pass.)
   - [ ] Move the clean-room matrix to a persistent Thelio/self-hosted Nix
     execution path, or cache exact tested Nix derivations: GitHub dependency
     restoration cut the suite step by 2.1×, but transfer/relinking still makes
