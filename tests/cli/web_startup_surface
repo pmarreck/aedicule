@@ -33,6 +33,13 @@ expect_text "$root/web/bootstrap.js" 'crossOriginIsolated' \
 	'browser bootstrap does not preflight cross-origin isolation'
 expect_text "$root/web/bootstrap.js" 'await globalThis.__AEDICULE_ISOLATION_READY' \
 	'browser bootstrap can race the headerless-host isolation reload'
+expect_text "$root/web/coi-serviceworker.js" 'globalThis.__AEDICULE_EARLY_DIAGNOSTICS' \
+	'browser isolation adapter exposes no pre-module diagnostic timeline'
+for isolation_stage in isolation-registering isolation-registered \
+	isolation-ready isolation-reloading isolation-failed; do
+	expect_text "$root/web/coi-serviceworker.js" "\"$isolation_stage\"" \
+		"browser isolation trace omits $isolation_stage"
+done
 expect_text "$root/web/bootstrap.js" 'loadCatalog(navigator.languages)' \
 	'browser runtime strings do not use the shared prepare-phase locale catalog'
 expect_text "$root/web/coi-serviceworker.js" 'Cross-Origin-Embedder-Policy' \
@@ -43,6 +50,26 @@ expect_text "$root/web/bootstrap.js" 'SharedArrayBuffer' \
 	'browser bootstrap does not preflight shared WebAssembly memory support'
 expect_text "$root/web/bootstrap.js" 'navigator.gpu.requestAdapter()' \
 	'browser bootstrap does not preflight an available WebGPU adapter'
+expect_text "$root/web/bootstrap.js" 'globalThis.__AEDICULE_STARTUP_TIMELINE' \
+	'browser bootstrap exposes no bounded startup timeline for live diagnosis'
+expect_text "$root/web/bootstrap.js" 'reportStartupDiagnostic("webgpu-adapter-request"' \
+	'browser startup cannot distinguish API presence from adapter allocation'
+expect_text "$root/web/bootstrap.js" 'elapsedMs' \
+	'browser startup diagnostics have no per-stage elapsed time'
+expect_text "$root/web/bootstrap.js" 'errorName' \
+	'browser startup failure hides the browser exception class'
+expect_text "$root/web/bootstrap.js" 'userAgent' \
+	'browser startup failure omits browser identity'
+expect_text "$root/web/bootstrap.js" 'serviceWorkerControlled' \
+	'browser startup failure omits scoped isolation-controller state'
+expect_text "$root/web/bootstrap.js" 'globalThis.__AEDICULE_RUNTIME_DIAGNOSTIC' \
+	'browser runtime exposes no sustained frame-progress diagnostic'
+expect_text "$root/src/bin/aedicule-web.rs" 'report_browser_frame_started' \
+	'browser runtime cannot distinguish a started frame from a completed frame'
+expect_text "$root/src/bin/aedicule-web.rs" 'report_browser_frame_completed' \
+	'browser runtime cannot prove continued frame completion after first paint'
+expect_text "$root/web/bootstrap.js" 'strings.webGpuAdapterRecovery' \
+	'browser adapter abort gives no actionable transient-recovery instruction'
 expect_text "$root/web/bootstrap.js" 'console.info("[Aedicule startup]", stage, JSON.stringify(detail))' \
 	'browser bootstrap does not report successful startup stages to the console'
 expect_text "$root/web/bootstrap.js" 'console.error("[Aedicule startup] failed",' \
@@ -57,6 +84,13 @@ expect_text "$root/web/bootstrap.js" 'globalThis.__AEDICULE_PLAY_PCM' \
 	'browser bootstrap has no Web Audio sampled-PCM device adapter'
 expect_text "$root/web/bootstrap.js" 'globalThis.__AEDICULE_AUDIO_REQUEST_COUNT' \
 	'browser sampled-audio adapter exposes no compact request diagnostic'
+expect_text "$root/web/bootstrap.js" 'globalThis.__AEDICULE_AUDIO_DIAGNOSTIC' \
+	'browser sampled-audio adapter exposes no audio lifecycle diagnostic'
+for audio_stage in unlock-event context-created context-resume-requested \
+	context-resumed pcm-requested source-started source-failed; do
+	expect_text "$root/web/bootstrap.js" "\"$audio_stage\"" \
+		"browser sampled-audio trace omits $audio_stage"
+done
 expect_text "$root/web/bootstrap.js" 'globalThis.__AEDICULE_SET_AUDIO_PAUSED' \
 	'browser sampled-audio adapter cannot preserve playback cursors across guest pause'
 expect_text "$root/src/bin/aedicule-web.rs" 'BrowserInputOutcome::Paused' \

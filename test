@@ -114,9 +114,11 @@ run_remaining_checks() {
 	run_check cargo test --no-default-features --features native-runtime
 	run_check cargo test --no-default-features --features portable-runtime
 	run_check cargo test --lib --no-default-features --features web web::tests
-	run_web_build nix develop .#web --quiet --ignore-environment --keep HOME --keep TMPDIR -c \
+	XDG_CACHE_HOME="$XDG_CACHE_HOME/web-library" run_web_build \
+		nix develop .#web --quiet --ignore-environment --keep HOME --keep TMPDIR -c \
 		cargo --quiet --config web/cargo-config.toml build --lib --target wasm32-unknown-unknown --no-default-features --features portable-runtime
-	run_web_build nix develop .#web --quiet --ignore-environment --keep HOME --keep TMPDIR -c \
+	XDG_CACHE_HOME="$XDG_CACHE_HOME/web-binary" run_web_build \
+		nix develop .#web --quiet --ignore-environment --keep HOME --keep TMPDIR -c \
 		cargo --quiet --config web/cargo-config.toml build --bin aedicule-web --target wasm32-unknown-unknown --no-default-features --features web
 	if (( failures > 255 )); then
 		return 255

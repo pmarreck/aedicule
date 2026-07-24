@@ -59,6 +59,13 @@ if ! rg -F 'XDG_CACHE_HOME="${CARGO_TARGET_DIR:-$PWD/target}/aedicule-test-cache
 	printf 'isolated suite discards its reusable browser/font cache\n' >&2
 	failures=$((failures + 1))
 fi
+for cache in web-library web-binary; do
+	if ! rg -F "XDG_CACHE_HOME=\"\$XDG_CACHE_HOME/$cache\" run_web_build" \
+		"$suite" >/dev/null; then
+		printf 'parallel browser builds share the Nix evaluation cache: %s\n' "$cache" >&2
+		failures=$((failures + 1))
+	fi
+done
 parallel_checks=(
 	./tests/cli/development_dependencies
 	./tests/cli/repository_boundary

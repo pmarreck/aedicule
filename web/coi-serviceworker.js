@@ -5,6 +5,30 @@ const isolationHeaders = Object.freeze({
 });
 const runtimeCacheName = "aedicule-runtime-v1";
 const immutableRuntimePattern = /\/aedicule_web_bg\.[0-9a-f]{64}\.wasm$/;
+const earlyDiagnosticLimit = 32;
+globalThis.__AEDICULE_EARLY_DIAGNOSTICS = [];
+
+/**
+ * Makes service-worker registration and the isolation reload observable before
+ * the localized module bootstrap can run. Entries remain bounded because a
+ * failed registration may retry across several document loads.
+ */
+function reportEarlyIsolationDiagnostic(stage, detail = {}) {
+	const entry = {
+		stage,
+		elapsedMs: Math.round(performance.now()),
+		...detail,
+	};
+	globalThis.__AEDICULE_EARLY_DIAGNOSTICS.push(entry);
+	if (globalThis.__AEDICULE_EARLY_DIAGNOSTICS.length > earlyDiagnosticLimit) {
+		globalThis.__AEDICULE_EARLY_DIAGNOSTICS.shift();
+	}
+	console.info("[Aedicule isolation]", stage, JSON.stringify(entry));
+	const status = globalThis.document?.getElementById("aedicule-startup-status");
+	if (status !== null && status !== undefined) {
+		status.textContent = `Loading Aedicule…\n\n${stage} · ${entry.elapsedMs} ms`;
+	}
+}
 
 function isImmutableRuntimeRequest(request) {
 	return request.method === "GET"
@@ -55,11 +79,32 @@ if (typeof document === "undefined") {
 	});
 } else if (globalThis.isSecureContext && "serviceWorker" in navigator) {
 	const controlledAtLoad = navigator.serviceWorker.controller !== null;
-	globalThis.__AEDICULE_ISOLATION_READY = navigator.serviceWorker.register("./coi-serviceworker.js").then(async () => {
-		await navigator.serviceWorker.ready;
-		if (!globalThis.crossOriginIsolated && !controlledAtLoad) {
-			location.reload();
-			return new Promise(() => {});
-		}
-	}).catch(error => console.error("[Aedicule isolation] failed", error));
+	reportEarlyIsolationDiagnostic("isolation-registering", {
+		controlledAtLoad,
+		crossOriginIsolated: globalThis.crossOriginIsolated === true,
+	});
+	globalThis.__AEDICULE_ISOLATION_READY = navigator.serviceWorker
+		.register("./coi-serviceworker.js")
+		.then(async registration => {
+			reportEarlyIsolationDiagnostic("isolation-registered", {
+				scope: registration.scope,
+			});
+			await navigator.serviceWorker.ready;
+			reportEarlyIsolationDiagnostic("isolation-ready", {
+				serviceWorkerControlled: navigator.serviceWorker.controller !== null,
+				crossOriginIsolated: globalThis.crossOriginIsolated === true,
+			});
+			if (!globalThis.crossOriginIsolated && !controlledAtLoad) {
+				reportEarlyIsolationDiagnostic("isolation-reloading");
+				location.reload();
+				return new Promise(() => {});
+			}
+		})
+		.catch(error => {
+			reportEarlyIsolationDiagnostic("isolation-failed", {
+				errorName: error?.name ?? typeof error,
+				errorMessage: error?.message ?? String(error),
+			});
+			throw error;
+		});
 }

@@ -46,6 +46,12 @@ extern "C" {
     #[wasm_bindgen::prelude::wasm_bindgen(js_namespace = globalThis, js_name = __AEDICULE_SET_AUDIO_PAUSED)]
     fn set_browser_audio_paused(paused: bool);
 
+    #[wasm_bindgen::prelude::wasm_bindgen(js_namespace = globalThis, js_name = __AEDICULE_REPORT_FRAME_STARTED)]
+    fn report_browser_frame_started(guest_elapsed_ms: f64);
+
+    #[wasm_bindgen::prelude::wasm_bindgen(js_namespace = globalThis, js_name = __AEDICULE_REPORT_FRAME_COMPLETED)]
+    fn report_browser_frame_completed(guest_elapsed_ms: f64, background: u32);
+
     #[wasm_bindgen::prelude::wasm_bindgen(js_namespace = console, js_name = info)]
     fn browser_console_info(prefix: &str, phase: &str, detail: &str);
 }
@@ -100,6 +106,12 @@ fn trace_browser_input(event: &Event) {
 
 #[cfg(not(target_family = "wasm"))]
 fn set_browser_audio_paused(_: bool) {}
+
+#[cfg(not(target_family = "wasm"))]
+fn report_browser_frame_started(_: f64) {}
+
+#[cfg(not(target_family = "wasm"))]
+fn report_browser_frame_completed(_: f64, _: u32) {}
 
 /// Publishes the last accepted guest background as a compact browser
 /// diagnostic; unlike headless GPU screenshots, this observes the committed
@@ -491,12 +503,14 @@ fn browser_control_layer(bounds: Rect) -> gpui::Div {
 
 impl Render for WebFrontplane {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        report_browser_frame_started(self.origin.elapsed().as_secs_f64() * 1000.0);
         self.observe_viewport(window);
         self.advance();
         if self.fatal_error.is_none() && !self.runtime.is_suspended() {
             window.request_animation_frame();
         }
         let frame = self.runtime.frame().clone();
+        let frame_background = frame.background;
         publish_browser_frame_background(frame.background);
         let fatal_error = self.fatal_error.clone();
         let ui = self.runtime.ui_snapshot().cloned();
@@ -674,6 +688,10 @@ impl Render for WebFrontplane {
                 )
                 .size_full(),
             );
+        report_browser_frame_completed(
+            self.origin.elapsed().as_secs_f64() * 1000.0,
+            frame_background,
+        );
         div()
             .relative()
             .size_full()

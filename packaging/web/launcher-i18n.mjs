@@ -42,6 +42,7 @@ export const english = Object.freeze({
 	webGpuFirefoxHelp: "Firefox: open about:config, set dom.webgpu.enabled to true, then reload. Details: https://developer.mozilla.org/en-US/docs/Mozilla/Firefox/Experimental_features#webgpu_api",
 	webGpuChromeHelp: "Chrome/Chromium: update first, enable “Use graphics acceleration when available” at chrome://settings/system, then inspect chrome://gpu. Advanced unsupported/blocklisted systems can try chrome://flags/#enable-unsafe-webgpu (plus #enable-vulkan on Linux). Details: https://developer.chrome.com/docs/web-platform/webgpu/troubleshooting-tips",
 	webGpuSafariHelp: "Safari: update to Safari 26 or newer. In Safari Technology Preview, enable WebGPU, GPU Process: DOM Rendering, and GPU Process: Canvas Rendering under Settings → Feature Flags. Details: https://webkit.org/blog/17333/webkit-features-in-safari-26-0/#webgpu",
+	webGpuAdapterRecovery: "The WebGPU adapter request was interrupted. Wait for any other Aedicule tab to finish starting, then reload this page. If multiple WebGPU pages remain frozen, close them and restart the browser.",
 	webGpuRetryHelp: "Reload this page first. Restart the browser only if the change does not take effect; if WebGPU is still unusable, update the browser, OS, and GPU driver.",
 	yes: "yes",
 });

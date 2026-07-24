@@ -12,11 +12,14 @@ import { pathToFileURL } from "node:url";
 const EXPECTED_STAGES = [
 	"bootstrap",
 	"capabilities",
+	"webgpu-adapter-request",
 	"webgpu-adapter",
 	"wat-fetched",
 	"assets-fetched",
 	"wasm-initializing",
 	"wasm-initialized",
+	"runtime-frame-started",
+	"runtime-frame-completed",
 	"first-animation-frame",
 	"settled",
 ];
@@ -358,10 +361,12 @@ async function pageSnapshot(protocol) {
 			serviceWorkerControlled: navigator.serviceWorker?.controller !== null,
 			status: document.getElementById("aedicule-startup-status")?.textContent ?? null,
 			audioRequestCount: globalThis.__AEDICULE_AUDIO_REQUEST_COUNT ?? 0,
+			audioDiagnostic: globalThis.__AEDICULE_AUDIO_DIAGNOSTIC ?? null,
 			deliveredEventCount: globalThis.__AEDICULE_DELIVERED_EVENT_COUNT ?? 0,
 			deliveredEventCounts: globalThis.__AEDICULE_DELIVERED_EVENT_COUNTS
 				?? { total: 0, controls: 0, menuActions: 0, pointer: 0 },
 			frameBackground: globalThis.__AEDICULE_FRAME_BACKGROUND ?? null,
+			runtime: globalThis.__AEDICULE_RUNTIME_DIAGNOSTIC ?? null,
 			ui: globalThis.__AEDICULE_UI_SNAPSHOT ?? null,
 			canvases: Array.from(document.querySelectorAll("canvas"), canvas => {
 				const bounds = canvas.getBoundingClientRect();
@@ -768,6 +773,10 @@ async function inspect(options) {
 		}
 		if (!drawableCanvas) failures.push("GPUI produced no drawable canvas larger than 1x1");
 		if (finalSnapshot.status !== null) failures.push(`startup status remained visible: ${finalSnapshot.status}`);
+		if (finalSnapshot.runtime?.inProgress
+			|| finalSnapshot.runtime?.framesCompleted <= snapshot.runtime?.framesCompleted) {
+			failures.push("Aedicule runtime did not complete another browser frame after startup");
+		}
 		if (options.requireAudioRequest && finalSnapshot.audioRequestCount < 1) {
 			failures.push("guest produced no sampled-audio request at the Web Audio adapter");
 		}

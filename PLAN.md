@@ -1,5 +1,92 @@
 # Plan
 
+- [ ] Make the public web delivery demonstrably compatible with Firefox,
+  Chromium-family browsers, and Safari on macOS/iOS.
+  - [ ] Reproduce and fix the Firefox Beta simultaneous-startup race reported
+    2026-07-24: starting Vibesteroids and then immediately selecting Ulam in a
+    new tab left Vibesteroids at the index HTML's initial “Loading Aedicule…”
+    text and froze Ulam on a white page.
+  - [ ] Preserve the distinct sequential Firefox observation: with the active
+    Vibesteroids tab closed and Ulam reloaded, Ulam rendered successfully with
+    its guest-authored controls visible. A fresh isolated Firefox Beta 152
+    headless profile initially exposed canvases in both tabs, but Firefox later
+    logged “Script terminated by timeout” in Ulam's shared Aedicule runtime,
+    followed by `RuntimeError: unreachable executed`. Canvas appearance is
+    therefore not sufficient acceptance. These facts support a runtime
+    scheduling/starvation failure under concurrent load but do not prove a
+    permanent one-WebGPU-tab limit or an adapter-allocation failure.
+  - [x] Extend diagnostics earlier than the current module bootstrap:
+    isolation registration/ready/reload, WebGPU adapter request/completion,
+    elapsed time, exception name/cause/stack, browser identity, page
+    visibility/focus, service-worker control state, and browser-frame
+    started/completed heartbeats. Keep bounded global timelines, concise
+    visible progress, and complete console detail. (2026-07-24 08:43 EDT:
+    focused gates, complete 11.1-second suite, packaged Chromium acceptance,
+    and optimized build passed.)
+  - [ ] Evaluate an origin-scoped Web Locks critical section from isolation
+    readiness through the first committed frame, with feature-detected fallback
+    and no fixed delay. If admitted, trace lock
+    requested/waiting/acquired/released. Web Locks are supported by
+    Firefox/Chromium and WebKit since Safari/iOS 15.4, but implementation
+    depends on reproducing the race.
+  - [ ] Diagnose Firefox Web Audio separately: Vibesteroids keyboard delivery
+    works, but Peter heard no sample audio. Trace user activation, autoplay
+    policy, AudioContext creation/state/resume, PCM receipt, source start, and
+    rejection without conflating silence with the startup race.
+    - [x] Publish bounded Web Audio lifecycle diagnostics for each of those
+      stages, with failure class/message and current user-activation/context
+      state. (2026-07-24 08:43 EDT)
+  - [ ] Fix the distinct iOS software-keyboard-on-any-touch defect at the
+    GPUI-web input-handler boundary: a guest with no active text/IME control
+    must not focus an editable hidden DOM input on canvas or native-control
+    pointer-down. Preserve slider/button/canvas touch, hardware-key down/up,
+    and future explicit text-input focus. Add a deterministic causal DOM-focus
+    test rather than treating mobile emulation as proof that a keyboard did
+    not appear.
+  - [ ] Add real acceptance lanes for Firefox, Chromium, macOS Safari, and iOS
+    Safari where automation permits; do not use Chromium success as evidence
+    for other browser engines.
+  - Curiosity poke: simultaneous tabs share an origin, GPU process, service
+    worker/cache state, and Web Locks namespace; serialize only initialization
+    so normal multi-tab execution is not unnecessarily prohibited. Firefox can
+    terminate long-running Wasm after a visible canvas exists, so acceptance
+    must observe sustained responsiveness and page lifecycle—not startup alone.
+
+- [ ] Make the public gallery previews respond to deliberate interaction.
+  - [ ] Add a prominent “About Aedicule” link and concise standalone page
+    explaining the human-or-human/agent WAT authoring model, rationale,
+    LiveView-like guest-owned update protocol, the exact currently available
+    graphics/audio/input/gpui-component surface, and all six delivery targets.
+    Distinguish current ABI from proposals and substantiate any “only” or
+    “unique” claim; be loud about the exact combination we can prove rather
+    than making an unresearched exclusivity claim.
+  - [ ] Add a prominent keyboard-accessible dropzone/file picker to the launch
+    page for arbitrary `.wat` and `.aed` applications. Resolve `.aed` through
+    the same bounded virtual application root as native, keep selected bytes
+    local to the browser, and explain that a lone `.wat` cannot discover
+    unselected sibling assets.
+  - [ ] Keep the Ulam preview static until pointer rollover or keyboard focus,
+    animate only for that interaction, and honor reduced-motion preferences.
+  - [ ] On each Vibesteroids rollover/focus entry, choose a new random rotation
+    direction; rotate and repeatedly fire only while interaction remains
+    active. Do not simulate asteroid impacts.
+  - Curiosity poke: touch devices have no persistent hover, so provide a clear
+    finite touch/focus behavior without leaving animation permanently running.
+
+- [ ] Add a capability-bounded, guest-authored external-link primitive to AVP.
+  - [ ] Let configure-time WAT declarations bind a stable link ID and display
+    text to one validated, bounded UTF-8 `https:` URL; expose no general browser
+    or network API.
+  - [ ] Let a retained integer/Q16 UI transaction place that declared link at
+    guest-owned viewport geometry. Native and browser adapters activate it only
+    from a real human gesture; headless adapters report the exact request
+    deterministically without opening a browser.
+  - [ ] Make activation, popup-blocking/platform rejection, accessibility, and
+    stale-snapshot behavior explicit and testable, then send the green ABI/SHA
+    to `ulam-flower-wat` for its `What is this?` README link.
+  - Curiosity poke: opening a new browsing context must not grant an opener
+    reference or let a guest smuggle non-HTTPS schemes through URL parsing.
+
 - [ ] Reduce the complete-suite feedback loop from the measured 62m37s cold
   GitHub run to a bounded build phase plus fast warm test execution.
   - [x] Keep headless native/portable runtime tests from compiling GPUI merely
@@ -15,7 +102,10 @@
     dependency-independent suite lane, reuse a project-local browser/font
     cache, close Chromium through CDP, and avoid rebuilding the GUI host solely
     for its browser probe. (2026-07-23 20:25 EDT: two unchanged complete-suite
-    runs passed in 10.4s and 10.3s; `./build` passed in 1.9s.)
+    runs passed in 10.4s and 10.3s; `./build` passed in 1.9s. On 2026-07-24
+    08:43 EDT, a newly observed concurrent Nix evaluation-cache SQLite
+    collision received a failing classifier and independent reusable cache
+    namespaces; the complete suite again passed in 11.1s.)
   - [x] Cache only reusable Cargo dependencies between trusted `yolo` CI runs,
     with the Nix toolchain included in the cache key and the cache kept below
     GitHub's repository quota. (Implementation and structural gates complete

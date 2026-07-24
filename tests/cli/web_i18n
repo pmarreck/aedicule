@@ -26,8 +26,8 @@ assert.deepEqual(Object.keys(i18n.english).sort(), [
 	"requiresSecureContext", "requiresSharedMemory", "requiresWebGpu", "source",
 	"starting", "title", "ulamDescription", "ulamName", "unusableWebGpu",
 	"vibesteroidsDescription", "vibesteroidsName", "vibesteroidsPackage",
-	"webGpuChromeHelp", "webGpuFirefoxHelp", "webGpuRetryHelp", "webGpuSafariHelp",
-	"yes",
+	"webGpuAdapterRecovery", "webGpuChromeHelp", "webGpuFirefoxHelp",
+	"webGpuRetryHelp", "webGpuSafariHelp", "yes",
 ]);
 assert.equal(i18n.formatMessage(i18n.english.couldNotLoadAsset, {
 	name: "assets/a.flac",

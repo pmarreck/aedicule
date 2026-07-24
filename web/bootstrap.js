@@ -14,16 +14,80 @@ document.documentElement.dir = directionFor(catalog.locale);
 const MAX_APPLICATION_ASSETS = 1024;
 const MAX_APPLICATION_ASSET_BYTES = 16 * 1024 * 1024;
 const MAX_APPLICATION_BYTES = 64 * 1024 * 1024;
+const MAX_STARTUP_DIAGNOSTICS = 128;
+const MAX_AUDIO_DIAGNOSTICS = 128;
+const earlyDiagnostics = Array.isArray(globalThis.__AEDICULE_EARLY_DIAGNOSTICS)
+	? globalThis.__AEDICULE_EARLY_DIAGNOSTICS
+	: [];
+globalThis.__AEDICULE_STARTUP_TIMELINE = earlyDiagnostics.slice(-MAX_STARTUP_DIAGNOSTICS);
+globalThis.__AEDICULE_RUNTIME_DIAGNOSTIC = {
+	framesStarted: 0,
+	framesCompleted: 0,
+	inProgress: false,
+	lastStartedMs: null,
+	lastCompletedMs: null,
+	lastDurationMs: null,
+	lastGuestElapsedMs: null,
+	lastBackground: null,
+};
+globalThis.__AEDICULE_AUDIO_DIAGNOSTIC = {
+	requestCount: 0,
+	timeline: [],
+};
 let audioContext;
 let guestAudioPaused = false;
+let startupStatusMessage = status.textContent;
 globalThis.__AEDICULE_AUDIO_REQUEST_COUNT = 0;
 
 function reportStartupDiagnostic(stage, detail = {}) {
+	detail = {
+		...detail,
+		elapsedMs: Math.round(performance.now()),
+	};
+	globalThis.__AEDICULE_STARTUP_TIMELINE.push({ stage, ...detail });
+	if (globalThis.__AEDICULE_STARTUP_TIMELINE.length > MAX_STARTUP_DIAGNOSTICS) {
+		globalThis.__AEDICULE_STARTUP_TIMELINE.shift();
+	}
 	console.info("[Aedicule startup]", stage, JSON.stringify(detail));
+	if (status.isConnected) {
+		status.textContent = `${startupStatusMessage}\n\n${stage} · ${detail.elapsedMs} ms`;
+	}
 }
 
 function showStartupStatus(message) {
-	status.textContent = message;
+	startupStatusMessage = message;
+	if (!status.isConnected) return;
+	const latest = globalThis.__AEDICULE_STARTUP_TIMELINE.at(-1);
+	status.textContent = latest === undefined
+		? message
+		: `${message}\n\n${latest.stage} · ${latest.elapsedMs} ms`;
+}
+
+function browserEnvironment() {
+	return {
+		userAgent: navigator.userAgent,
+		platform: navigator.userAgentData?.platform ?? navigator.platform,
+		visibilityState: document.visibilityState,
+		documentFocused: document.hasFocus(),
+		serviceWorkerControlled: navigator.serviceWorker?.controller != null,
+		navigationType: performance.getEntriesByType("navigation")[0]?.type ?? "unknown",
+	};
+}
+
+function reportAudioDiagnostic(stage, detail = {}) {
+	const diagnostic = globalThis.__AEDICULE_AUDIO_DIAGNOSTIC;
+	const entry = {
+		stage,
+		elapsedMs: Math.round(performance.now()),
+		contextState: audioContext?.state ?? "unavailable",
+		userActivationActive: navigator.userActivation?.isActive ?? null,
+		userActivationSeen: navigator.userActivation?.hasBeenActive ?? null,
+		...detail,
+	};
+	diagnostic.timeline.push(entry);
+	if (diagnostic.timeline.length > MAX_AUDIO_DIAGNOSTICS) diagnostic.timeline.shift();
+	diagnostic.last = entry;
+	console.info("[Aedicule audio]", stage, JSON.stringify(entry));
 }
 
 function browserCapabilities() {
@@ -55,6 +119,7 @@ async function preflightBrowser(capabilities) {
 	if (!capabilities.webGpu) {
 		throw new Error(webGpuFailureMessage("missing", strings));
 	}
+	reportStartupDiagnostic("webgpu-adapter-request", browserEnvironment());
 	const adapter = await navigator.gpu.requestAdapter();
 	if (adapter === null) {
 		throw new Error(webGpuFailureMessage("adapter", strings));
@@ -80,6 +145,41 @@ function canvasSnapshot() {
 		};
 	});
 }
+
+globalThis.__AEDICULE_REPORT_FRAME_STARTED = guestElapsedMs => {
+	const diagnostic = globalThis.__AEDICULE_RUNTIME_DIAGNOSTIC;
+	diagnostic.framesStarted += 1;
+	diagnostic.inProgress = true;
+	diagnostic.lastStartedMs = performance.now();
+	diagnostic.lastGuestElapsedMs = guestElapsedMs;
+	if (diagnostic.framesStarted === 1) {
+		reportStartupDiagnostic("runtime-frame-started", {
+			frame: diagnostic.framesStarted,
+			guestElapsedMs,
+		});
+	}
+};
+
+globalThis.__AEDICULE_REPORT_FRAME_COMPLETED = (guestElapsedMs, background) => {
+	const diagnostic = globalThis.__AEDICULE_RUNTIME_DIAGNOSTIC;
+	const completedAt = performance.now();
+	diagnostic.framesCompleted += 1;
+	diagnostic.inProgress = false;
+	diagnostic.lastCompletedMs = completedAt;
+	diagnostic.lastDurationMs = diagnostic.lastStartedMs === null
+		? null
+		: completedAt - diagnostic.lastStartedMs;
+	diagnostic.lastGuestElapsedMs = guestElapsedMs;
+	diagnostic.lastBackground = background;
+	if (diagnostic.framesCompleted === 1 || diagnostic.framesCompleted % 300 === 0) {
+		reportStartupDiagnostic("runtime-frame-completed", {
+			frame: diagnostic.framesCompleted,
+			durationMs: diagnostic.lastDurationMs,
+			guestElapsedMs,
+			background,
+		});
+	}
+};
 
 function validAssetName(name) {
 	return typeof name === "string"
@@ -139,16 +239,50 @@ async function loadApplicationAssets() {
 function ensureAudioContext() {
 	if (audioContext !== undefined) return audioContext;
 	const AudioContext = globalThis.AudioContext ?? globalThis.webkitAudioContext;
-	if (AudioContext === undefined) return undefined;
-	audioContext = new AudioContext();
+	if (AudioContext === undefined) {
+		reportAudioDiagnostic("context-unavailable");
+		return undefined;
+	}
+	try {
+		audioContext = new AudioContext();
+		reportAudioDiagnostic("context-created", {
+			sampleRate: audioContext.sampleRate,
+		});
+		audioContext.addEventListener("statechange", () => {
+			reportAudioDiagnostic("context-state-changed");
+		});
+	} catch (error) {
+		reportAudioDiagnostic("context-failed", {
+			errorName: error?.name ?? typeof error,
+			errorMessage: error?.message ?? String(error),
+		});
+		throw error;
+	}
 	return audioContext;
 }
 
-function unlockAudio() {
+async function resumeAudioContext(context, reason) {
+	reportAudioDiagnostic("context-resume-requested", { reason });
+	try {
+		await context.resume();
+		reportAudioDiagnostic("context-resumed", { reason });
+	} catch (error) {
+		reportAudioDiagnostic("context-resume-failed", {
+			reason,
+			errorName: error?.name ?? typeof error,
+			errorMessage: error?.message ?? String(error),
+		});
+		throw error;
+	}
+}
+
+function unlockAudio(event) {
+	reportAudioDiagnostic("unlock-event", { eventType: event.type });
 	if (guestAudioPaused) return;
 	const context = ensureAudioContext();
 	if (context?.state === "suspended") {
-		context.resume().catch(error => console.warn(strings.audioUnlockFailed, error));
+		resumeAudioContext(context, "user-activation")
+			.catch(error => console.warn(strings.audioUnlockFailed, error));
 	}
 }
 
@@ -156,7 +290,9 @@ globalThis.__AEDICULE_SET_AUDIO_PAUSED = paused => {
 	guestAudioPaused = Boolean(paused);
 	const context = ensureAudioContext();
 	if (context === undefined) return;
-	const transition = guestAudioPaused ? context.suspend() : context.resume();
+	const transition = guestAudioPaused
+		? context.suspend()
+		: resumeAudioContext(context, "guest-resumed");
 	transition.catch(error => console.warn(strings.audioUnlockFailed, error));
 };
 
@@ -165,45 +301,86 @@ for (const eventName of ["pointerdown", "keydown", "touchstart"]) {
 }
 
 globalThis.__AEDICULE_PLAY_PCM = (sampleRate, channels, samples, volume, pitch) => {
-	const context = ensureAudioContext();
-	if (context === undefined) {
-		console.warn(strings.audioUnavailable);
-		return;
-	}
 	if (!Number.isInteger(sampleRate) || sampleRate <= 0
 		|| !Number.isInteger(channels) || channels <= 0
 		|| !(samples instanceof Float32Array) || samples.length % channels !== 0) {
 		throw new TypeError(strings.invalidPcmRequest);
 	}
-	globalThis.__AEDICULE_AUDIO_REQUEST_COUNT += 1;
-	const frames = samples.length / channels;
-	const buffer = context.createBuffer(channels, frames, sampleRate);
-	for (let channel = 0; channel < channels; channel += 1) {
-		const output = buffer.getChannelData(channel);
-		for (let frame = 0; frame < frames; frame += 1) {
-			output[frame] = samples[frame * channels + channel];
-		}
+	reportAudioDiagnostic("pcm-requested", {
+		sampleRate,
+		channels,
+		sampleCount: samples.length,
+		volume,
+		pitch,
+	});
+	const context = ensureAudioContext();
+	if (context === undefined) {
+		reportAudioDiagnostic("source-failed", { reason: "audio-context-unavailable" });
+		console.warn(strings.audioUnavailable);
+		return;
 	}
-	const source = context.createBufferSource();
-	const gain = context.createGain();
-	source.buffer = buffer;
-	source.playbackRate.value = pitch;
-	gain.gain.value = volume;
-	source.connect(gain).connect(context.destination);
-	const start = () => source.start();
-	if (context.state === "suspended") {
-		context.resume().then(start).catch(error => console.warn(strings.audioPlaybackFailed, error));
-	} else {
-		start();
+	globalThis.__AEDICULE_AUDIO_REQUEST_COUNT += 1;
+	globalThis.__AEDICULE_AUDIO_DIAGNOSTIC.requestCount
+		= globalThis.__AEDICULE_AUDIO_REQUEST_COUNT;
+	const frames = samples.length / channels;
+	try {
+		const buffer = context.createBuffer(channels, frames, sampleRate);
+		for (let channel = 0; channel < channels; channel += 1) {
+			const output = buffer.getChannelData(channel);
+			for (let frame = 0; frame < frames; frame += 1) {
+				output[frame] = samples[frame * channels + channel];
+			}
+		}
+		const source = context.createBufferSource();
+		const gain = context.createGain();
+		source.buffer = buffer;
+		source.playbackRate.value = pitch;
+		gain.gain.value = volume;
+		source.connect(gain).connect(context.destination);
+		const start = () => {
+			try {
+				source.start();
+				reportAudioDiagnostic("source-started", {
+					frames,
+					durationSeconds: buffer.duration,
+				});
+			} catch (error) {
+				reportAudioDiagnostic("source-failed", {
+					errorName: error?.name ?? typeof error,
+					errorMessage: error?.message ?? String(error),
+				});
+				console.warn(strings.audioPlaybackFailed, error);
+			}
+		};
+		if (context.state === "suspended") {
+			resumeAudioContext(context, "pcm-playback")
+				.then(start)
+				.catch(error => {
+					reportAudioDiagnostic("source-failed", {
+						reason: "audio-context-resume-failed",
+						errorName: error?.name ?? typeof error,
+						errorMessage: error?.message ?? String(error),
+					});
+					console.warn(strings.audioPlaybackFailed, error);
+				});
+		} else {
+			start();
+		}
+	} catch (error) {
+		reportAudioDiagnostic("source-failed", {
+			errorName: error?.name ?? typeof error,
+			errorMessage: error?.message ?? String(error),
+		});
+		console.warn(strings.audioPlaybackFailed, error);
 	}
 };
 
 async function loadApplication() {
 	await globalThis.__AEDICULE_ISOLATION_READY;
-	reportStartupDiagnostic("bootstrap");
+	reportStartupDiagnostic("bootstrap", browserEnvironment());
 	showStartupStatus(strings.checkingCapabilities);
 	const capabilities = browserCapabilities();
-	reportStartupDiagnostic("capabilities", capabilities);
+	reportStartupDiagnostic("capabilities", { ...capabilities, ...browserEnvironment() });
 	await preflightBrowser(capabilities);
 	showStartupStatus(strings.loadingWat);
 	const response = await fetch("./code.wat", { cache: "no-store" });
@@ -221,8 +398,13 @@ async function loadApplication() {
 	reportStartupDiagnostic("wasm-initializing");
 	await init();
 	reportStartupDiagnostic("wasm-initialized");
-	await animationFrame();
-	reportStartupDiagnostic("first-animation-frame", { canvases: canvasSnapshot() });
+	while (globalThis.__AEDICULE_RUNTIME_DIAGNOSTIC.framesCompleted === 0) {
+		await animationFrame();
+	}
+	reportStartupDiagnostic("first-animation-frame", {
+		canvases: canvasSnapshot(),
+		runtime: { ...globalThis.__AEDICULE_RUNTIME_DIAGNOSTIC },
+	});
 	status.remove();
 	setTimeout(() => {
 		reportStartupDiagnostic("settled", { canvases: canvasSnapshot() });
@@ -231,10 +413,28 @@ async function loadApplication() {
 
 function reportStartupFailure(error) {
 	const capabilities = browserCapabilities();
-	console.error("[Aedicule startup] failed", error, JSON.stringify(capabilities));
-	status.dataset.state = "error";
+	const failedStage = globalThis.__AEDICULE_STARTUP_TIMELINE.at(-1)?.stage ?? "unknown";
+	const errorName = error?.name ?? typeof error;
 	const detail = error instanceof Error ? error.message : String(error);
-	status.textContent = `${strings.couldNotStart}\n\n${detail}\n\n${capabilitySummary(capabilities)}`;
+	const failure = {
+		failedStage,
+		errorName,
+		errorMessage: detail,
+		errorCause: error?.cause === undefined ? null : String(error.cause),
+		errorStack: error?.stack ?? null,
+		...browserEnvironment(),
+		...capabilities,
+	};
+	reportStartupDiagnostic("startup-failed", failure);
+	console.error("[Aedicule startup] failed", error, JSON.stringify(failure));
+	status.dataset.state = "error";
+	const adapterRecovery = failedStage === "webgpu-adapter-request"
+		? `\n\n${strings.webGpuAdapterRecovery}`
+		: "";
+	status.textContent = `${strings.couldNotStart}\n\n${errorName}: ${detail}${adapterRecovery}\n\n`
+		+ `${capabilitySummary(capabilities)}\n`
+		+ `stage: ${failedStage}\n`
+		+ `elapsedMs: ${Math.round(performance.now())}`;
 }
 
 loadApplication().catch(reportStartupFailure);
