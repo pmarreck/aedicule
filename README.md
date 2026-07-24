@@ -159,13 +159,24 @@ The supported development path uses Nix flakes:
 
 ```console
 ./test
+./test_browser            # optional live Chromium/WebGPU/Web Audio integration
 ./build                   # optimized build for this platform
 ./build_all               # deterministic archives for all six targets
+./serve_web               # build and serve the Pages delivery at 127.0.0.1:8080
 ./publish                 # test, tag, publish, and optionally install on Mac
 ./run                     # code.wat in the working directory, if present
 ./run --watch app/code.wat
 ./run --embedded          # stable ABI-conformance fallback
 ```
+
+`./test` stays fast and browser-free while retaining the deterministic Web
+Audio, DOM-startup, WAT-boundary, GUI, and runtime tests. `./test_browser` runs
+the real packaged synth-audio plus W/A/D gate in headless Chromium on the
+currently supported Linux/x86_64 browser-test host; after a successful
+interactive `./test`, Aedicule suggests it only when its last success is at
+least 48 hours old and `HEAD` has advanced. `./serve_web` serves the exact
+static gallery that GitHub Pages receives; use
+`./serve_web --listen 0.0.0.0:8080` to make it reachable beyond loopback.
 
 `./build_all` writes the archives, `SHA256SUMS`, target list, and demo
 provenance manifest through the `result-all` symlink. `./build --test` runs the

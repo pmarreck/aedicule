@@ -36,6 +36,7 @@ if [[ $output != $'first buffered failure\nsecond buffered failure' ]]; then
 fi
 
 suite="$root/test"
+browser_suite="$root/test_browser"
 flake="$root/flake.nix"
 run_check_body=$(sed -n '/^run_check() {$/,/^}$/p' "$suite")
 if ! rg -F 'capture "$@"' <<< "$run_check_body" >/dev/null; then
@@ -47,21 +48,18 @@ if ! rg -F 'run_parallel_checks \' "$suite" >/dev/null; then
 	failures=$((failures + 1))
 fi
 top_level_parallel=$(sed -n '/^run_parallel_checks \\$/,/^failures=/p' "$suite")
-for lane in prepare_packaged_audio_browser run_remaining_checks; do
-	if ! rg -F $'\t'"$lane"$' \\' <<< "$top_level_parallel" >/dev/null; then
-		printf '%s does not overlap the independent suite lanes\n' "$lane" >&2
-		failures=$((failures + 1))
-	fi
-done
-if rg -F $'\t''run_packaged_audio_browser \' <<< "$top_level_parallel" >/dev/null; then
-	printf 'live browser launch still overlaps compile-heavy suite lanes\n' >&2
+if ! rg -F $'\t''run_remaining_checks \' <<< "$top_level_parallel" >/dev/null; then
+	printf 'runtime checks do not overlap the independent suite lanes\n' >&2
 	failures=$((failures + 1))
 fi
-parallel_wait_line=$(rg -n -F 'parallel_failures=$?' "$suite" | cut -d: -f1)
-browser_probe_line=$(rg -n -F 'run_check run_packaged_audio_browser' "$suite" | cut -d: -f1)
-if [[ -z $parallel_wait_line || -z $browser_probe_line \
-	|| $parallel_wait_line -ge $browser_probe_line ]]; then
-	printf 'live browser probe does not wait for every compile-heavy lane\n' >&2
+if rg -F 'web_packaged_audio' "$suite" >/dev/null; then
+	printf 'fast complete suite still launches a live browser\n' >&2
+	failures=$((failures + 1))
+fi
+browser_prepare=$(sed -n '/^prepare_packaged_audio_browser() {$/,/^}$/p' "$browser_suite")
+if ! rg -F 'run_parallel_checks prepare_gui_binary prepare_browser_runtime' \
+	<<< "$browser_prepare" >/dev/null; then
+	printf 'optional browser suite serializes its independent prerequisites\n' >&2
 	failures=$((failures + 1))
 fi
 if ! rg -F 'XDG_CACHE_HOME="${CARGO_TARGET_DIR:-$PWD/target}/aedicule-test-cache"' \

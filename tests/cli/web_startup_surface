@@ -176,8 +176,10 @@ expect_text "$root/tests/integration/web_packaged_audio" 'server_pid=$!' \
 	'packaged browser probe does not retain direct ownership of its web server'
 reject_text "$root/tests/integration/web_packaged_audio" 'coproc APP' \
 	'packaged browser probe can orphan its coprocess server under output capture'
-reject_text "$root/test" 'if [[ ! -x $binary ]]' \
-	'full browser gate can execute a stale host binary merely because it exists'
+reject_text "$root/test_browser" 'if [[ ! -x $binary ]]' \
+	'optional browser gate can execute a stale host binary merely because it exists'
+reject_text "$root/test" 'web_packaged_audio' \
+	'fast complete suite still launches live Chromium'
 expect_text "$root/tests/integration/web_browser_startup" '--static-root serves PATH without isolation headers' \
 	'headless browser probe cannot emulate GitHub Pages response headers'
 expect_text "$root/tests/integration/web_browser_startup" 'serviceWorkerControlled' \

@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+
+set -u
+
+usage() {
+	printf 'usage: ./test_browser\n\n'
+	printf 'Run the optional Linux/x86_64 Chromium/WebGPU/Web Audio integration gate.\n'
+}
+
+if (( $# != 0 )); then
+	case "$1" in
+		-h|--help)
+			if (( $# == 1 )); then
+				usage
+				exit 0
+			fi
+			;;
+	esac
+	printf 'test_browser: unknown argument: %s\n' "$1" >&2
+	exit 2
+fi
+
+if [[ ${AEDICULE_BROWSER_TEST_SHELL:-0} != 1 ]]; then
+	develop=(nix develop .#browser --ignore-environment --keep HOME)
+	if [[ -n ${NIX_CONFIG:-} ]]; then
+		export NIX_CONFIG="${NIX_CONFIG}"$'\n''eval-cache = false'
+	else
+		export NIX_CONFIG='eval-cache = false'
+	fi
+	develop+=(--keep NIX_CONFIG)
+	if [[ -n ${TMPDIR:-} ]]; then
+		develop+=(--keep TMPDIR)
+	fi
+	if [[ -n ${CARGO_TARGET_DIR:-} ]]; then
+		develop+=(--keep CARGO_TARGET_DIR)
+	fi
+	export XDG_CACHE_HOME="${CARGO_TARGET_DIR:-$PWD/target}/aedicule-browser-test-cache"
+	develop+=(--keep XDG_CACHE_HOME)
+	exec "${develop[@]}" -c env AEDICULE_BROWSER_TEST_SHELL=1 "$0"
+fi
+
+if [[ $(uname -s) != Linux || $(uname -m) != x86_64 ]]; then
+	printf 'test_browser: live browser integration currently requires Linux/x86_64\n' >&2
+	exit 2
+fi
+
+source tests/lib/browser_test_freshness.bash
+source tests/lib/parallel_checks.bash
+
+browser_runtime_file=$(mktemp "${TMPDIR:-/tmp}/aedicule-browser-runtime.XXXXXX")
+trap 'rm -f -- "$browser_runtime_file"' EXIT
+
+# Produces the exact debug frontplane exercised by the packaged browser probe
+# while running every GUI unit and CLI integration test in one Cargo graph.
+prepare_gui_binary() {
+	cargo test --no-default-features --features gui-test-support --bin aedicule --test gui_cli
+}
+
+# Realizes the immutable browser runtime independently of the GUI test graph.
+prepare_browser_runtime() {
+	nix build .#webRuntime --no-link --print-out-paths >"$browser_runtime_file"
+}
+
+# Keeps the two expensive prerequisites concurrent without launching Chromium
+# under unrelated compiler contention from the fast standard test suite.
+prepare_packaged_audio_browser() {
+	run_parallel_checks prepare_gui_binary prepare_browser_runtime
+}
+
+run_packaged_audio_browser() {
+	local runtime binary
+	runtime=$(<"$browser_runtime_file")
+	binary="${CARGO_TARGET_DIR:-target}/debug/aedicule"
+	if ! [[ -x $binary ]]; then
+		printf 'browser host binary is missing after the GUI test build: %s\n' \
+			"$binary" >&2
+		return 1
+	fi
+	./tests/integration/web_packaged_audio \
+		"$binary" "$runtime" demos/vibesteroids.aed
+}
+
+prepare_packaged_audio_browser || exit $?
+run_packaged_audio_browser || exit $?
+
+marker=$(git rev-parse --git-path aedicule-test-browser-success)
+case "$marker" in
+	/*) ;;
+	*) marker="$PWD/$marker" ;;
+esac
+record_browser_test_success "$marker" "$(date +%s)" "$(git rev-parse HEAD)"

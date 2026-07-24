@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+
+set -u
+
+root=$(cd "$(dirname "$0")/../.." && pwd -P)
+helper="$root/tests/lib/browser_test_freshness.bash"
+
+if [[ ! -r $helper ]]; then
+	printf 'browser-test freshness helper is missing\n' >&2
+	exit 1
+fi
+source "$helper"
+
+failures=0
+two_days=$((2 * 24 * 60 * 60))
+now=200000
+
+assert_due() {
+	local description=$1 last_epoch=$2 last_commit=$3 current_commit=$4 advanced=$5
+	if ! browser_test_is_due \
+		"$now" "$last_epoch" "$last_commit" "$current_commit" "$advanced"; then
+		printf 'browser test should be due: %s\n' "$description" >&2
+		failures=$((failures + 1))
+	fi
+}
+
+assert_fresh() {
+	local description=$1 last_epoch=$2 last_commit=$3 current_commit=$4 advanced=$5
+	if browser_test_is_due \
+		"$now" "$last_epoch" "$last_commit" "$current_commit" "$advanced"; then
+		printf 'browser test should remain fresh: %s\n' "$description" >&2
+		failures=$((failures + 1))
+	fi
+}
+
+assert_due 'never run' '' '' current 1
+assert_due 'new commit at exact 48-hour boundary' \
+	"$((now - two_days))" previous current 1
+assert_due 'new commit after more than 48 hours' \
+	"$((now - two_days - 1))" previous current 1
+assert_due 'malformed timestamp cannot suppress reminder' \
+	not-a-time previous current 1
+
+assert_fresh 'new commit but success is younger than 48 hours' \
+	"$((now - two_days + 1))" previous current 1
+assert_fresh 'no new commit after more than 48 hours' \
+	"$((now - two_days - 1))" current current 0
+assert_fresh 'branch switch is not forward commit progress' \
+	"$((now - two_days - 1))" previous current 0
+assert_fresh 'future clock skew does not create a false reminder' \
+	"$((now + 1))" previous current 1
+assert_fresh 'current commit is unavailable' \
+	"$((now - two_days - 1))" previous '' 0
+
+expected='Browser integration is due after new commits; run ./test_browser.'
+actual=$(browser_test_reminder "$now" "$((now - two_days))" previous current 1)
+if [[ $actual != "$expected" ]]; then
+	printf 'browser-test reminder rendering drifted\n' >&2
+	failures=$((failures + 1))
+fi
+if [[ -n $(browser_test_reminder \
+	"$now" "$((now - two_days + 1))" previous current 1) ]]; then
+	printf 'fresh browser test rendered a reminder\n' >&2
+	failures=$((failures + 1))
+fi
+
+marker="$TMPDIR/aedicule-browser-test-reminder-$$/success"
+trap 'rm -rf -- "${marker%/*}"' EXIT
+record_browser_test_success "$marker" 12345 abcdef
+read_browser_test_success "$marker"
+if [[ $BROWSER_TEST_LAST_EPOCH != 12345 || $BROWSER_TEST_LAST_COMMIT != abcdef ]]; then
+	printf 'browser success marker did not round-trip atomically\n' >&2
+	failures=$((failures + 1))
+fi
+
+exit "$failures"

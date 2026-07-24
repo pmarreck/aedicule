@@ -576,7 +576,7 @@
 							pkgs.ripgrep
 							luajitWithPackages
 							pkgs.openssl
-						] ++ pkgs.lib.optionals (system == "x86_64-linux") [ pkgs.chromium ];
+						];
 						AEDICULE_LIBCRYPTO = libcrypto;
 						FONTCONFIG_FILE = pkgs.writeText "aedicule-test-fonts.conf" ''
 							<fontconfig>
@@ -596,6 +596,8 @@
 								tests/cli/web_i18n tests/cli/github_pages \
 								tests/cli/ci_acceleration \
 								tests/cli/native_parallelism \
+								tests/cli/browser_test_partition \
+								tests/cli/browser_test_reminder \
 								tests/cli/parallel_test_runner \
 								tests/integration/web_browser_startup \
 								tests/integration/web_packaged_audio \
@@ -604,10 +606,6 @@
 							cargo test --no-default-features --features native-runtime
 							cargo test --no-default-features --features gui-test-support --bin aedicule --test gui_cli
 							cargo rustc --release --bin aedicule -- -D warnings
-							${pkgs.lib.optionalString (system == "x86_64-linux") ''
-								tests/integration/web_packaged_audio target/release/aedicule \
-									${self.packages.${system}.webRuntime} demos/vibesteroids.aed
-							''}
 							./tests/cli/development_dependencies
 							./tests/cli/repository_boundary
 							./tests/cli/aedicule_naming
@@ -623,6 +621,8 @@
 							# Daemon-dependent flake mutation and real package realization
 							# remain in the outer ./test gate; this sandbox runs pure checks.
 							./tests/cli/native_parallelism
+							./tests/cli/browser_test_partition
+							./tests/cli/browser_test_reminder
 							./tests/cli/parallel_test_runner
 							node ./tests/integration/web_audio_adapter.mjs
 							node ./tests/integration/web_browser_startup_unit.mjs
@@ -807,33 +807,37 @@
 					pkgs = pkgsFor system;
 					webToolchain = webToolchainFor system;
 					luajitWithPackages = luajitWithPackagesFor pkgs;
-				in {
-					default = pkgs.mkShell {
-						packages = with pkgs; [
-							rustc
-							cargo
-							rustfmt
-							clippy
-							pkg-config
-							cmake
-							clang
-							cargo-nextest
-							actionlint
-							github-cli
-							git
-							nix
-							nodejs
-							openssh
-							ripgrep
-							luajitWithPackages
-							openssl
-						]
-							++ pkgs.lib.optionals pkgs.stdenv.isLinux (linuxLibraries pkgs)
-							++ pkgs.lib.optionals (system == "x86_64-linux") [ pkgs.chromium ];
+					developmentPackages = with pkgs; [
+						rustc
+						cargo
+						rustfmt
+						clippy
+						pkg-config
+						cmake
+						clang
+						cargo-nextest
+						actionlint
+						github-cli
+						git
+						nix
+						nodejs
+						openssh
+						ripgrep
+						luajitWithPackages
+						openssl
+					] ++ pkgs.lib.optionals pkgs.stdenv.isLinux (linuxLibraries pkgs);
+					developmentEnvironment = {
+						packages = developmentPackages;
 						LD_LIBRARY_PATH = pkgs.lib.optionalString pkgs.stdenv.isLinux
 							(pkgs.lib.makeLibraryPath (linuxLibraries pkgs));
 						AEDICULE_LIBCRYPTO = "${pkgs.openssl.out}/lib/libcrypto${pkgs.stdenv.hostPlatform.extensions.sharedLibrary}";
 					};
+				in {
+					default = pkgs.mkShell developmentEnvironment;
+					browser = pkgs.mkShell (developmentEnvironment // {
+						packages = developmentPackages
+							++ pkgs.lib.optionals (system == "x86_64-linux") [ pkgs.chromium ];
+					});
 					web = pkgs.mkShell {
 						packages = [ webToolchain ];
 					};

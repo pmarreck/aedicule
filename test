@@ -22,6 +22,7 @@ if [[ ${AEDICULE_TEST_SHELL:-0} != 1 ]]; then
 fi
 
 source tests/lib/capture.bash
+source tests/lib/browser_test_freshness.bash
 source tests/lib/parallel_checks.bash
 
 failures=0
@@ -71,56 +72,7 @@ run_web_build() {
 	fi
 }
 
-# Produces the exact debug frontplane exercised by the packaged browser probe
-# while running every GUI unit and CLI integration test in one Cargo graph.
-prepare_gui_binary() {
-	cargo test --no-default-features --features gui-test-support --bin aedicule --test gui_cli
-}
-
-# Realizes the immutable browser runtime concurrently with the GUI test graph.
-prepare_browser_runtime() {
-	nix build .#webRuntime --no-link --print-out-paths >"$browser_runtime_file"
-}
-
-# Builds the two browser prerequisites concurrently while every independent
-# suite lane runs; the live packaged application probe follows after the join.
-prepare_packaged_audio_browser() {
-	local status
-	if [[ $(uname -s) != Linux || $(uname -m) != x86_64 ]]; then
-		printf '0\n' >"$browser_prepare_status_file"
-		return 0
-	fi
-	run_parallel_checks prepare_gui_binary prepare_browser_runtime
-	status=$?
-	printf '%d\n' "$status" >"$browser_prepare_status_file"
-	return "$status"
-}
-
-# Launches Chromium only after competing compilation has ended. Hosted runners
-# have few cores, and a browser startup timeout under compiler contention is
-# not evidence that the application or Web Audio graph is broken.
-run_packaged_audio_browser() {
-	local out= err= rc=0 runtime binary
-	if [[ $(uname -s) != Linux || $(uname -m) != x86_64 ]]; then
-		return 0
-	fi
-	runtime=$(<"$browser_runtime_file")
-	binary="${CARGO_TARGET_DIR:-target}/debug/aedicule"
-	if ! [[ -x $binary ]]; then
-		printf 'browser host binary is missing after the GUI test build: %s\n' \
-			"$binary" >&2
-		return 1
-	fi
-	capture ./tests/integration/web_packaged_audio \
-		"$binary" "$runtime" demos/vibesteroids.aed
-	if (( rc != 0 )); then
-		printf '%s%s\n' "$out" "$err" >&2
-		return 1
-	fi
-}
-
-# Runs runtime/backend checks that share no mutable process state with the
-# browser lane, allowing both lanes to overlap without weakening isolation.
+# Runs runtime/backend checks that share no mutable process state.
 run_remaining_checks() {
 	local failures=0
 	run_check node ./tests/integration/web_audio_adapter.mjs
@@ -141,11 +93,12 @@ run_remaining_checks() {
 	return "$failures"
 }
 
-browser_runtime_file=$(mktemp "${TMPDIR:-/tmp}/aedicule-browser-runtime.XXXXXX")
-browser_prepare_status_file=$(mktemp \
-	"${TMPDIR:-/tmp}/aedicule-browser-prepare-status.XXXXXX")
+run_gui_checks() {
+	cargo test --no-default-features --features gui-test-support --bin aedicule --test gui_cli
+}
+
 run_parallel_checks \
-	prepare_packaged_audio_browser \
+	run_gui_checks \
 	run_remaining_checks \
 	./tests/cli/development_dependencies \
 	./tests/cli/repository_boundary \
@@ -163,6 +116,8 @@ run_parallel_checks \
 	./tests/cli/ci_acceleration \
 	./tests/cli/rust_dependency_cache \
 	./tests/cli/native_parallelism \
+	./tests/cli/browser_test_partition \
+	./tests/cli/browser_test_reminder \
 	./tests/cli/parallel_test_runner \
 	./tests/cli/frontplane_tools \
 	./tests/cli/web_delivery \
@@ -170,16 +125,10 @@ run_parallel_checks \
 parallel_failures=$?
 failures=$((failures + parallel_failures))
 
-browser_prepare_status=1
-if [[ -s $browser_prepare_status_file ]]; then
-	browser_prepare_status=$(<"$browser_prepare_status_file")
-fi
-if (( browser_prepare_status == 0 )); then
-	run_check run_packaged_audio_browser
-fi
-rm -f -- "$browser_runtime_file" "$browser_prepare_status_file"
-
 if (( failures > 255 )); then
 	exit 255
+fi
+if (( failures == 0 )); then
+	remind_browser_test_if_due "$PWD"
 fi
 exit "$failures"

@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+
+set -u
+
+usage() {
+	printf 'usage: ./serve_web [--listen ADDRESS]\n\n'
+	printf 'Build and serve the exact browser delivery locally without deploying it.\n'
+	printf 'Default: http://127.0.0.1:8080/\n'
+}
+
+AEDICULE_WEB_LISTEN=http://127.0.0.1:8080
+
+while (( $# != 0 )); do
+	case "$1" in
+		-h|--help)
+			usage
+			exit 0
+			;;
+		--listen)
+			if (( $# < 2 )); then
+				printf 'serve_web: --listen requires ADDRESS\n' >&2
+				exit 2
+			fi
+			AEDICULE_WEB_LISTEN=$2
+			shift 2
+			;;
+		--listen=*)
+			AEDICULE_WEB_LISTEN=${1#--listen=}
+			shift
+			;;
+		*)
+			printf 'serve_web: unknown argument: %s\n' "$1" >&2
+			exit 2
+			;;
+	esac
+done
+
+if [[ -z $AEDICULE_WEB_LISTEN ]]; then
+	printf 'serve_web: listen address must not be empty\n' >&2
+	exit 2
+fi
+case "$AEDICULE_WEB_LISTEN" in
+	http://*|https://*) ;;
+	*) AEDICULE_WEB_LISTEN="http://$AEDICULE_WEB_LISTEN" ;;
+esac
+
+webroot=$(nix build .#delivery-web --no-link --print-out-paths) || exit $?
+export AEDICULE_WEB_LISTEN
+printf '%s/\n' "${AEDICULE_WEB_LISTEN%/}"
+exec nix run .#webServe -- "$webroot"

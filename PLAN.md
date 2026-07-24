@@ -154,13 +154,21 @@
     (2026-07-24 11:29 EDT; action is pinned to immutable v1.3.1 commit; the
     deliberately failing target-job classifier, focused policy test,
     18.3-second complete suite, and optimized build passed.)
-  - [x] Keep the GUI-host and browser-runtime prerequisites parallel, but
-    launch live Chromium only after every compile-heavy suite lane has joined.
-    A two-core hosted runner otherwise starved Chrome until it exposed no
-    debuggable page, even though the identical isolated web-target probe passed.
-    (2026-07-24 12:06 EDT; causal scheduling classifier failed first; both
-    focused policy gates, 19.3-second complete suite, and optimized build pass.
-    The exact-SHA hosted retry remains the release gate.)
+  - [x] Keep `./test` and the standard Nix check browser-free while preserving
+    deterministic Web Audio, DOM-startup, WAT-boundary, GUI, and runtime tests.
+    Move the real packaged synth-audio plus W/A/D Chromium gate to explicit
+    `./test_browser`; record success atomically and remind interactive
+    developers only after 48 hours plus a newer commit. Normal CI retains one
+    live Pages browser gate rather than duplicating it in the test job.
+    (2026-07-24 12:19 EDT; Peter identified the excessive integration boundary;
+    partition/reminder classifiers failed first, Chromium moved into a
+    dedicated `devShell.browser`, the final fast suite passes in 13.7s, and the
+    optional live browser suite passes in 11.3s.)
+  - [x] Add `./serve_web` to build and serve the exact static Pages delivery
+    locally on loopback by default, with an explicit `--listen` override for
+    LAN/tailnet testing. (2026-07-24 12:22 EDT; clean help/error and structural
+    delivery tests pass; the gallery and both demos returned HTTP 200 with
+    COOP/COEP through the live local server, which then shut down cleanly.)
   - [ ] Move the clean-room matrix to a persistent Thelio/self-hosted Nix
     execution path, or cache exact tested Nix derivations: GitHub dependency
     restoration cut the suite step by 2.1×, but transfer/relinking still makes

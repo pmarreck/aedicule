@@ -3,9 +3,6 @@
 set -u
 
 required=(cargo gh git nix nix-store node rg scp ssh)
-if [[ $(uname -s) == Linux && $(uname -m) == x86_64 ]]; then
-	required+=(chromium)
-fi
 failures=0
 
 for executable in "${required[@]}"; do
