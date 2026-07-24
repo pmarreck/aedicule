@@ -11,10 +11,15 @@
     its guest-authored controls visible. A fresh isolated Firefox Beta 152
     headless profile initially exposed canvases in both tabs, but Firefox later
     logged “Script terminated by timeout” in Ulam's shared Aedicule runtime,
-    followed by `RuntimeError: unreachable executed`. Canvas appearance is
-    therefore not sufficient acceptance. These facts support a runtime
-    scheduling/starvation failure under concurrent load but do not prove a
-    permanent one-WebGPU-tab limit or an adapter-allocation failure.
+    followed by `RuntimeError: unreachable executed`. A later instrumented
+    replay completed 467 active Ulam frames and 7 throttled background
+    Vibesteroids frames while both tabs remained command-responsive; this
+    weakens the earlier timeout interpretation because WebDriver itself had
+    awaited `requestAnimationFrame` in a throttled tab. Canvas appearance is
+    still insufficient acceptance, and neither isolated result reproduces or
+    disproves Peter's hardware/profile browser-process wedge. Do not claim a
+    permanent one-WebGPU-tab limit, adapter-allocation failure, or Wasm
+    watchdog without a hardware trace.
   - [x] Extend diagnostics earlier than the current module bootstrap:
     isolation registration/ready/reload, WebGPU adapter request/completion,
     elapsed time, exception name/cause/stack, browser identity, page
