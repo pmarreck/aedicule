@@ -159,6 +159,10 @@
     Chromium/WebGPU suite green in 23.8s, including transient activation,
     `_blank`, `noopener`, and zero canvas pointer leakage. SHA handoff follows
     the green commit.)
+  - [x] Refresh the Nix Cargo-vendor fixed-output pin after promoting `url` to
+    a direct dependency; the original six-target CI run independently exposed
+    the stale hash. (2026-07-24 19:13 EDT: canonical `./test` and optimized
+    `./build` pass with the CI-reported replacement hash.)
   - Curiosity poke: opening a new browsing context must not grant an opener
     reference or let a guest smuggle non-HTTPS schemes through URL parsing.
 
