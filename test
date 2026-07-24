@@ -82,22 +82,29 @@ prepare_browser_runtime() {
 	nix build .#webRuntime --no-link --print-out-paths >"$browser_runtime_file"
 }
 
-# Builds the two browser prerequisites concurrently, then exercises the real
-# packaged application only when Cargo and Nix both produced current artifacts.
+# Builds the two browser prerequisites concurrently while every independent
+# suite lane runs; the live packaged application probe follows after the join.
+prepare_packaged_audio_browser() {
+	local status
+	if [[ $(uname -s) != Linux || $(uname -m) != x86_64 ]]; then
+		printf '0\n' >"$browser_prepare_status_file"
+		return 0
+	fi
+	run_parallel_checks prepare_gui_binary prepare_browser_runtime
+	status=$?
+	printf '%d\n' "$status" >"$browser_prepare_status_file"
+	return "$status"
+}
+
+# Launches Chromium only after competing compilation has ended. Hosted runners
+# have few cores, and a browser startup timeout under compiler contention is
+# not evidence that the application or Web Audio graph is broken.
 run_packaged_audio_browser() {
-	local out= err= rc=0 runtime binary browser_runtime_file status
+	local out= err= rc=0 runtime binary
 	if [[ $(uname -s) != Linux || $(uname -m) != x86_64 ]]; then
 		return 0
 	fi
-	browser_runtime_file=$(mktemp "${TMPDIR:-/tmp}/aedicule-browser-runtime.XXXXXX")
-	run_parallel_checks prepare_gui_binary prepare_browser_runtime
-	status=$?
-	if (( status != 0 )); then
-		rm -f -- "$browser_runtime_file"
-		return "$status"
-	fi
 	runtime=$(<"$browser_runtime_file")
-	rm -f -- "$browser_runtime_file"
 	binary="${CARGO_TARGET_DIR:-target}/debug/aedicule"
 	if ! [[ -x $binary ]]; then
 		printf 'browser host binary is missing after the GUI test build: %s\n' \
@@ -134,8 +141,11 @@ run_remaining_checks() {
 	return "$failures"
 }
 
+browser_runtime_file=$(mktemp "${TMPDIR:-/tmp}/aedicule-browser-runtime.XXXXXX")
+browser_prepare_status_file=$(mktemp \
+	"${TMPDIR:-/tmp}/aedicule-browser-prepare-status.XXXXXX")
 run_parallel_checks \
-	run_packaged_audio_browser \
+	prepare_packaged_audio_browser \
 	run_remaining_checks \
 	./tests/cli/development_dependencies \
 	./tests/cli/repository_boundary \
@@ -157,7 +167,17 @@ run_parallel_checks \
 	./tests/cli/frontplane_tools \
 	./tests/cli/web_delivery \
 	./tests/cli/build_partition
-failures=$((failures + $?))
+parallel_failures=$?
+failures=$((failures + parallel_failures))
+
+browser_prepare_status=1
+if [[ -s $browser_prepare_status_file ]]; then
+	browser_prepare_status=$(<"$browser_prepare_status_file")
+fi
+if (( browser_prepare_status == 0 )); then
+	run_check run_packaged_audio_browser
+fi
+rm -f -- "$browser_runtime_file" "$browser_prepare_status_file"
 
 if (( failures > 255 )); then
 	exit 255

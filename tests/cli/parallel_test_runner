@@ -47,12 +47,23 @@ if ! rg -F 'run_parallel_checks \' "$suite" >/dev/null; then
 	failures=$((failures + 1))
 fi
 top_level_parallel=$(sed -n '/^run_parallel_checks \\$/,/^failures=/p' "$suite")
-for lane in run_packaged_audio_browser run_remaining_checks; do
+for lane in prepare_packaged_audio_browser run_remaining_checks; do
 	if ! rg -F $'\t'"$lane"$' \\' <<< "$top_level_parallel" >/dev/null; then
 		printf '%s does not overlap the independent suite lanes\n' "$lane" >&2
 		failures=$((failures + 1))
 	fi
 done
+if rg -F $'\t''run_packaged_audio_browser \' <<< "$top_level_parallel" >/dev/null; then
+	printf 'live browser launch still overlaps compile-heavy suite lanes\n' >&2
+	failures=$((failures + 1))
+fi
+parallel_wait_line=$(rg -n -F 'parallel_failures=$?' "$suite" | cut -d: -f1)
+browser_probe_line=$(rg -n -F 'run_check run_packaged_audio_browser' "$suite" | cut -d: -f1)
+if [[ -z $parallel_wait_line || -z $browser_probe_line \
+	|| $parallel_wait_line -ge $browser_probe_line ]]; then
+	printf 'live browser probe does not wait for every compile-heavy lane\n' >&2
+	failures=$((failures + 1))
+fi
 if ! rg -F 'XDG_CACHE_HOME="${CARGO_TARGET_DIR:-$PWD/target}/aedicule-test-cache"' \
 	"$suite" >/dev/null \
 	|| ! rg -F 'develop+=(--keep XDG_CACHE_HOME)' "$suite" >/dev/null; then

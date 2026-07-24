@@ -154,6 +154,13 @@
     (2026-07-24 11:29 EDT; action is pinned to immutable v1.3.1 commit; the
     deliberately failing target-job classifier, focused policy test,
     18.3-second complete suite, and optimized build passed.)
+  - [x] Keep the GUI-host and browser-runtime prerequisites parallel, but
+    launch live Chromium only after every compile-heavy suite lane has joined.
+    A two-core hosted runner otherwise starved Chrome until it exposed no
+    debuggable page, even though the identical isolated web-target probe passed.
+    (2026-07-24 12:06 EDT; causal scheduling classifier failed first; both
+    focused policy gates, 19.3-second complete suite, and optimized build pass.
+    The exact-SHA hosted retry remains the release gate.)
   - [ ] Move the clean-room matrix to a persistent Thelio/self-hosted Nix
     execution path, or cache exact tested Nix derivations: GitHub dependency
     restoration cut the suite step by 2.1×, but transfer/relinking still makes

@@ -53,12 +53,13 @@ if rg -q '^[[:space:]]*cargo check$' "$root/flake.nix"; then
 	failures=$((failures + 1))
 fi
 
-browser_runner=$(sed -n '/^run_packaged_audio_browser() {$/,/^}$/p' "$root/test")
+browser_prepare=$(sed -n '/^prepare_packaged_audio_browser() {$/,/^}$/p' "$root/test")
 if ! rg -F 'run_parallel_checks prepare_gui_binary prepare_browser_runtime' \
-	<<< "$browser_runner" >/dev/null; then
-	printf 'browser probe serializes its two independent build prerequisites\n' >&2
+	<<< "$browser_prepare" >/dev/null; then
+	printf 'browser preparation serializes its two independent build prerequisites\n' >&2
 	failures=$((failures + 1))
 fi
+browser_runner=$(sed -n '/^run_packaged_audio_browser() {$/,/^}$/p' "$root/test")
 if rg -F 'cargo --quiet build --bin aedicule' <<< "$browser_runner" >/dev/null; then
 	printf 'browser probe redundantly recompiles the GUI binary\n' >&2
 	failures=$((failures + 1))
