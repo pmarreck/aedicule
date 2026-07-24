@@ -63,6 +63,12 @@ require_text "$ci" \
 require_text "$ci" \
 	'uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1' \
 	'CI workflow'
+if [[ $(rg -F -c \
+	'uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1' \
+	"$ci") != 2 ]]; then
+	printf 'CI disk cleanup must appear exactly once in test and target jobs\n' >&2
+	failures=$((failures + 1))
+fi
 for cleanup_setting in 'android: true' 'dotnet: true' 'haskell: true' \
 	'docker-images: true' 'large-packages: false' 'swap-storage: false' \
 	'tool-cache: false'; do
@@ -78,6 +84,14 @@ cleanup_line=$(rg -n -F 'uses: jlumbroso/free-disk-space@' <<< "$test_job" | cut
 rust_cache_line=$(rg -n -F 'uses: Swatinem/rust-cache@' <<< "$test_job" | cut -d: -f1)
 if [[ -z $cleanup_line || -z $rust_cache_line || $cleanup_line -ge $rust_cache_line ]]; then
 	printf 'CI disk cleanup does not run before the expanded Rust-cache restore\n' >&2
+	failures=$((failures + 1))
+fi
+target_job=$(sed -n '/^  targets:$/,/^  pages:$/p' "$ci")
+target_cleanup_line=$(rg -n -F 'uses: jlumbroso/free-disk-space@' <<< "$target_job" | cut -d: -f1)
+target_build_line=$(rg -n -F 'nix build ".#release-${{ matrix.target }}"' <<< "$target_job" | cut -d: -f1)
+if [[ -z $target_cleanup_line || -z $target_build_line \
+	|| $target_cleanup_line -ge $target_build_line ]]; then
+	printf 'CI disk cleanup does not run before each six-target cross-build\n' >&2
 	failures=$((failures + 1))
 fi
 if ! rg -F 'id-token: write' <<< "$test_job" >/dev/null; then
