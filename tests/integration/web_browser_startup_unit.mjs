@@ -4,10 +4,25 @@ import vm from "node:vm";
 import {
 	browserProcessEnvironment,
 	inputObserverSource,
+	requestBrowserClose,
 	removeBrowserProfile,
 	waitForFile,
 	waitForDebuggablePage,
 } from "./web_browser_startup";
+
+const browserCloseCommands = [];
+await requestBrowserClose({
+	send: async command => { browserCloseCommands.push(command); },
+}, {
+	grace: () => new Promise(() => {}),
+});
+assert.deepEqual(browserCloseCommands, ["Browser.close"]);
+
+await requestBrowserClose({
+	send: async () => { throw new Error("browser already closed its protocol socket"); },
+}, {
+	grace: async () => {},
+});
 
 assert.deepEqual(
 	browserProcessEnvironment("/temporary/chrome-profile", {

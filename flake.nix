@@ -596,19 +596,18 @@
 								tests/cli/web_i18n tests/cli/github_pages \
 								tests/cli/ci_acceleration \
 								tests/cli/native_parallelism \
+								tests/cli/parallel_test_runner \
 								tests/integration/web_browser_startup \
 								tests/integration/web_packaged_audio \
 								packaging/macos/canonicalize_uuid packaging/macos/validate_macho \
 								check_reproducible publish
 							cargo test --no-default-features --features native-runtime
-							cargo test --no-default-features --features gui-test-support --bin aedicule
+							cargo test --no-default-features --features gui-test-support --bin aedicule --test gui_cli
 							cargo rustc --release --bin aedicule -- -D warnings
-							cargo test --no-default-features --features gui-test-support --test gui_cli
 							${pkgs.lib.optionalString (system == "x86_64-linux") ''
 								tests/integration/web_packaged_audio target/release/aedicule \
 									${self.packages.${system}.webRuntime} demos/vibesteroids.aed
 							''}
-							cargo check
 							./tests/cli/development_dependencies
 							./tests/cli/repository_boundary
 							./tests/cli/aedicule_naming
@@ -624,6 +623,7 @@
 							# Daemon-dependent flake mutation and real package realization
 							# remain in the outer ./test gate; this sandbox runs pure checks.
 							./tests/cli/native_parallelism
+							./tests/cli/parallel_test_runner
 							node ./tests/integration/web_browser_startup_unit.mjs
 							runHook postCheck
 						'';

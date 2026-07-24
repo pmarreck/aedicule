@@ -10,19 +10,30 @@ if [[ ${AEDICULE_TEST_SHELL:-0} != 1 ]]; then
 	if [[ -n ${CARGO_TARGET_DIR:-} ]]; then
 		develop+=(--keep CARGO_TARGET_DIR)
 	fi
+	export XDG_CACHE_HOME="${CARGO_TARGET_DIR:-$PWD/target}/aedicule-test-cache"
+	develop+=(--keep XDG_CACHE_HOME)
 	exec "${develop[@]}" -c env AEDICULE_TEST_SHELL=1 "$0" "$@"
 fi
 
 source tests/lib/capture.bash
+source tests/lib/parallel_checks.bash
 
 failures=0
 
 run_check() {
-	"$@"
-	status=$?
-	if (( status != 0 )); then
+	local out= err= rc=0
+	capture "$@"
+	if (( rc != 0 )); then
+		if [[ -n $out ]]; then
+			printf '%s\n' "$out"
+		fi
+		if [[ -n $err ]]; then
+			printf '%s\n' "$err" >&2
+		fi
 		failures=$((failures + 1))
+		return 1
 	fi
+	return 0
 }
 
 run_web_build() {
@@ -54,21 +65,37 @@ run_web_build() {
 	fi
 }
 
+# Produces the exact debug frontplane exercised by the packaged browser probe
+# while running every GUI unit and CLI integration test in one Cargo graph.
+prepare_gui_binary() {
+	cargo test --no-default-features --features gui-test-support --bin aedicule --test gui_cli
+}
+
+# Realizes the immutable browser runtime concurrently with the GUI test graph.
+prepare_browser_runtime() {
+	nix build .#webRuntime --no-link --print-out-paths >"$browser_runtime_file"
+}
+
+# Builds the two browser prerequisites concurrently, then exercises the real
+# packaged application only when Cargo and Nix both produced current artifacts.
 run_packaged_audio_browser() {
-	local out= err= rc=0 runtime binary
+	local out= err= rc=0 runtime binary browser_runtime_file status
 	if [[ $(uname -s) != Linux || $(uname -m) != x86_64 ]]; then
 		return 0
 	fi
-	capture nix build .#webRuntime --no-link --print-out-paths
-	if (( rc != 0 )); then
-		printf 'browser runtime build failed:\n%s\n%s\n' "$out" "$err" >&2
-		return 1
+	browser_runtime_file=$(mktemp "${TMPDIR:-/tmp}/aedicule-browser-runtime.XXXXXX")
+	run_parallel_checks prepare_gui_binary prepare_browser_runtime
+	status=$?
+	if (( status != 0 )); then
+		rm -f -- "$browser_runtime_file"
+		return "$status"
 	fi
-	runtime=$out
+	runtime=$(<"$browser_runtime_file")
+	rm -f -- "$browser_runtime_file"
 	binary="${CARGO_TARGET_DIR:-target}/debug/aedicule"
-	capture cargo --quiet build --bin aedicule
-	if (( rc != 0 )); then
-		printf 'browser host build failed:\n%s\n%s\n' "$out" "$err" >&2
+	if ! [[ -x $binary ]]; then
+		printf 'browser host binary is missing after the GUI test build: %s\n' \
+			"$binary" >&2
 		return 1
 	fi
 	capture ./tests/integration/web_packaged_audio \
@@ -79,36 +106,48 @@ run_packaged_audio_browser() {
 	fi
 }
 
-run_check ./tests/cli/development_dependencies
-run_check ./tests/cli/repository_boundary
-run_check ./tests/cli/aedicule_naming
-run_check ./tests/cli/launcher_cwd
-run_check ./tests/cli/web_startup_surface
-run_check ./tests/cli/delivery_matrix
-run_check ./tests/cli/document_packages
-run_check ./tests/cli/demo_snapshots
-run_check ./tests/cli/macos_reproducibility
-run_check ./tests/cli/reproducible_releases
-run_check ./tests/cli/publish
-run_check ./tests/cli/web_i18n
-run_check ./tests/cli/github_pages
-run_check ./tests/cli/ci_acceleration
-run_check ./tests/cli/rust_dependency_cache
-run_check ./tests/cli/native_parallelism
-run_check ./tests/cli/frontplane_tools
-run_check node ./tests/integration/web_browser_startup_unit.mjs
-run_check cargo test --no-default-features --features native-runtime
-run_check cargo test --no-default-features --features portable-runtime
-run_check cargo test --lib --no-default-features --features web web::tests
-run_web_build nix develop .#web --quiet --ignore-environment --keep HOME --keep TMPDIR -c \
-	cargo --quiet --config web/cargo-config.toml build --lib --target wasm32-unknown-unknown --no-default-features --features portable-runtime
-run_web_build nix develop .#web --quiet --ignore-environment --keep HOME --keep TMPDIR -c \
-	cargo --quiet --config web/cargo-config.toml build --bin aedicule-web --target wasm32-unknown-unknown --no-default-features --features web
-run_check ./tests/cli/web_delivery
-run_check cargo test --no-default-features --features gui-test-support --bin aedicule
-run_check cargo test --no-default-features --features gui-test-support --test gui_cli
-run_check run_packaged_audio_browser
-run_check ./tests/cli/build_partition
+# Runs runtime/backend checks that share no mutable process state with the
+# browser lane, allowing both lanes to overlap without weakening isolation.
+run_remaining_checks() {
+	local failures=0
+	run_check node ./tests/integration/web_browser_startup_unit.mjs
+	run_check cargo test --no-default-features --features native-runtime
+	run_check cargo test --no-default-features --features portable-runtime
+	run_check cargo test --lib --no-default-features --features web web::tests
+	run_web_build nix develop .#web --quiet --ignore-environment --keep HOME --keep TMPDIR -c \
+		cargo --quiet --config web/cargo-config.toml build --lib --target wasm32-unknown-unknown --no-default-features --features portable-runtime
+	run_web_build nix develop .#web --quiet --ignore-environment --keep HOME --keep TMPDIR -c \
+		cargo --quiet --config web/cargo-config.toml build --bin aedicule-web --target wasm32-unknown-unknown --no-default-features --features web
+	if (( failures > 255 )); then
+		return 255
+	fi
+	return "$failures"
+}
+
+run_parallel_checks \
+	run_packaged_audio_browser \
+	run_remaining_checks \
+	./tests/cli/development_dependencies \
+	./tests/cli/repository_boundary \
+	./tests/cli/aedicule_naming \
+	./tests/cli/launcher_cwd \
+	./tests/cli/web_startup_surface \
+	./tests/cli/delivery_matrix \
+	./tests/cli/document_packages \
+	./tests/cli/demo_snapshots \
+	./tests/cli/macos_reproducibility \
+	./tests/cli/reproducible_releases \
+	./tests/cli/publish \
+	./tests/cli/web_i18n \
+	./tests/cli/github_pages \
+	./tests/cli/ci_acceleration \
+	./tests/cli/rust_dependency_cache \
+	./tests/cli/native_parallelism \
+	./tests/cli/parallel_test_runner \
+	./tests/cli/frontplane_tools \
+	./tests/cli/web_delivery \
+	./tests/cli/build_partition
+failures=$((failures + $?))
 
 if (( failures > 255 )); then
 	exit 255

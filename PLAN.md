@@ -11,11 +11,17 @@
     profiles from the complete-suite runner. (2026-07-23 19:50 EDT: cold local
     suite passed in 10m46s and the first unchanged warm run passed in 41.3s;
     a second trace-isolated warm run passed in 25.6s.)
+  - [x] Buffer clean checks, replay failures deterministically, overlap every
+    dependency-independent suite lane, reuse a project-local browser/font
+    cache, close Chromium through CDP, and avoid rebuilding the GUI host solely
+    for its browser probe. (2026-07-23 20:25 EDT: two unchanged complete-suite
+    runs passed in 10.4s and 10.3s; `./build` passed in 1.9s.)
   - [ ] Cache only reusable Cargo dependencies between trusted `yolo` CI runs,
     with the Nix toolchain included in the cache key and the cache kept below
     GitHub's repository quota. (Implementation and structural gates complete
-    2026-07-23 19:50 EDT; cold population and following warm CI measurements
-    remain.)
+    2026-07-23 19:50 EDT. The first cold population passed 2026-07-23 20:36
+    EDT: 39m04s suite step plus 3m24s upload for a 3.70 GB Rust cache; the
+    following warm CI measurement remains.)
   - Curiosity poke: measure both cold compile time and warm assertion time so a
     cache hit cannot conceal a pathological clean build.
 

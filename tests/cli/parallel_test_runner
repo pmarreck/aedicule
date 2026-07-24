@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+
+set -u
+
+root=$(cd "$(dirname "$0")/../.." && pwd -P)
+if ! source "$root/tests/lib/parallel_checks.bash"; then
+	printf 'parallel test runner library is missing\n' >&2
+	exit 1
+fi
+
+clean_pass() {
+	return 0
+}
+
+first_failure() {
+	printf 'first buffered failure\n'
+	return 3
+}
+
+second_failure() {
+	printf 'second buffered failure\n' >&2
+	return 7
+}
+
+output=$(run_parallel_checks clean_pass first_failure second_failure 2>&1)
+status=$?
+
+failures=0
+if (( status != 2 )); then
+	printf 'parallel runner returned %d failures; expected 2\n' "$status" >&2
+	failures=$((failures + 1))
+fi
+if [[ $output != $'first buffered failure\nsecond buffered failure' ]]; then
+	printf 'parallel runner did not replay failed diagnostics in declaration order\n' >&2
+	failures=$((failures + 1))
+fi
+
+suite="$root/test"
+flake="$root/flake.nix"
+run_check_body=$(sed -n '/^run_check() {$/,/^}$/p' "$suite")
+if ! rg -F 'capture "$@"' <<< "$run_check_body" >/dev/null; then
+	printf 'complete suite streams successful check output instead of buffering it\n' >&2
+	failures=$((failures + 1))
+fi
+if ! rg -F 'run_parallel_checks \' "$suite" >/dev/null; then
+	printf 'complete suite does not launch its independent checks concurrently\n' >&2
+	failures=$((failures + 1))
+fi
+top_level_parallel=$(sed -n '/^run_parallel_checks \\$/,/^failures=/p' "$suite")
+for lane in run_packaged_audio_browser run_remaining_checks; do
+	if ! rg -F $'\t'"$lane"$' \\' <<< "$top_level_parallel" >/dev/null; then
+		printf '%s does not overlap the independent suite lanes\n' "$lane" >&2
+		failures=$((failures + 1))
+	fi
+done
+if ! rg -F 'XDG_CACHE_HOME="${CARGO_TARGET_DIR:-$PWD/target}/aedicule-test-cache"' \
+	"$suite" >/dev/null \
+	|| ! rg -F 'develop+=(--keep XDG_CACHE_HOME)' "$suite" >/dev/null; then
+	printf 'isolated suite discards its reusable browser/font cache\n' >&2
+	failures=$((failures + 1))
+fi
+parallel_checks=(
+	./tests/cli/development_dependencies
+	./tests/cli/repository_boundary
+	./tests/cli/aedicule_naming
+	./tests/cli/launcher_cwd
+	./tests/cli/web_startup_surface
+	./tests/cli/delivery_matrix
+	./tests/cli/document_packages
+	./tests/cli/demo_snapshots
+	./tests/cli/macos_reproducibility
+	./tests/cli/reproducible_releases
+	./tests/cli/publish
+	./tests/cli/web_i18n
+	./tests/cli/github_pages
+	./tests/cli/ci_acceleration
+	./tests/cli/rust_dependency_cache
+	./tests/cli/native_parallelism
+	./tests/cli/parallel_test_runner
+	./tests/cli/frontplane_tools
+	./tests/cli/web_delivery
+	./tests/cli/build_partition
+)
+for check in "${parallel_checks[@]}"; do
+	if [[ $(rg -F -c "$check" "$suite") != 1 ]] \
+		|| rg -F "run_check $check" "$suite" >/dev/null; then
+		printf '%s is not classified exactly once as an independent check\n' "$check" >&2
+		failures=$((failures + 1))
+	fi
+done
+if [[ $(rg -F -c 'tests/cli/parallel_test_runner' "$flake") != 2 ]]; then
+	printf 'isolated Nix suite does not patch and run the parallel-runner regression\n' >&2
+	failures=$((failures + 1))
+fi
+
+exit "$failures"

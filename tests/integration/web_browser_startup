@@ -595,6 +595,23 @@ async function stopChrome(chrome) {
 }
 
 /**
+ * Asks Chromium to close through its own protocol before falling back to
+ * process signals, avoiding the full forced-shutdown grace period on success.
+ */
+export async function requestBrowserClose(protocol, adapters = {}) {
+	const grace = adapters.grace
+		?? (() => new Promise(resolveGrace => setTimeout(resolveGrace, 250)));
+	try {
+		await Promise.race([
+			protocol.send("Browser.close"),
+			grace(),
+		]);
+	} catch {
+		// A successful Browser.close may tear down the protocol before replying.
+	}
+}
+
+/**
  * Removes Chrome's profile in bounded whole-tree passes because late helper
  * processes can recreate entries after Node's per-system-call retries expire.
  */
@@ -648,13 +665,14 @@ async function inspect(options) {
 	});
 
 	let socket;
+	let protocol;
 	try {
 		const portFile = join(profile, "DevToolsActivePort");
 		await waitForFile(portFile, options.timeoutMs);
 		const [port] = readFileSync(portFile, "utf8").trim().split("\n");
 		const page = await waitForDebuggablePage(port, options.timeoutMs);
 		socket = await connect(page.webSocketDebuggerUrl, options.timeoutMs);
-		const protocol = createProtocol(socket);
+		protocol = createProtocol(socket);
 		const stages = new Map();
 		const exceptions = [];
 		const inputDiagnostics = [];
@@ -786,6 +804,7 @@ async function inspect(options) {
 		}
 		throw error;
 	} finally {
+		if (protocol !== undefined) await requestBrowserClose(protocol);
 		if (socket !== undefined) socket.close();
 		await stopChrome(chrome);
 		await removeBrowserProfile(profile);

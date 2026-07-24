@@ -27,15 +27,14 @@ if ! rg -F 'gui-test-support = ["gui", "gpui/test-support"]' \
 	failures=$((failures + 1))
 fi
 
-if ! rg -F -- '--features gui-test-support' "$root/test" >/dev/null; then
-	printf 'full suite does not activate explicit GUI test support\n' >&2
+gui_test_command='cargo test --no-default-features --features gui-test-support --bin aedicule --test gui_cli'
+if ! rg -F "$gui_test_command" "$root/test" >/dev/null; then
+	printf 'full suite does not compile all GUI tests in one feature-graph pass\n' >&2
 	failures=$((failures + 1))
 fi
 
-if ! rg -F \
-	'cargo test --no-default-features --features gui-test-support --bin aedicule' \
-	"$root/flake.nix" >/dev/null; then
-	printf 'isolated Nix test gate does not activate explicit GUI test support\n' >&2
+if ! rg -F "$gui_test_command" "$root/flake.nix" >/dev/null; then
+	printf 'isolated Nix gate does not compile all GUI tests in one feature-graph pass\n' >&2
 	failures=$((failures + 1))
 fi
 
@@ -47,6 +46,25 @@ fi
 
 if rg -F 'run_check cargo check' "$root/test" >/dev/null; then
 	printf 'full suite still recompiles the default graph for a redundant cargo check\n' >&2
+	failures=$((failures + 1))
+fi
+if rg -q '^[[:space:]]*cargo check$' "$root/flake.nix"; then
+	printf 'isolated Nix suite still recompiles the default graph for a redundant cargo check\n' >&2
+	failures=$((failures + 1))
+fi
+
+browser_runner=$(sed -n '/^run_packaged_audio_browser() {$/,/^}$/p' "$root/test")
+if ! rg -F 'run_parallel_checks prepare_gui_binary prepare_browser_runtime' \
+	<<< "$browser_runner" >/dev/null; then
+	printf 'browser probe serializes its two independent build prerequisites\n' >&2
+	failures=$((failures + 1))
+fi
+if rg -F 'cargo --quiet build --bin aedicule' <<< "$browser_runner" >/dev/null; then
+	printf 'browser probe redundantly recompiles the GUI binary\n' >&2
+	failures=$((failures + 1))
+fi
+if ! rg -F 'if ! [[ -x $binary ]]' <<< "$browser_runner" >/dev/null; then
+	printf 'browser probe does not require the already-tested GUI binary\n' >&2
 	failures=$((failures + 1))
 fi
 
