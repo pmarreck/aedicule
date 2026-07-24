@@ -24,6 +24,27 @@ jobs:
       id-token: write
 
     steps:
+      - name: Reclaim unrelated hosted-runner toolchains
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        with:
+          android: true
+          dotnet: true
+          haskell: true
+          docker-images: true
+          large-packages: false
+          swap-storage: false
+          tool-cache: false
+
+      - name: Require cache restoration headroom
+        run: |
+          minimum_free_kib=25000000
+          available_kib=$(df -Pk / | awk 'NR == 2 { print $4 }')
+          if [[ ! $available_kib =~ ^[0-9]+$ ]] || (( available_kib < minimum_free_kib )); then
+            printf 'GitHub test runner has %s KiB free; need at least %s KiB before cache restoration.\n' \
+              "$available_kib" "$minimum_free_kib" >&2
+            exit 1
+          fi
+
       - name: Check out source
         uses: actions/checkout@v7
 

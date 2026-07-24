@@ -143,6 +143,13 @@
     EDT: 39m04s suite step plus 3m24s upload for a 3.70 GB Rust cache. The
     first warm run passed 2026-07-23 21:05 EDT: 1m40s restore, 18m15s suite,
     47s post step, 21m17s test job, and 27m10s full six-target deployment.)
+  - [x] Reclaim only unrelated Android/.NET/Haskell/Docker payloads in the
+    ephemeral GitHub test runner before expanding the 3.70 GB compressed Rust
+    cache, and fail early unless at least 25,000,000 KiB remains. The first
+    audio-fix run had filled the hosted image during restore so completely that
+    the Actions worker could not write its own diagnostic log.
+    (2026-07-24 11:04 EDT; action is pinned to immutable v1.3.1 commit; focused
+    policy test, 13.3-second complete suite, and optimized build passed.)
   - [ ] Move the clean-room matrix to a persistent Thelio/self-hosted Nix
     execution path, or cache exact tested Nix derivations: GitHub dependency
     restoration cut the suite step by 2.1×, but transfer/relinking still makes

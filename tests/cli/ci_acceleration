@@ -60,11 +60,26 @@ require_text "$ci" \
 require_text "$ci" \
 	'uses: DeterminateSystems/magic-nix-cache-action@55718cd9ebf1737a061487d5ada21abf31e99a98' \
 	'CI workflow'
+require_text "$ci" \
+	'uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1' \
+	'CI workflow'
+for cleanup_setting in 'android: true' 'dotnet: true' 'haskell: true' \
+	'docker-images: true' 'large-packages: false' 'swap-storage: false' \
+	'tool-cache: false'; do
+	require_text "$ci" "$cleanup_setting" 'CI hosted-runner disk cleanup'
+done
+require_text "$ci" 'minimum_free_kib=25000000' 'CI cache-space guard'
 require_text "$ci" 'cmd-format: nix develop -c {0}' 'CI workflow'
 require_text "$ci" \
 	"save-if: \${{ github.event_name == 'push' && github.ref == 'refs/heads/yolo' }}" \
 	'CI workflow'
 test_job=$(sed -n '/^  test:$/,/^  targets:$/p' "$ci")
+cleanup_line=$(rg -n -F 'uses: jlumbroso/free-disk-space@' <<< "$test_job" | cut -d: -f1)
+rust_cache_line=$(rg -n -F 'uses: Swatinem/rust-cache@' <<< "$test_job" | cut -d: -f1)
+if [[ -z $cleanup_line || -z $rust_cache_line || $cleanup_line -ge $rust_cache_line ]]; then
+	printf 'CI disk cleanup does not run before the expanded Rust-cache restore\n' >&2
+	failures=$((failures + 1))
+fi
 if ! rg -F 'id-token: write' <<< "$test_job" >/dev/null; then
 	printf 'CI test job lacks narrowly-scoped id-token permission for its Nix cache\n' >&2
 	failures=$((failures + 1))
