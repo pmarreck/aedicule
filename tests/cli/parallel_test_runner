@@ -59,6 +59,11 @@ if ! rg -F 'XDG_CACHE_HOME="${CARGO_TARGET_DIR:-$PWD/target}/aedicule-test-cache
 	printf 'isolated suite discards its reusable browser/font cache\n' >&2
 	failures=$((failures + 1))
 fi
+if ! rg -F 'eval-cache = false' "$suite" >/dev/null \
+	|| ! rg -F 'develop+=(--keep NIX_CONFIG)' "$suite" >/dev/null; then
+	printf 'parallel Nix lanes can contend for one evaluation-cache SQLite database\n' >&2
+	failures=$((failures + 1))
+fi
 for cache in web-library web-binary; do
 	if ! rg -F "XDG_CACHE_HOME=\"\$XDG_CACHE_HOME/$cache\" run_web_build" \
 		"$suite" >/dev/null; then

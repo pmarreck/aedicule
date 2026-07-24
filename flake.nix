@@ -625,6 +625,7 @@
 							./tests/cli/native_parallelism
 							./tests/cli/parallel_test_runner
 							node ./tests/integration/web_browser_startup_unit.mjs
+							node ./tests/integration/web_startup_lock.mjs "$PWD"
 							runHook postCheck
 						'';
 						installPhase = ''
@@ -661,6 +662,7 @@
 							mkdir -p $out
 							install -Dm644 ${./web/index.html} $out/index.html
 							install -Dm644 ${./web/bootstrap.js} $out/bootstrap.js
+							install -Dm644 ${./web/startup-lock.mjs} $out/startup-lock.mjs
 							install -Dm644 ${./packaging/web/launcher-i18n.mjs} $out/launcher-i18n.mjs
 							install -Dm644 ${./web/coi-serviceworker.js} $out/coi-serviceworker.js
 							install -Dm644 ${./packaging/web/manifest.webmanifest} $out/manifest.webmanifest

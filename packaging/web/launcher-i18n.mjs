@@ -15,6 +15,7 @@ export const english = Object.freeze({
 	vibesteroidsDescription: "Vector arcade action with generated audio.",
 	open: "Launch",
 	vibesteroidsPackage: "Download Vibesteroids .aed",
+	waitingForStartupLock: "Waiting for another Aedicule tab to finish starting…",
 	downloads: "Download apps",
 	source: "Source",
 	assetCatalogEntryLimit: "Aedicule asset catalog exceeds its entry limit.",

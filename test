@@ -4,6 +4,12 @@ set -u
 
 if [[ ${AEDICULE_TEST_SHELL:-0} != 1 ]]; then
 	develop=(nix develop --ignore-environment --keep HOME)
+	if [[ -n ${NIX_CONFIG:-} ]]; then
+		export NIX_CONFIG="${NIX_CONFIG}"$'\n''eval-cache = false'
+	else
+		export NIX_CONFIG='eval-cache = false'
+	fi
+	develop+=(--keep NIX_CONFIG)
 	if [[ -n ${TMPDIR:-} ]]; then
 		develop+=(--keep TMPDIR)
 	fi
@@ -111,6 +117,7 @@ run_packaged_audio_browser() {
 run_remaining_checks() {
 	local failures=0
 	run_check node ./tests/integration/web_browser_startup_unit.mjs
+	run_check node ./tests/integration/web_startup_lock.mjs "$PWD"
 	run_check cargo test --no-default-features --features native-runtime
 	run_check cargo test --no-default-features --features portable-runtime
 	run_check cargo test --lib --no-default-features --features web web::tests

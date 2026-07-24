@@ -10,6 +10,9 @@ import { delimiter, extname, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const EXPECTED_STAGES = [
+	"startup-lock-requested",
+	"startup-lock-waiting",
+	"startup-lock-acquired",
 	"bootstrap",
 	"capabilities",
 	"webgpu-adapter-request",
@@ -21,6 +24,7 @@ const EXPECTED_STAGES = [
 	"runtime-frame-started",
 	"runtime-frame-completed",
 	"first-animation-frame",
+	"startup-lock-released",
 	"settled",
 ];
 

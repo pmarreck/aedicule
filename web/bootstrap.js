@@ -5,6 +5,7 @@ import {
 	loadCatalog,
 	webGpuFailureMessage,
 } from "./launcher-i18n.mjs";
+import { withExclusiveStartupLock } from "./startup-lock.mjs";
 
 const status = document.getElementById("aedicule-startup-status");
 const catalog = loadCatalog(navigator.languages);
@@ -375,8 +376,7 @@ globalThis.__AEDICULE_PLAY_PCM = (sampleRate, channels, samples, volume, pitch) 
 	}
 };
 
-async function loadApplication() {
-	await globalThis.__AEDICULE_ISOLATION_READY;
+async function initializeApplication() {
 	reportStartupDiagnostic("bootstrap", browserEnvironment());
 	showStartupStatus(strings.checkingCapabilities);
 	const capabilities = browserCapabilities();
@@ -409,6 +409,21 @@ async function loadApplication() {
 	setTimeout(() => {
 		reportStartupDiagnostic("settled", { canvases: canvasSnapshot() });
 	}, 1000);
+}
+
+async function loadApplication() {
+	await globalThis.__AEDICULE_ISOLATION_READY;
+	return withExclusiveStartupLock(
+		navigator.locks,
+		"aedicule-startup-v1",
+		(stage, detail) => {
+			if (stage === "startup-lock-waiting") {
+				showStartupStatus(strings.waitingForStartupLock);
+			}
+			reportStartupDiagnostic(stage, detail);
+		},
+		initializeApplication,
+	);
 }
 
 function reportStartupFailure(error) {

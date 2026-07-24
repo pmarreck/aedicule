@@ -26,6 +26,7 @@ assert.deepEqual(Object.keys(i18n.english).sort(), [
 	"requiresSecureContext", "requiresSharedMemory", "requiresWebGpu", "source",
 	"starting", "title", "ulamDescription", "ulamName", "unusableWebGpu",
 	"vibesteroidsDescription", "vibesteroidsName", "vibesteroidsPackage",
+	"waitingForStartupLock",
 	"webGpuAdapterRecovery", "webGpuChromeHelp", "webGpuFirefoxHelp",
 	"webGpuRetryHelp", "webGpuSafariHelp", "yes",
 ]);

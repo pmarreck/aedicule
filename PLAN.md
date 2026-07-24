@@ -28,12 +28,15 @@
     visible progress, and complete console detail. (2026-07-24 08:43 EDT:
     focused gates, complete 11.1-second suite, packaged Chromium acceptance,
     and optimized build passed.)
-  - [ ] Evaluate an origin-scoped Web Locks critical section from isolation
+  - [x] Add an origin-scoped Web Locks critical section from isolation
     readiness through the first committed frame, with feature-detected fallback
-    and no fixed delay. If admitted, trace lock
-    requested/waiting/acquired/released. Web Locks are supported by
-    Firefox/Chromium and WebKit since Safari/iOS 15.4, but implementation
-    depends on reproducing the race.
+    and no fixed delay; trace requested/waiting/acquired/released. Deterministic
+    injected-lock tests, the complete suite, packaged Chromium acceptance, and
+    optimized build passed. (2026-07-24 09:00 EDT)
+    - The locked two-tab Firefox Beta replay initialized and advanced both
+      guests, then still crashed the headless SWGL process and lost the
+      WebDriver session. The lock mitigates overlapping adapter/Wasm startup
+      but is not evidence that Peter's hardware/profile wedge is fixed.
   - [ ] Diagnose Firefox Web Audio separately: Vibesteroids keyboard delivery
     works, but Peter heard no sample audio. Trace user activation, autoplay
     policy, AudioContext creation/state/resume, PCM receipt, source start, and

@@ -148,6 +148,7 @@ fn native_cli_serves_an_aed_through_the_bundled_web_runtime() {
             b"<!doctype html><title>Aedicule test</title>".as_slice(),
         ),
         ("bootstrap.js", b"console.info('bootstrap')".as_slice()),
+        ("startup-lock.mjs", b"export const lock = {}".as_slice()),
         ("launcher-i18n.mjs", b"export const english = {}".as_slice()),
         ("coi-serviceworker.js", b"// service worker".as_slice()),
         ("manifest.webmanifest", b"{}".as_slice()),

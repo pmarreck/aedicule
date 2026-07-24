@@ -52,6 +52,15 @@ expect_text "$root/web/bootstrap.js" 'navigator.gpu.requestAdapter()' \
 	'browser bootstrap does not preflight an available WebGPU adapter'
 expect_text "$root/web/bootstrap.js" 'globalThis.__AEDICULE_STARTUP_TIMELINE' \
 	'browser bootstrap exposes no bounded startup timeline for live diagnosis'
+expect_text "$root/web/bootstrap.js" 'withExclusiveStartupLock(' \
+	'browser startup does not serialize its adapter/Wasm critical section across tabs'
+expect_text "$root/flake.nix" 'install -Dm644 ${./web/startup-lock.mjs} $out/startup-lock.mjs' \
+	'browser delivery omits the cross-tab startup-lock module'
+for lock_stage in startup-lock-requested startup-lock-waiting \
+	startup-lock-acquired startup-lock-released; do
+	expect_text "$root/web/startup-lock.mjs" "\"$lock_stage\"" \
+		"browser startup lock trace omits $lock_stage"
+done
 expect_text "$root/web/bootstrap.js" 'reportStartupDiagnostic("webgpu-adapter-request"' \
 	'browser startup cannot distinguish API presence from adapter allocation'
 expect_text "$root/web/bootstrap.js" 'elapsedMs' \

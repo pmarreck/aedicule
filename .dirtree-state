@@ -128,6 +128,7 @@ annotate=[
 	tests/integration/web_browser_startup = Headless Chromium/CDP probe for startup, canvas health, synthetic pointer/keyboard input, and identity-preserving multi-touch gestures
 	tests/integration/web_browser_startup_unit.mjs = Unit regression for delayed Chrome DevTools targets and exactly-once input observation.
 	tests/integration/web_packaged_audio = End-to-end Chrome gate for .aed asset transport, FLAC decode, and Web Audio handoff.
+	tests/integration/web_startup_lock.mjs = Deterministic injected-lock tests for startup serialization, fallback, exact diagnostics, and release-on-error.
 	tests/launch.rs = Launch resolution, file revision, fallback, and stable WAT rejection diagnostic tests.
 	tests/lib/capture.bash = Project-local no-temp stdout/stderr/status capture helper for portable Bash tests
 	tests/lib/parallel_checks.bash = Buffers independent test checks in parallel and replays failures deterministically.
@@ -148,4 +149,5 @@ annotate=[
 	web/cargo-config.toml = Scoped nightly Cargo flags required for GPUI's browser WebAssembly backend
 	web/coi-serviceworker.js = Same-origin service-worker adapter that supplies cross-origin-isolation headers on static hosts such as GitHub Pages.
 	web/index.html = Minimal full-canvas HTML shell for a generic Aedicule web bundle
+	web/startup-lock.mjs = Origin-scoped Web Locks critical section serializing WebGPU/Wasm startup through the first completed browser frame.
 ]
