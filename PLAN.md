@@ -71,8 +71,117 @@
       Pointer cancellation now also releases the corresponding GPUI button
       state so a cancelled touch cannot contaminate the next control gesture.
       (2026-07-24 16:50 EDT; GPUI fork pin `cbea9c7f`.)
-    - [ ] Obtain Peter's physical iOS Safari sensory acceptance that taps no
-      longer summon the software keyboard.
+    - [x] ROOT CAUSE FOUND (2026-07-25 17:35 EDT). Peter's physical iOS Safari
+      acceptance FAILED at ~17:19 EDT: tapping anything on the deployed
+      <https://pmarreck.github.io/aedicule/ulam-flower/> still summoned the
+      software keyboard, and it persisted through a force reload. Excluded by
+      evidence: a stale pin (`Cargo.lock` pins the fixed `cbea9c7f`); a cached
+      guest `.wat`/`.aed` (a guest holds no DOM authority and cannot call
+      `focus()`, and the service worker's cache-first path covers only
+      `aedicule_web_bg.<64-hex>.wasm`); and the delivering agent's recorded
+      residual risk #1 — an isolated Playwright probe proved WebKit 26.5,
+      Chromium 149, and Firefox 151 all DO suppress the compatibility
+      `mousedown` after `preventDefault()` on a touch `pointerdown`.
+      The actual cause is `crates/gpui_web/src/window.rs:132`, which focuses
+      the hidden editable `<input>` at window creation and never releases it;
+      `preventDefault()` on every press is deliberately designed to keep that
+      focus. `document.activeElement` is therefore permanently `INPUT`, which
+      is precisely what summons the iOS keyboard — the tap is only the gesture
+      that lets it present.
+    - [ ] Replace the vacuous oracle. The shipped browser gate asserted
+      "hidden-input `focus()` calls after startup == 0", which passes while the
+      input is already focused from startup, so it could never fail on this
+      defect — the check and the code agreed with each other (MFIC: fails the
+      Independent axis). The correct oracle is "is any editable element
+      focused?", which fails identically in all three engines, so this never
+      required an iPhone to catch.
+    - [ ] Fix the focus ownership, as a classifier over sets rather than a
+      predicate: (a) a touch/pointer on non-text content must leave NO editable
+      element focused; (b) an active text-entry control MUST focus the editable
+      input so the keyboard still appears (Peter, 2026-07-25). Hardware key
+      delivery must survive (a) — the earlier "never refocus" attempt broke
+      W/A/D and synthesized audio — so keys likely need a non-editable focus
+      host such as the canvas with `tabindex="-1"`, reserving the hidden input
+      for genuine text/IME entry. Write the failing test first.
+      - [x] Fork fix implemented and pushed: `pmarreck/zed@3c54328c` on
+        `aedicule-gpui-web-input-fixes`. Canvas gets `tabindex="-1"` and owns
+        focus at startup; `set_input_handler`/`take_input_handler` drive DOM
+        focus and blur; `keydown`/`keyup` move to the document so keys arrive
+        in either focus state; the decision is the pure
+        `focus_policy::focus_host`, exhaustively tested over its complete
+        domain and proven non-vacuous by mutation (flipping the mapping reds
+        all three tests). 5 native tests pass, wasm compiles clean, rustfmt
+        applied. Aedicule repinned with `Cargo.lock` and the Nix vendor hash
+        `sha256-MPZMrxoj2N7Q42HaNHLcQVHKy/AHgvu8+hEFAtYE0DA=`.
+        (2026-07-25 18:40 EDT)
+      - [x] Hardened `listen_document`: it silently registered NO listener when
+        the canvas had no owner document, which would have dropped every key
+        with no error — the same shape of quiet failure that let this defect
+        ship. It now falls back to the canvas so a listener is always attached.
+        `pmarreck/zed@42ce92a6`; Aedicule repinned, vendor hash
+        `sha256-gftlwIFBxkWc0Z6D70EyEFePPW0U5i0xSoJ6WRFb4/0=`.
+        Coverage note: the native suite reported 5 passing on code that did not
+        compile, because `events.rs` is `#[cfg(target_family = "wasm")]` and is
+        never built natively; `cargo check --target wasm32-unknown-unknown`
+        caught the borrow error. Do not read a green native run as covering
+        `events.rs`. Key delivery IS asserted, by `web_packaged_audio`'s
+        `--require-key-delivery` against `demos/vibesteroids.aed`.
+        (2026-07-25 19:02 EDT)
+      - [x] Fix VERIFIED against the newly built delivery served over
+        `./serve_web`: `editableFocusedAtStartup` is now **false** (was true on
+        the live deployed page), with `chordDelivered: true`,
+        `hiddenInputTouchFocusRequests: 0`, and the `settled` stage reached.
+        The same oracle run against the live pre-fix page
+        <https://pmarreck.github.io/aedicule/ulam-flower/> fails, so the red and
+        green are on the same harness and differ only by the fix.
+        (2026-07-25 18:55 EDT) Peter's physical iPhone re-test is still required:
+        the oracle proves "no editable element holds focus", not "no keyboard
+        appeared".
+      - [ ] SEPARATE PRE-EXISTING DEFECT, do not attribute to the focus fix:
+        `web_browser_startup --static-root` times out waiting for the settled
+        startup stage and emits ZERO Aedicule stages, so the page never
+        bootstraps at all — which no wasm change can cause. The same harness
+        reaches `settled` against both the live Pages URL and the identical
+        delivery served by `./serve_web`, so the delivery is fine and the
+        harness's own static-root server is the suspect. This is what fails
+        `run_gallery_local_application` in the aggregate `./test_browser`.
+        Failing evidence preserved at
+        `scratchpad/gate2-FAILING-timeout-evidence.log`.
+      - [ ] `--require-key-delivery` reports `keyFrameChanged: false` for BOTH
+        the live pre-fix page and the fixed build when driven ad hoc against
+        `/vibesteroids/` over HTTP. Identical before and after, so it is not a
+        regression; the assertion is designed for the `web_packaged_audio`
+        path that drives `demos/vibesteroids.aed` through the native binary.
+        Do not "fix" key delivery on the strength of an ad-hoc invocation.
+    - [ ] Add the AVP text-entry control (Peter authorized the full slice,
+      2026-07-25), built on `gpui-component`'s text input rather than a bespoke
+      widget. This is what proves half (b) of the classifier above against a
+      real widget instead of an assertion. Follow the `AE_external_link`
+      pattern: a configure-time declaration with budget, duplicate-id, and
+      validation rejection, plus a `TextFieldPlacement { id, panel_id, bounds }`
+      in the retained Q16.16 document.
+      - [ ] OPEN ABI DESIGN QUESTION: existing controls return integers through
+        `AE_control_event(i32,i32,i32)`, but a text field must return a STRING
+        to the guest. Proposed: the guest supplies a bounded buffer and the host
+        copies host-validated UTF-8 into guest memory, mirroring `read_string`
+        in reverse, with an explicit maximum length declared at configure time.
+        Keep the guest incapable of causing an unbounded host allocation.
+      - [ ] Native, browser, and headless adapter parity; regenerate `WAT_ABI.md`
+        and `GUIDE_FOR_LLMS.md`; update `VIEW_PROTOCOL.md`.
+    - [ ] Add an automated real-WebCore browser lane so this class of defect
+      cannot reach Peter's phone again. Nix `playwright-driver.browsers`
+      1.61.1 provides `webkit-2311` (and `firefox-1532`) on Linux x86_64.
+      Assert on mechanical signals only — hidden-input `focus()` call counts
+      and the exact event sequence — never on "a keyboard appeared", which
+      does not exist on the WPE/GTK port. Simulated touch, pointer, and move
+      dispatch is the point of the lane.
+    - [ ] Serve the HTML entry document uncached, caching only the underlying
+      content-hashed assets (Peter, 2026-07-25). GitHub Pages returns
+      `cache-control: max-age=600` for every path, so the service worker must
+      revalidate navigation/document requests and rewrite their
+      `Cache-Control`, while `aedicule_web_bg.<64-hex>.wasm` keeps its
+      cache-first immutable path. This also permanently removes the
+      stale-HTML-to-stale-wasm confounder from the iOS diagnosis.
   - [x] Preserve independent browser mouse-button release edges under chords.
     Peter reproduced secondary-down (thrust), primary-down (fire), then
     secondary-up while primary remains held leaving thrust latched. Start with

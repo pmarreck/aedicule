@@ -454,6 +454,16 @@ function createProtocol(socket) {
 	};
 }
 
+// Whether any editable element currently holds DOM focus. This, not the number
+// of focus() calls, is the condition that makes a touch platform present its
+// software keyboard, so it is the oracle that can actually fail on the defect.
+export const editableFocusedExpression = `(() => {
+	const active = document.activeElement;
+	if (active === null || active === undefined) return false;
+	const tag = active.tagName;
+	return tag === "INPUT" || tag === "TEXTAREA" || active.isContentEditable === true;
+})()`;
+
 export function inputObserverSource(verboseEvents, interceptExternalLinks = false) {
 	return `(() => {
 		globalThis.__AEDICULE_TRACE_EVENTS = ${verboseEvents};
@@ -662,6 +672,15 @@ async function synthesizeInput(protocol, snapshot, verboseEvents) {
 	];
 
 	const before = await screenshotDigest(protocol);
+	// An editable element HOLDING focus is what summons the iOS software
+	// keyboard; a tap is only the gesture that lets it present. Counting
+	// post-startup focus() calls cannot observe that, and the reassignment to
+	// body below establishes an initial state that never occurs in production,
+	// so read the real state first.
+	const editableFocusedAtStartup = (await protocol.send("Runtime.evaluate", {
+		expression: editableFocusedExpression,
+		returnByValue: true,
+	})).result.value === true;
 	await protocol.send("Runtime.evaluate", {
 		expression: `document.body.tabIndex = -1; document.body.focus()`,
 	});
@@ -757,6 +776,7 @@ async function synthesizeInput(protocol, snapshot, verboseEvents) {
 		observed,
 		mousePointerPhases,
 		hiddenInputTouchFocusRequests: focusRequestsAfterTouch - focusRequestsBeforeTouch,
+		editableFocusedAtStartup,
 		hiddenInputFocusRequestsBeforeInput: focusRequestsBeforeInput,
 		hiddenInputFocusRequestsBeforeTouch: focusRequestsBeforeTouch,
 		hiddenInputFocusRequestsAfterTouch: focusRequestsAfterTouch,
@@ -1131,6 +1151,11 @@ async function inspect(options) {
 		if (!inputSummary.chordDelivered || inputSummary.chordPointerDelta < 3) {
 			failures.push(
 				"secondary-up was lost while primary remained held in a browser mouse chord",
+			);
+		}
+		if (inputSummary.editableFocusedAtStartup) {
+			failures.push(
+				"an editable element holds focus at startup, so any touch presents the iOS software keyboard",
 			);
 		}
 		if (inputSummary.hiddenInputTouchFocusRequests !== 0) {
