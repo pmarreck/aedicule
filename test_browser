@@ -98,7 +98,7 @@ run_external_link_browser() {
 	runtime=$(<"$browser_runtime_file")
 	binary="${CARGO_TARGET_DIR:-target}/debug/aedicule"
 	./tests/integration/web_external_link \
-		"$binary" "$runtime" tests/fixtures/external_link.wat
+		"$binary" "$runtime" demos/ulam-flower.wat
 }
 
 prepare_packaged_audio_browser || exit $?

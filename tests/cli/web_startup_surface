@@ -180,8 +180,8 @@ expect_text "$root/tests/integration/web_browser_startup" '--local-application' 
 	'headless browser probe cannot launch a visitor-selected WAT from the gallery'
 expect_text "$root/test_browser" '--local-application tests/fixtures/animated.wat' \
 	'optional browser gate does not prove the gallery local-file delivery path'
-expect_text "$root/test_browser" 'tests/fixtures/external_link.wat' \
-	'optional browser gate does not exercise an external-link guest'
+expect_text "$root/test_browser" 'demos/ulam-flower.wat' \
+	'optional browser gate does not exercise the shipped Ulam external link'
 expect_text "$root/tests/integration/web_external_link" '--require-external-link' \
 	'direct browser application gate does not require trusted link activation'
 expect_text "$root/tests/integration/web_browser_startup" '"--mute-audio"' \

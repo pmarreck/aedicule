@@ -163,6 +163,14 @@
     a direct dependency; the original six-target CI run independently exposed
     the stale hash. (2026-07-24 19:13 EDT: canonical `./test` and optimized
     `./build` pass with the CI-reported replacement hash.)
+  - [x] Adopt the contract in the real Ulam guest, pin its public
+    `30cc41b4fa6e12b2b691d8eecc9ef490d252d937` snapshot into Aedicule, and make
+    the optional trusted-browser gate click that shipped provenance link
+    instead of a synthetic fixture. (2026-07-24 20:09 EDT: guest acceptance
+    and snapshot/surface classifiers pass. The complete host suite and
+    optimized build pass; an initial aggregate Chromium startup timed out,
+    then the isolated real-Ulam trusted-click gate and the complete warm
+    `./test_browser` rerun both passed.)
   - Curiosity poke: opening a new browsing context must not grant an opener
     reference or let a guest smuggle non-HTTPS schemes through URL parsing.
 

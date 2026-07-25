@@ -4,11 +4,13 @@
 	(import "aedicule.v0" "AE_title" (func $title (param i32 i32) (result i32)))
 	(import "aedicule.v0" "AE_menu_item" (func $menu_item (param i32 i32 i32 i32 i32) (result i32)))
 	(import "aedicule.v0" "AE_slider_i32" (func $slider_i32 (param i32 i32 i32 i32 i32 i32 i32) (result i32)))
+	(import "aedicule.v0" "AE_external_link" (func $external_link (param i32 i32 i32 i32 i32 i32) (result i32)))
 	(import "aedicule.v0" "AE_ui_begin" (func $ui_begin (param i32) (result i32)))
 	(import "aedicule.v0" "AE_ui_end" (func $ui_end (result i32)))
 	(import "aedicule.v0" "AE_control_panel_q16" (func $control_panel_q16 (param i32 i32 i32 i32 i32 i32 i32) (result i32)))
 	(import "aedicule.v0" "AE_slider_place_q16" (func $slider_place_q16 (param i32 i32 i32 i32 i32 i32 i32 i32 i32) (result i32)))
 	(import "aedicule.v0" "AE_button_place_q16" (func $button_place_q16 (param i32 i32 i32 i32 i32 i32 i32 i32) (result i32)))
+	(import "aedicule.v0" "AE_external_link_place_q16" (func $external_link_place_q16 (param i32 i32 i32 i32 i32 i32 i32) (result i32)))
 	(import "aedicule.v0" "AE_sin_cos_turn" (func $sin_cos_turn (param i32) (result i32 i32)))
 	(import "aedicule.v0" "AE_frame_begin_rgba" (func $frame_begin_rgba (param i32) (result i32)))
 	(import "aedicule.v0" "AE_path_begin" (func $path_begin (param i32) (result i32)))
@@ -25,6 +27,8 @@
 	(data (i32.const 112) "0.5x")
 	(data (i32.const 120) "1x")
 	(data (i32.const 124) "2x")
+	(data (i32.const 144) "What is this?")
+	(data (i32.const 160) "https://github.com/pmarreck/ulam-flower-wat#readme")
 
 	(global $control_min i32 (i32.const 0))
 	(global $control_max i32 (i32.const 3600))
@@ -322,7 +326,7 @@
 		call $path_end_q16 drop)
 
 	(func (export "AE_abi_major") (result i32) i32.const 0)
-	(func (export "AE_abi_minor") (result i32) i32.const 1)
+	(func (export "AE_abi_minor") (result i32) i32.const 4)
 
 	(func (export "AE_configure") (result i32)
 		i32.const 0 i32.const 24 call $title drop
@@ -330,6 +334,11 @@
 		i32.const 11 i32.const 112 i32.const 4 i32.const 0 i32.const 0 call $menu_item drop
 		i32.const 12 i32.const 120 i32.const 2 i32.const 0 i32.const 0 call $menu_item drop
 		i32.const 13 i32.const 124 i32.const 2 i32.const 0 i32.const 0 call $menu_item drop
+		i32.const 20
+		i32.const 144 i32.const 13
+		i32.const 160 i32.const 50
+		i32.const 0
+		call $external_link drop
 		i32.const 1
 		i32.const 32 i32.const 23
 		global.get $control_min global.get $control_max i32.const 1 global.get $control_default
@@ -547,16 +556,18 @@
 		local.get $slider_width i32.const 65536 i32.lt_s
 		if i32.const 65536 local.set $slider_width end
 
-		global.get $viewport_width i32.const 4718592 i32.gt_s
+		;; Share the action row across four playback buttons and one provenance
+		;; link; the guest owns this layout and the host owns safe activation.
+		global.get $viewport_width i32.const 5242880 i32.gt_s
 		if
 			i32.const 1572864 local.set $button_x
 			i32.const 524288 local.set $button_gap
-			global.get $viewport_width i32.const 4718592 i32.sub
-			i32.const 4 i32.div_s local.set $button_width
+			global.get $viewport_width i32.const 5242880 i32.sub
+			i32.const 5 i32.div_s local.set $button_width
 		else
 			i32.const 0 local.set $button_x
 			i32.const 0 local.set $button_gap
-			global.get $viewport_width i32.const 4 i32.div_s local.set $button_width
+			global.get $viewport_width i32.const 5 i32.div_s local.set $button_width
 		end
 		local.get $button_width i32.const 65536 i32.lt_s
 		if i32.const 65536 local.set $button_width end
@@ -636,6 +647,14 @@
 			local.get $button_y local.get $button_width local.get $button_height
 			global.get $speed_mode i32.const 2 i32.eq
 			call $button_place_q16
+			local.get $ui_status i32.or local.set $ui_status
+			i32.const 20 i32.const 5
+			local.get $button_x
+			local.get $button_width i32.const 4 i32.mul i32.add
+			local.get $button_gap i32.const 4 i32.mul i32.add
+			local.get $button_y local.get $button_width local.get $button_height
+			i32.const 0
+			call $external_link_place_q16
 			local.get $ui_status i32.or local.set $ui_status
 			i32.const 1 i32.const 5 global.get $control
 			local.get $slider_x local.get $slider_y

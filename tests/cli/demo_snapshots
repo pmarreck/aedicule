@@ -3,7 +3,7 @@
 set -u
 
 root=$(cd "$(dirname "$0")/../.." && pwd -P)
-expected=$'slug\tfile\tsource\tcommit\tsha256\nulam-flower\tulam-flower.wat\thttps://github.com/pmarreck/ulam-flower-wat\t1410f3627506387bb0c0ad912bb4bc5a4ce69677\tf69c41ad947a5a1aa9f29e48aba22bff40fb0568bd18677cf5a36cdddbdff152\nvibesteroids\tvibesteroids.wat\thttps://github.com/pmarreck/vibesteroids_wat\t9c50ed24fb446130e36996c59d90d720805c503c\t24180d480477a7de18199caa887c90538756406c4a273a6d9e34b229e8205541\nvibesteroids-package\tvibesteroids.aed\thttps://github.com/pmarreck/vibesteroids_wat\t935740771883497778a7cac977cbb03e655b0a83\tb22e5002651fbe1f55dedaf170bcfda9a95fe06f0f384fa1b2bd79fd6f67867c'
+expected=$'slug\tfile\tsource\tcommit\tsha256\nulam-flower\tulam-flower.wat\thttps://github.com/pmarreck/ulam-flower-wat\t30cc41b4fa6e12b2b691d8eecc9ef490d252d937\t21952a212febf96d102be1ab31424641a7db4fa4255688f19dc55dadae5d0dd7\nvibesteroids\tvibesteroids.wat\thttps://github.com/pmarreck/vibesteroids_wat\t9c50ed24fb446130e36996c59d90d720805c503c\t24180d480477a7de18199caa887c90538756406c4a273a6d9e34b229e8205541\nvibesteroids-package\tvibesteroids.aed\thttps://github.com/pmarreck/vibesteroids_wat\t935740771883497778a7cac977cbb03e655b0a83\tb22e5002651fbe1f55dedaf170bcfda9a95fe06f0f384fa1b2bd79fd6f67867c'
 failures=0
 
 if [[ ! -f "$root/demos/manifest.tsv" ]]; then
