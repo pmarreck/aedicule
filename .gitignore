@@ -4,3 +4,6 @@
 /.direnv
 /.envrc.local
 *.log
+
+# session handoff docs (skill: handoff)
+HANDOFF*
