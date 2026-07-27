@@ -1261,7 +1261,20 @@ impl FrontplaneView {
         cx.quit();
     }
 
-    fn key_down(&mut self, event: &KeyDownEvent, _: &mut Window, cx: &mut Context<Self>) {
+    /// Keyboard input belongs to a focused text control, not the guest. This
+    /// is the keyboard counterpart of the pointer occlusion that AVP control
+    /// layers already provide; without it a guest steals every letter that
+    /// happens to map to a guest key, and the text field silently drops it.
+    fn text_entry_has_focus(&self, window: &Window, cx: &App) -> bool {
+        self.text_fields
+            .iter()
+            .any(|field| field.state.read(cx).focus_handle(cx).is_focused(window))
+    }
+
+    fn key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if self.text_entry_has_focus(window, cx) {
+            return;
+        }
         let Some(key) = Key::from_gpui_name(&event.keystroke.key) else {
             return;
         };
@@ -1271,7 +1284,10 @@ impl FrontplaneView {
         self.queue_native_event(Event::KeyDown(key), cx);
     }
 
-    fn key_up(&mut self, event: &KeyUpEvent, _: &mut Window, cx: &mut Context<Self>) {
+    fn key_up(&mut self, event: &KeyUpEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if self.text_entry_has_focus(window, cx) {
+            return;
+        }
         let Some(key) = Key::from_gpui_name(&event.keystroke.key) else {
             return;
         };

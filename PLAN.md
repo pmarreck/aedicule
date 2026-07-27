@@ -190,10 +190,43 @@
         guest-authored value in the placement plus reconciliation by accepted
         revision, mirroring how sliders already reconcile.
       - [ ] Update `VIEW_PROTOCOL.md` for the delivered text control.
-      - [ ] Extend the browser gate to assert the classifier's second half
-        mechanically: with a text field placed and focused, an editable element
-        MUST hold focus. `__AEDICULE_UI_SNAPSHOT.textFields` now publishes the
-        accepted placements, so the gate can find and click one deterministically.
+      - [x] Browser gate `web_text_entry` now asserts the classifier's second
+        half mechanically in real Chromium: before focus no editable element
+        holds focus, after clicking a placed AVP text field one does, and the
+        typed scalars reach the guest in exact order (the fixture publishes
+        green only for the run 'h','i' with terminating count 2). Registered in
+        `./test_browser`. GATE_EXIT=0. (2026-07-27 09:30 EDT)
+      - [x] The gate found FOUR real defects that unit tests could not, each
+        fixed at its true layer rather than worked around:
+        1. `gpui_web` applied the focus policy on every `set_input_handler` /
+           `take_input_handler`, which GPUI calls per frame. The resulting
+           focus/blur thrash re-entered GPUI. Fixed by making the policy
+           idempotent against the document's real `activeElement`
+           (`focus_transition`, exhaustive over its 2x3 domain, mutation-proven).
+        2. `focus()`/`blur()` fire DOM events synchronously, and this window's
+           own focus listeners take the `callbacks` borrow that GPUI's input
+           dispatch already holds — every keystroke panicked with "RefCell
+           already borrowed". Fixed by running the policy pass in a coalesced
+           microtask, which is safe precisely because the pass is idempotent.
+        3. `gpui_web` hardcoded `prefer_character_input: false`, so GPUI never
+           considered whether a text control was accepting input and swallowed
+           any letter that could begin a multi-key binding. Typing "abcdef"
+           delivered "ce". Fixed by preferring character input; GPUI honors it
+           only when an input handler reports it accepts text, so an
+           application with no text control keeps every binding.
+        4. THE ACTUAL ROOT CAUSE of the missing characters, and it was ours:
+           Aedicule's own root `on_key_down` forwarded keys to the guest even
+           while a text field held focus, so every letter that maps to a guest
+           `Key` was stolen and `cx.stop_propagation()`'d. This is the keyboard
+           counterpart of the pointer occlusion AVP control layers already had.
+           Fixed in BOTH the native and browser adapters via
+           `text_entry_has_focus`. (2026-07-27 09:30 EDT)
+      - [ ] `gpui_web` also silently discarded a character when GPUI had
+        momentarily removed its input handler. Buffer-and-replay was added
+        (`insert_text` / `flush_pending_text`), but with defect 4 fixed the
+        drop no longer reproduces, so that path is currently unexercised.
+        Either build a test that forces the handler-absent window or remove it;
+        do not leave untested code standing on a hypothesis.
     - [ ] Add an automated real-WebCore browser lane so this class of defect
       cannot reach Peter's phone again. Nix `playwright-driver.browsers`
       1.61.1 provides `webkit-2311` (and `firefox-1532`) on Linux x86_64.

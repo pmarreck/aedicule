@@ -539,7 +539,20 @@ impl WebFrontplane {
     /// Delivers browser keyboard presses through the same physical-key
     /// classifier as native and suppresses browser actions only for admitted
     /// guest keys.
+    /// Keyboard input belongs to a focused text control, not the guest. This
+    /// is the keyboard counterpart of the pointer occlusion that AVP control
+    /// layers already provide; without it a guest steals every letter that
+    /// happens to map to a guest key, and the text field silently drops it.
+    fn text_entry_has_focus(&self, window: &Window, cx: &App) -> bool {
+        self.text_fields
+            .iter()
+            .any(|field| field.state.read(cx).focus_handle(cx).is_focused(window))
+    }
+
     fn key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if self.text_entry_has_focus(window, cx) {
+            return;
+        }
         let Some(key) = Key::from_gpui_name(&event.keystroke.key) else {
             return;
         };
@@ -554,6 +567,9 @@ impl WebFrontplane {
     /// Pairs every admitted browser key press with a release edge so a guest
     /// cannot retain a stuck control after focus remains inside the canvas.
     fn key_up(&mut self, event: &KeyUpEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if self.text_entry_has_focus(window, cx) {
+            return;
+        }
         let Some(key) = Key::from_gpui_name(&event.keystroke.key) else {
             return;
         };

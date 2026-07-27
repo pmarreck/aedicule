@@ -101,10 +101,19 @@ run_external_link_browser() {
 		"$binary" "$runtime" demos/ulam-flower.wat
 }
 
+run_text_entry_browser() {
+	local runtime binary
+	runtime=$(<"$browser_runtime_file")
+	binary="${CARGO_TARGET_DIR:-target}/debug/aedicule"
+	./tests/integration/web_text_entry \
+		"$binary" "$runtime" tests/fixtures/text_entry.wat
+}
+
 prepare_packaged_audio_browser || exit $?
 run_packaged_audio_browser || exit $?
 run_gallery_local_application || exit $?
 run_external_link_browser || exit $?
+run_text_entry_browser || exit $?
 
 marker=$(git rev-parse --git-path aedicule-test-browser-success)
 case "$marker" in

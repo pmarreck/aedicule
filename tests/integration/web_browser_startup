@@ -28,8 +28,8 @@ const EXPECTED_STAGES = [
 	"settled",
 ];
 
-const HELP = `usage: web_browser_startup [--chrome PATH] [--timeout-ms N] [--require-audio-playback] [--require-key-delivery] [--require-controls] [--require-external-link] URL
-       web_browser_startup [--chrome PATH] [--timeout-ms N] [--require-audio-playback] [--require-key-delivery] [--require-controls] [--require-external-link] [--local-application PATH] --static-root PATH
+const HELP = `usage: web_browser_startup [--chrome PATH] [--timeout-ms N] [--require-audio-playback] [--require-key-delivery] [--require-controls] [--require-external-link] [--require-text-entry] URL
+       web_browser_startup [--chrome PATH] [--timeout-ms N] [--require-audio-playback] [--require-key-delivery] [--require-controls] [--require-external-link] [--require-text-entry] [--local-application PATH] --static-root PATH
 
 Launch a headless Chromium browser, stream Aedicule's structured startup
 timeline, and reject browser exceptions or a missing/1x1 GPUI canvas.
@@ -42,6 +42,9 @@ cross the browser-to-WAT boundary and produce one committed frame change.
 --require-controls requires AVP buttons/sliders and proves their events reach the guest.
 --require-external-link clicks an AVP link and requires transient activation,
 the normalized destination, _blank, and noopener without opening a real popup.
+--require-text-entry focuses an AVP text field and requires that an editable
+element then holds focus (the software-keyboard condition) and that the typed
+Unicode scalars reach the guest in order.
 --local-application selects a .wat or .aed through the gallery and requires the
 generic origin-local runner to reach the same settled application state.
 
@@ -56,6 +59,7 @@ function parseArguments(arguments_) {
 	let requireAudioPlayback = false;
 	let requireControls = false;
 	let requireExternalLink = false;
+	let requireTextEntry = false;
 	let requireKeyDelivery = false;
 	let localApplication;
 	let staticRoot;
@@ -102,6 +106,10 @@ function parseArguments(arguments_) {
 			requireKeyDelivery = true;
 			continue;
 		}
+		if (argument === "--require-text-entry") {
+			requireTextEntry = true;
+			continue;
+		}
 		if (argument.startsWith("-")) {
 			throw new Error(`unknown option: ${argument}`);
 		}
@@ -134,6 +142,7 @@ function parseArguments(arguments_) {
 		requireControls,
 		requireExternalLink,
 		requireKeyDelivery,
+		requireTextEntry,
 		staticRoot,
 		timeoutMs,
 		url: url === undefined ? undefined : new URL(url).href,
@@ -939,6 +948,101 @@ async function exerciseExternalLink(protocol, snapshot) {
 	};
 }
 
+/// Types real key events rather than injecting text, so the whole delivery
+/// path is exercised: DOM keyboard, GPUI's installed input handler, the
+/// platform text widget, and finally the WAT ABI.
+async function dispatchTyping(protocol, text) {
+	for (const character of text) {
+		const upper = character.toUpperCase();
+		const virtualKeyCode = upper.codePointAt(0);
+		const code = /^[A-Z]$/.test(upper) ? `Key${upper}` : undefined;
+		await protocol.send("Input.dispatchKeyEvent", {
+			type: "keyDown",
+			text: character,
+			unmodifiedText: character,
+			key: character,
+			code,
+			windowsVirtualKeyCode: virtualKeyCode,
+			nativeVirtualKeyCode: virtualKeyCode,
+		});
+		await protocol.send("Input.dispatchKeyEvent", {
+			type: "keyUp",
+			key: character,
+			code,
+			windowsVirtualKeyCode: virtualKeyCode,
+			nativeVirtualKeyCode: virtualKeyCode,
+		});
+	}
+}
+
+async function waitForFrameBackground(protocol, background) {
+	const result = await protocol.send("Runtime.evaluate", {
+		expression: `(async () => {
+			for (let frame = 0; frame < 120; frame += 1) {
+				if (globalThis.__AEDICULE_FRAME_BACKGROUND === ${background}) return true;
+				await new Promise(resolve => requestAnimationFrame(resolve));
+			}
+			return false;
+		})()`,
+		awaitPromise: true,
+		returnByValue: true,
+	});
+	return result.result.value === true;
+}
+
+/// Proves the software-keyboard classifier's second half. Startup already
+/// asserts that nothing editable holds focus; this asserts that focusing a real
+/// AVP text field DOES focus an editable element, which is exactly what lets a
+/// touch platform present its keyboard, and that typed scalars reach the guest.
+async function exerciseTextEntry(protocol, snapshot) {
+	const field = snapshot.ui?.textFields?.[0];
+	if (field === undefined) {
+		return {
+			textFields: 0,
+			editableFocusedBeforeFocus: false,
+			editableFocusedAfterFocus: false,
+			scalarsReachedGuest: false,
+		};
+	}
+	const editableFocusedBeforeFocus = (await protocol.send("Runtime.evaluate", {
+		expression: editableFocusedExpression,
+		returnByValue: true,
+	})).result.value === true;
+	await dispatchControlClick(protocol, field);
+	await protocol.send("Runtime.evaluate", {
+		expression: "new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+		awaitPromise: true,
+	});
+	const editableFocusedAfterFocus = (await protocol.send("Runtime.evaluate", {
+		expression: editableFocusedExpression,
+		returnByValue: true,
+	})).result.value === true;
+	await dispatchTyping(protocol, "hi");
+	// The fixture publishes green only for the exact scalar run 'h','i' with a
+	// terminating count of 2, so this is an ordering oracle, not a liveness one.
+	const scalarsReachedGuest = await waitForFrameBackground(protocol, 0x00ff00ff);
+	// Reported unconditionally so a failure says where the characters stopped
+	// rather than only that they did.
+	const editedValue = (await protocol.send("Runtime.evaluate", {
+		expression: `(() => {
+			const active = document.activeElement;
+			return JSON.stringify({
+				activeTag: active?.tagName ?? null,
+				activeValue: active?.value ?? null,
+				background: globalThis.__AEDICULE_FRAME_BACKGROUND ?? null,
+			});
+		})()`,
+		returnByValue: true,
+	})).result.value;
+	return {
+		textFields: snapshot.ui.textFields.length,
+		editableFocusedBeforeFocus,
+		editableFocusedAfterFocus,
+		scalarsReachedGuest,
+		edited: JSON.parse(editedValue),
+	};
+}
+
 async function stopChrome(chrome) {
 	if (chrome.exitCode !== null) return;
 	chrome.kill("SIGTERM");
@@ -1048,6 +1152,9 @@ async function inspect(options) {
 			}
 			if (message.method !== "Runtime.consoleAPICalled") return;
 			const values = message.params.args.map(remoteValue);
+			if (message.params.type === "error" && values[0] !== "[Aedicule startup] failed") {
+				process.stderr.write(`${JSON.stringify({ type: "console-error", values })}\n`);
+			}
 			if (values[0] === "[Aedicule startup]") {
 				const stage = values[1];
 				let detail = values[2] ?? {};
@@ -1105,6 +1212,15 @@ async function inspect(options) {
 			process.stdout.write(`${JSON.stringify({
 				type: "external-link-summary",
 				...externalLinkSummary,
+			})}\n`);
+		}
+		const textEntrySummary = options.requireTextEntry
+			? await exerciseTextEntry(protocol, await pageSnapshot(protocol))
+			: undefined;
+		if (textEntrySummary !== undefined) {
+			process.stdout.write(`${JSON.stringify({
+				type: "text-entry-summary",
+				...textEntrySummary,
 			})}\n`);
 		}
 
@@ -1185,6 +1301,25 @@ async function inspect(options) {
 			failures.push(
 				"AVP external link was absent, lacked trusted noopener activation, or leaked into canvas input",
 			);
+		}
+		if (options.requireTextEntry) {
+			if (textEntrySummary.textFields < 1) {
+				failures.push("no AVP text field was placed in the accepted UI snapshot");
+			}
+			// The complement of the startup oracle. Startup requires that nothing
+			// editable holds focus; here an editable element MUST hold focus, or
+			// a real text control could never present a software keyboard.
+			if (textEntrySummary.editableFocusedBeforeFocus) {
+				failures.push("an editable element held focus before the text field was focused");
+			}
+			if (!textEntrySummary.editableFocusedAfterFocus) {
+				failures.push(
+					"focusing an AVP text field left no editable element focused, so no software keyboard could appear",
+				);
+			}
+			if (!textEntrySummary.scalarsReachedGuest) {
+				failures.push("typed Unicode scalars did not reach the guest in order");
+			}
 		}
 		if (missingInput.length > 0) {
 			failures.push(`synthetic input was not observed: ${missingInput.map(([type]) => type).join(", ")}`);
