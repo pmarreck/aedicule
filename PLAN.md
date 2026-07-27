@@ -221,12 +221,14 @@
            counterpart of the pointer occlusion AVP control layers already had.
            Fixed in BOTH the native and browser adapters via
            `text_entry_has_focus`. (2026-07-27 09:30 EDT)
-      - [ ] `gpui_web` also silently discarded a character when GPUI had
-        momentarily removed its input handler. Buffer-and-replay was added
-        (`insert_text` / `flush_pending_text`), but with defect 4 fixed the
-        drop no longer reproduces, so that path is currently unexercised.
-        Either build a test that forces the handler-absent window or remove it;
-        do not leave untested code standing on a hypothesis.
+      - [x] Removed a fourth `gpui_web` change that buffered and replayed
+        characters arriving while GPUI had no input handler installed. It was
+        built on the hypothesis that the missing characters were lost to that
+        window; defect 4 above disproved it. With the real cause fixed the path
+        is never taken, so it was unexercised speculation rather than a tested
+        fix, and it was reverted rather than left standing. Restore it only
+        alongside a test that forces the handler-absent window.
+        (2026-07-27 09:41 EDT)
     - [ ] Add an automated real-WebCore browser lane so this class of defect
       cannot reach Peter's phone again. Nix `playwright-driver.browsers`
       1.61.1 provides `webkit-2311` (and `firefox-1532`) on Linux x86_64.
