@@ -90,6 +90,10 @@ const Q16_SCALE: f64 = 65_536.0;
 const WAT_IMPORT_MODULE: &str = wat_abi::IMPORT_MODULE;
 const Q30_ONE: i64 = 1 << 30;
 const MAX_PAUSE_TRIGGERS: usize = 16;
+/// Upper bound on a single text field's declared capacity. Committed text is
+/// forwarded one scalar per control event, so this also caps the event burst a
+/// single commit can produce.
+const MAX_TEXT_FIELD_SCALARS: u32 = 4096;
 const CORDIC_INVERSE_GAIN_Q30: i64 = 652_032_874;
 const CORDIC_ATAN_TURN: [i64; 31] = [
     0x2000_0000,
@@ -1026,6 +1030,7 @@ pub struct Metadata {
     pub pause_triggers: Vec<PauseTrigger>,
     pub controls: Vec<SliderControl>,
     pub external_links: Vec<ExternalLink>,
+    pub text_fields: Vec<TextField>,
     pub synth_voices: Vec<SynthVoice>,
     pub sample_assets: Vec<SampleAsset>,
 }
@@ -1038,6 +1043,7 @@ impl Default for Metadata {
             pause_triggers: Vec::new(),
             controls: Vec::new(),
             external_links: Vec::new(),
+            text_fields: Vec::new(),
             synth_voices: Vec::new(),
             sample_assets: Vec::new(),
         }
@@ -1071,6 +1077,21 @@ pub struct ExternalLink {
     pub id: u32,
     pub label: String,
     pub url: String,
+}
+
+/// One configure-time, guest-named text-entry capability. `max_scalars` bounds
+/// how much text the host will ever forward, so a guest cannot be flooded and
+/// the host cannot be made to retain unbounded text on its behalf.
+///
+/// Committed text reaches the guest as ordinary integer control events carrying
+/// one Unicode scalar each, never as a byte buffer written into guest memory.
+/// One scalar is not one user-perceived character: combining marks and emoji
+/// sequences are multi-scalar grapheme clusters.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TextField {
+    pub id: u32,
+    pub label: String,
+    pub max_scalars: u32,
 }
 
 impl SliderControl {
@@ -1201,6 +1222,7 @@ pub struct UiSnapshot {
     pub sliders: Vec<SliderPlacement>,
     pub buttons: Vec<ButtonPlacement>,
     pub external_links: Vec<ExternalLinkPlacement>,
+    pub text_fields: Vec<TextFieldPlacement>,
 }
 
 /// Places one host-native control surface in the guest-authored UI snapshot;
@@ -1257,6 +1279,18 @@ pub struct ButtonPlacement {
 /// declaration supplies accessible text and destination; geometry stays Q16.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ExternalLinkPlacement {
+    pub id: u32,
+    pub panel_id: u32,
+    pub bounds: Rect,
+}
+
+/// Places one declared text field in the accepted retained UI document. Its
+/// declaration supplies the accessible label and capacity; geometry stays Q16.
+///
+/// This is the only control whose focus may legitimately raise a software
+/// keyboard, because it is the only one backed by an editable element.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TextFieldPlacement {
     pub id: u32,
     pub panel_id: u32,
     pub bounds: Rect,
@@ -1741,6 +1775,17 @@ pub enum Event {
     /// Host-owned scheduling lifecycle emitted instead of a declared trigger's
     /// raw physical edge. ABI event kind 15 reserves kinds 11-14 for touch.
     Pause(PausePhase),
+    /// One Unicode scalar of a text field's current value, at its exact
+    /// position. Delivered through `AE_text_event`, never through `AE_event`.
+    TextScalar { id: u32, index: u32, scalar: u32 },
+    /// Terminates one complete text value with its authoritative scalar count,
+    /// letting a guest swap its buffer atomically instead of guessing where the
+    /// value ended.
+    TextValue {
+        id: u32,
+        scalars: u32,
+        phase: TextPhase,
+    },
 }
 
 /// Identifies the guest-visible stages of one host-owned suspension lifecycle.
@@ -1786,6 +1831,40 @@ impl PauseTrigger {
 pub enum ControlPhase {
     Change = 1,
     Release = 2,
+}
+
+/// Separates ordinary editing of a text field from the guest-visible commit
+/// edge, so a guest can defer expensive work until the value settles.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+pub enum TextPhase {
+    Change = 1,
+    Commit = 2,
+}
+
+/// Expands one complete text value into the exact ordered event sequence that
+/// every adapter must emit: one scalar per position, then a terminator that
+/// carries the authoritative scalar count.
+///
+/// Keeping this a pure function is what stops native, browser, and headless
+/// adapters from drifting into three different wire sequences, and it is why
+/// no adapter ever needs to move bytes across the guest boundary.
+pub fn text_value_events(id: u32, value: &str, phase: TextPhase) -> Vec<Event> {
+    let mut events: Vec<Event> = value
+        .chars()
+        .enumerate()
+        .map(|(index, scalar)| Event::TextScalar {
+            id,
+            index: index as u32,
+            scalar: scalar as u32,
+        })
+        .collect();
+    events.push(Event::TextValue {
+        id,
+        scalars: events.len() as u32,
+        phase,
+    });
+    events
 }
 
 /// Identifies the portable pointer buttons that Aedicule adapters currently
@@ -2253,6 +2332,8 @@ struct UiBuilder {
     button_ids: HashSet<u32>,
     external_links: Vec<ExternalLinkPlacement>,
     external_link_ids: HashSet<u32>,
+    text_fields: Vec<TextFieldPlacement>,
+    text_field_ids: HashSet<u32>,
 }
 
 struct PathBuilder {
@@ -2268,6 +2349,7 @@ struct HostState {
     menu_ids: HashSet<u32>,
     control_ids: HashSet<u32>,
     external_link_ids: HashSet<u32>,
+    text_field_ids: HashSet<u32>,
     sample_ids: HashSet<u32>,
     images: Vec<ImageResource>,
     image_ids: HashSet<u32>,
@@ -2320,6 +2402,7 @@ struct Exports {
     init: InitExport,
     event: EventExport,
     control_event: Option<TypedFunc<(i32, i32, i32), i32>>,
+    text_event: Option<TypedFunc<(i32, i32, i32, i32), i32>>,
     tick: TypedFunc<i32, i32>,
     render: TypedFunc<(), i32>,
     state_ptr: TypedFunc<(), i32>,
@@ -2419,6 +2502,7 @@ impl Frontplane {
             menu_ids: HashSet::new(),
             control_ids: HashSet::new(),
             external_link_ids: HashSet::new(),
+            text_field_ids: HashSet::new(),
             sample_ids: HashSet::new(),
             images: Vec::new(),
             image_ids: HashSet::new(),
@@ -2476,6 +2560,9 @@ impl Frontplane {
             control_event: instance
                 .get_typed_func::<(i32, i32, i32), i32>(&mut store, "AE_control_event")
                 .ok(),
+            text_event: instance
+                .get_typed_func::<(i32, i32, i32, i32), i32>(&mut store, "AE_text_event")
+                .ok(),
             tick: required_func(&instance, &mut store, "AE_tick")?,
             render: required_func(&instance, &mut store, "AE_render")?,
             state_ptr: required_func(&instance, &mut store, "AE_state_ptr")?,
@@ -2520,28 +2607,40 @@ impl Frontplane {
         self.store.data_mut().menu_ids.clear();
         self.store.data_mut().control_ids.clear();
         self.store.data_mut().external_link_ids.clear();
+        self.store.data_mut().text_field_ids.clear();
         self.store.data_mut().sample_ids.clear();
         self.store.data_mut().images.clear();
         self.store.data_mut().image_ids.clear();
         self.store.data_mut().sample_audio.clear();
         let function = self.exports.configure.clone();
         let result = self.call_status("AE_configure", function, ());
-        if result.is_ok()
-            && !self.store.data().metadata.controls.is_empty()
-            && self.exports.control_event.is_none()
-        {
+        // A declaration without its delivery export would leave the guest
+        // permanently unable to observe its own control, so configure is
+        // rolled back rather than admitting a half-wired capability.
+        let undeliverable = if result.is_ok() {
+            let metadata = &self.store.data().metadata;
+            if !metadata.controls.is_empty() && self.exports.control_event.is_none() {
+                Some("AE_control_event")
+            } else if !metadata.text_fields.is_empty() && self.exports.text_event.is_none() {
+                Some("AE_text_event")
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        if let Some(name) = undeliverable {
             let state = self.store.data_mut();
             state.metadata = Metadata::default();
             state.menu_ids.clear();
             state.control_ids.clear();
             state.external_link_ids.clear();
+            state.text_field_ids.clear();
             state.sample_ids.clear();
             state.images.clear();
             state.image_ids.clear();
             state.sample_audio.clear();
-            return Err(FrontplaneError::MissingExport {
-                name: "AE_control_event",
-            });
+            return Err(FrontplaneError::MissingExport { name });
         }
         if result.is_err() {
             let state = self.store.data_mut();
@@ -2688,6 +2787,53 @@ impl Frontplane {
     /// Converts portable typed input into the stable numeric ABI, keeping GPUI
     /// and platform key representations outside the guest boundary.
     pub fn event(&mut self, event: Event) -> Result<(), FrontplaneError> {
+        if let Event::TextScalar { id, .. } | Event::TextValue { id, .. } = event {
+            let Some(field) = self
+                .store
+                .data()
+                .metadata
+                .text_fields
+                .iter()
+                .find(|field| field.id == id)
+            else {
+                return Err(FrontplaneError::UnsupportedCapability {
+                    operation: "AE_text_event",
+                });
+            };
+            // Bounding the index is exactly equivalent to bounding the length,
+            // and it refuses an over-long value before any of it is delivered.
+            let (index, scalar, phase) = match event {
+                Event::TextScalar { index, scalar, .. } => {
+                    if index >= field.max_scalars || char::from_u32(scalar).is_none() {
+                        return Err(FrontplaneError::InvalidNumber {
+                            operation: "AE_text_event",
+                        });
+                    }
+                    (index as i32, scalar as i32, 0)
+                }
+                Event::TextValue { scalars, phase, .. } => {
+                    if scalars > field.max_scalars {
+                        return Err(FrontplaneError::InvalidNumber {
+                            operation: "AE_text_event",
+                        });
+                    }
+                    (-1, scalars as i32, phase as i32)
+                }
+                _ => unreachable!("the outer pattern admits only text events"),
+            };
+            let function = self
+                .exports
+                .text_event
+                .clone()
+                .ok_or(FrontplaneError::MissingExport {
+                    name: "AE_text_event",
+                })?;
+            return self.call_status(
+                "AE_text_event",
+                function,
+                (id as i32, index, scalar, phase),
+            );
+        }
         if let Event::Control { id, value, phase } = event {
             let Some(control) = self
                 .store
@@ -3110,6 +3256,9 @@ fn legacy_event_parameters(event: Event) -> (i32, i32, f32, f32) {
         Event::MenuAction(id) => (7, id as i32, 0.0, 0.0),
         Event::Focus(focused) => (8, i32::from(focused), 0.0, 0.0),
         Event::Control { .. } => unreachable!("control events use AE_control_event"),
+        Event::TextScalar { .. } | Event::TextValue { .. } => {
+            unreachable!("text events use AE_text_event")
+        }
         Event::DisplayRefresh(rate) => (9, rate.numerator as i32, rate.denominator as f32, 0.0),
         Event::PointerScroll {
             unit,
@@ -3154,6 +3303,9 @@ fn integer_event_parameters(
         Event::MenuAction(id) => (7, id as i32, 0, 0),
         Event::Focus(focused) => (8, i32::from(focused), 0, 0),
         Event::Control { .. } => unreachable!("control events use AE_control_event"),
+        Event::TextScalar { .. } | Event::TextValue { .. } => {
+            unreachable!("text events use AE_text_event")
+        }
         Event::DisplayRefresh(rate) => (9, rate.numerator as i32, rate.denominator as i32, 0),
         Event::PointerScroll {
             unit,
@@ -3454,6 +3606,47 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
     linker
         .func_wrap(
             WAT_IMPORT_MODULE,
+            "AE_text_field_place_q16",
+            |mut caller: Caller<'_, HostState>,
+             id: i32,
+             panel_id: i32,
+             x: i32,
+             y: i32,
+             width: i32,
+             height: i32,
+             flags: i32| {
+                let max_abs = caller.data().limits.max_coordinate_abs;
+                let Some(bounds) = q16_rect(x, y, width, height, max_abs) else {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::InvalidNumber("AE_text_field_place_q16"), -5);
+                };
+                if flags != 0 {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::Unsupported("AE_text_field_place_q16"), -4);
+                }
+                let id = id as u32;
+                if !caller.data().text_field_ids.contains(&id) {
+                    return caller.data_mut().reject(
+                        PendingError::InvalidFrame("text field placement uses undeclared field"),
+                        -8,
+                    );
+                }
+                push_text_field_placement(
+                    caller.data_mut(),
+                    TextFieldPlacement {
+                        id,
+                        panel_id: panel_id as u32,
+                        bounds,
+                    },
+                )
+            },
+        )
+        .map_err(runtime_error)?;
+    linker
+        .func_wrap(
+            WAT_IMPORT_MODULE,
             "AE_menu_item",
             |mut caller: Caller<'_, HostState>,
              id: i32,
@@ -3626,6 +3819,64 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
                     .metadata
                     .external_links
                     .push(ExternalLink { id, label, url });
+                0
+            },
+        )
+        .map_err(runtime_error)?;
+    linker
+        .func_wrap(
+            WAT_IMPORT_MODULE,
+            "AE_text_field",
+            |mut caller: Caller<'_, HostState>,
+             id: i32,
+             label_ptr: i32,
+             label_len: i32,
+             max_scalars: i32,
+             flags: i32| {
+                if caller.data().active_operation != Some("AE_configure") {
+                    return caller.data_mut().reject(
+                        PendingError::InvalidFrame("AE_text_field is configure-only"),
+                        -8,
+                    );
+                }
+                if flags != 0 {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::Unsupported("AE_text_field"), -4);
+                }
+                // A guest cannot ask the host to retain unbounded text on its
+                // behalf, and the forwarded scalar-event count stays capped by
+                // this declaration rather than by whatever a user happens to type.
+                if max_scalars <= 0 || max_scalars as u32 > MAX_TEXT_FIELD_SCALARS {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::InvalidNumber("AE_text_field"), -5);
+                }
+                if caller.data().metadata.text_fields.len() >= caller.data().limits.max_controls {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::Budget("AE_text_field", "text field"), -2);
+                }
+                let id = id as u32;
+                if !caller.data_mut().text_field_ids.insert(id) {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::DuplicateId("AE_text_field", id), -7);
+                }
+                let label = match read_string(&mut caller, label_ptr, label_len, "AE_text_field") {
+                    Ok(label) if !label.is_empty() => label,
+                    Ok(_) => {
+                        return caller
+                            .data_mut()
+                            .reject(PendingError::InvalidFrame("empty text field label"), -8);
+                    }
+                    Err(error) => return caller.data_mut().reject(error, -3),
+                };
+                caller.data_mut().metadata.text_fields.push(TextField {
+                    id,
+                    label,
+                    max_scalars: max_scalars as u32,
+                });
                 0
             },
         )
@@ -4801,6 +5052,38 @@ fn push_external_link_placement(state: &mut HostState, link: ExternalLinkPlaceme
     0
 }
 
+/// Validates one text-field placement against the open UI transaction, applying
+/// the same panel, budget, and uniqueness rules as every other placed control.
+fn push_text_field_placement(state: &mut HostState, field: TextFieldPlacement) -> i32 {
+    let max_controls = state.limits.max_controls;
+    let Some(ui) = state.ui.as_mut() else {
+        return state.reject(
+            PendingError::InvalidFrame("text field placement outside a ui transaction"),
+            -6,
+        );
+    };
+    if !ui.control_panel_ids.contains(&field.panel_id) {
+        return state.reject(
+            PendingError::InvalidFrame("text field placement uses unknown control panel"),
+            -8,
+        );
+    }
+    if ui.text_fields.len() >= max_controls {
+        return state.reject(
+            PendingError::Budget("AE_text_field_place_q16", "text field placement"),
+            -2,
+        );
+    }
+    if !ui.text_field_ids.insert(field.id) {
+        return state.reject(
+            PendingError::DuplicateId("AE_text_field_place_q16", field.id),
+            -7,
+        );
+    }
+    ui.text_fields.push(field);
+    0
+}
+
 fn push_unkeyed(state: &mut HostState, command: DrawCommand, operation: &'static str) -> i32 {
     let max_commands = state.limits.max_commands;
     let Some(frame) = state.frame.as_mut() else {
@@ -4934,6 +5217,8 @@ fn begin_ui(state: &mut HostState, revision: u32) -> i32 {
         button_ids: HashSet::new(),
         external_links: Vec::new(),
         external_link_ids: HashSet::new(),
+        text_fields: Vec::new(),
+        text_field_ids: HashSet::new(),
     });
     0
 }
@@ -4954,6 +5239,7 @@ fn end_ui(state: &mut HostState) -> i32 {
         sliders: ui.sliders,
         buttons: ui.buttons,
         external_links: ui.external_links,
+        text_fields: ui.text_fields,
     });
     0
 }

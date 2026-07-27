@@ -19,7 +19,7 @@ use aedicule::{
     LaunchAction, Limits, Metadata, PausePhase, PluginInit, PluginSource, PointerButton,
     PointerScrollUnit, Rect, RevisionTracker, SampleAsset, SampleAudioEvent, SimulationCall,
     SimulationScheduler, SliderControl, StateTransfer, SuspensionDisposition, SynthVoice,
-    WatRejectionStage, WebServer,
+    TextField, TextPhase, WatRejectionStage, WebServer,
     audio::{
         render_synth_program as render_synth_program_for_host,
         samples_to_host as audio_samples_to_host,
@@ -27,7 +27,7 @@ use aedicule::{
     depackage_application, discover_web_runtime, display_refresh_rate_from_environment,
     file_url_to_path, format_wat_rejection_diagnostic, initialize_frontplane, package_application,
     prepare_reload_with_assets, read_application_assets, read_application_file, resolve_launch,
-    run_application_tests,
+    run_application_tests, text_value_events,
 };
 use gpui::{
     AnyWindowHandle, App, AppContext as _, ClickEvent, Context, Entity, FocusHandle, Focusable,
@@ -41,6 +41,7 @@ use gpui_component::{
     ActiveTheme as _, Root, Selectable as _, Theme, ThemeMode, TitleBar,
     button::{Button, ButtonVariants as _},
     h_flex,
+    input::{Input, InputEvent, InputState},
     slider::{Slider, SliderEvent, SliderState},
 };
 use rodio::{
@@ -484,7 +485,9 @@ struct FrontplaneView {
     can_select_mixed_files_and_dirs: bool,
     guest_pointer_buttons: GuestPointerButtons,
     sliders: Vec<NativeSlider>,
+    text_fields: Vec<NativeTextField>,
     _slider_subscriptions: Vec<Subscription>,
+    _text_field_subscriptions: Vec<Subscription>,
     _focus_subscriptions: Vec<Subscription>,
 }
 
@@ -493,6 +496,15 @@ struct NativeSlider {
     control: SliderControl,
     state: Entity<SliderState>,
     synced_ui_revision: Option<u32>,
+}
+
+/// Retains the platform text widget for one declared field. Unlike a slider,
+/// the guest supplies no value in its placement, so the widget owns the edit
+/// buffer outright and there is nothing to reconcile back on a new revision.
+#[derive(Clone)]
+struct NativeTextField {
+    id: u32,
+    state: Entity<InputState>,
 }
 
 #[derive(Default)]
@@ -600,6 +612,62 @@ impl FrontplaneView {
         (sliders, subscriptions)
     }
 
+    /// Creates one platform text widget per declared field. Entity creation is
+    /// split from subscription because reload happens without a `Window` in
+    /// scope and has to reach one through the window handle first.
+    fn build_text_field_states(
+        fields: &[TextField],
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Vec<(u32, Entity<InputState>)> {
+        fields
+            .iter()
+            .map(|field| {
+                let capacity = field.max_scalars as usize;
+                let placeholder = field.label.clone();
+                let state = cx.new(|cx| {
+                    InputState::new(window, cx)
+                        .placeholder(placeholder)
+                        // The widget refuses over-long edits so the user sees
+                        // the bound; the host re-checks it independently,
+                        // because a capability bound may never rest on an
+                        // adapter's good behavior.
+                        .validate(move |text, _| text.chars().count() <= capacity)
+                });
+                (field.id, state)
+            })
+            .collect()
+    }
+
+    /// Forwards every edit as the adapter-shared scalar sequence, so the guest
+    /// observes exactly the value on screen and nothing accrues invisibly in
+    /// the host.
+    fn subscribe_text_fields(
+        states: Vec<(u32, Entity<InputState>)>,
+        cx: &mut Context<Self>,
+    ) -> (Vec<NativeTextField>, Vec<Subscription>) {
+        let mut fields = Vec::with_capacity(states.len());
+        let mut subscriptions = Vec::with_capacity(states.len());
+        for (id, state) in states {
+            subscriptions.push(cx.subscribe(
+                &state,
+                move |this, state, event: &InputEvent, cx| {
+                    let phase = match event {
+                        InputEvent::Change => TextPhase::Change,
+                        InputEvent::PressEnter { .. } => TextPhase::Commit,
+                        InputEvent::Focus | InputEvent::Blur => return,
+                    };
+                    let value = state.read(cx).value().to_string();
+                    for event in text_value_events(id, &value, phase) {
+                        this.queue_native_event(event, cx);
+                    }
+                },
+            ));
+            fields.push(NativeTextField { id, state });
+        }
+        (fields, subscriptions)
+    }
+
     fn new(
         startup: Startup,
         open_documents: Rc<RefCell<VecDeque<PathBuf>>>,
@@ -624,6 +692,10 @@ impl FrontplaneView {
         let suspension = GuestSuspension::new(metadata.pause_triggers.iter().copied());
         let entries = standard_menu_entries(&metadata);
         let (sliders, slider_subscriptions) = Self::build_sliders(&metadata.controls, cx);
+        let (text_fields, text_field_subscriptions) = Self::subscribe_text_fields(
+            Self::build_text_field_states(&metadata.text_fields, window, cx),
+            cx,
+        );
         let focus_handle = cx.focus_handle();
         let focus_subscriptions = vec![
             cx.on_focus_in(&focus_handle, window, |this, _, cx| {
@@ -676,7 +748,9 @@ impl FrontplaneView {
             can_select_mixed_files_and_dirs: cx.can_select_mixed_files_and_dirs(),
             guest_pointer_buttons: GuestPointerButtons::default(),
             sliders,
+            text_fields,
             _slider_subscriptions: slider_subscriptions,
+            _text_field_subscriptions: text_field_subscriptions,
             _focus_subscriptions: focus_subscriptions,
         };
 
@@ -919,6 +993,17 @@ impl FrontplaneView {
         let (sliders, subscriptions) = Self::build_sliders(&metadata.controls, cx);
         self.sliders = sliders;
         self._slider_subscriptions = subscriptions;
+        // A reload replaces the declarations, so every retained edit buffer is
+        // discarded with them rather than surviving into a different guest.
+        let text_field_states = cx
+            .update_window(self.window_handle, |_, window, app| {
+                Self::build_text_field_states(&metadata.text_fields, window, app)
+            })
+            .unwrap_or_default();
+        let (text_fields, text_field_subscriptions) =
+            Self::subscribe_text_fields(text_field_states, cx);
+        self.text_fields = text_fields;
+        self._text_field_subscriptions = text_field_subscriptions;
         self.restart_timing_loop(cx);
         self.fatal_error = None;
         self.reload_error = None;
@@ -1439,6 +1524,21 @@ impl Render for FrontplaneView {
                     .child(button)
             })
             .collect::<Vec<_>>();
+        let text_field_layers = ui
+            .iter()
+            .flat_map(|snapshot| snapshot.text_fields.iter())
+            .filter_map(|placement| {
+                let field = self
+                    .text_fields
+                    .iter()
+                    .find(|field| field.id == placement.id)?;
+                Some(
+                    guest_positioned_control_layer(placement.bounds)
+                        .id(("text-field", placement.id as usize))
+                        .child(Input::new(&field.state).h_full()),
+                )
+            })
+            .collect::<Vec<_>>();
         let external_link_layers = ui
             .iter()
             .flat_map(|snapshot| {
@@ -1612,6 +1712,7 @@ impl Render for FrontplaneView {
             .children(slider_layers)
             .children(button_layers)
             .children(external_link_layers)
+            .children(text_field_layers)
             .when(empty_state, |this| {
                 this.child(
                     div()
@@ -2361,6 +2462,7 @@ mod tests {
             pause_triggers: Vec::new(),
             controls: Vec::new(),
             external_links: Vec::new(),
+            text_fields: Vec::new(),
             synth_voices: Vec::new(),
             sample_assets: Vec::new(),
         };

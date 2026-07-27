@@ -153,21 +153,47 @@
         regression; the assertion is designed for the `web_packaged_audio`
         path that drives `demos/vibesteroids.aed` through the native binary.
         Do not "fix" key delivery on the strength of an ad-hoc invocation.
-    - [ ] Add the AVP text-entry control (Peter authorized the full slice,
+    - [x] Add the AVP text-entry control (Peter authorized the full slice,
       2026-07-25), built on `gpui-component`'s text input rather than a bespoke
       widget. This is what proves half (b) of the classifier above against a
-      real widget instead of an assertion. Follow the `AE_external_link`
+      real widget instead of an assertion. Follows the `AE_external_link`
       pattern: a configure-time declaration with budget, duplicate-id, and
       validation rejection, plus a `TextFieldPlacement { id, panel_id, bounds }`
-      in the retained Q16.16 document.
-      - [ ] OPEN ABI DESIGN QUESTION: existing controls return integers through
-        `AE_control_event(i32,i32,i32)`, but a text field must return a STRING
-        to the guest. Proposed: the guest supplies a bounded buffer and the host
-        copies host-validated UTF-8 into guest memory, mirroring `read_string`
-        in reverse, with an explicit maximum length declared at configure time.
-        Keep the guest incapable of causing an unbounded host allocation.
-      - [ ] Native, browser, and headless adapter parity; regenerate `WAT_ABI.md`
-        and `GUIDE_FOR_LLMS.md`; update `VIEW_PROTOCOL.md`.
+      in the retained Q16.16 document. (2026-07-27 08:31 EDT)
+      - [x] ABI DESIGN RESOLVED — no strings cross the boundary at all. Peter's
+        own proposal: keys stay keys, and text arrives as integers. One complete
+        value expands into an ordered run of `AE_text_event(id, index, scalar,
+        phase)` calls, one per Unicode scalar, terminated by `index = -1`
+        carrying the authoritative scalar count and the edit phase (1 change,
+        2 commit). The host therefore never writes into guest memory and the
+        guest never decodes UTF-8. Capacity is declared at configure time in
+        SCALARS (not bytes, not UTF-16 units), capped at
+        `MAX_TEXT_FIELD_SCALARS = 4096`; bounding `index` is exactly equivalent
+        to bounding the length and refuses an over-long value before any of it
+        is delivered. Lone surrogates and anything above `10FFFF` are refused.
+        Declaring a field without exporting `AE_text_event` rolls configure back.
+        (2026-07-27 08:31 EDT)
+      - [x] Native, browser, and headless adapter parity via one shared pure
+        expansion, `text_value_events`, so the three cannot drift into three
+        different wire sequences. Native and browser render `gpui_component`'s
+        `Input` bound to an `InputState` whose `validate` shows the capacity
+        bound, while the host re-checks it independently — an adapter's good
+        behavior may never be load-bearing for a capability bound. Headless
+        gains `aedicule-render --text ID=VALUE`, splitting at the first `=` so a
+        value may contain `=` or be empty. `WAT_ABI.md` and `GUIDE_FOR_LLMS.md`
+        regenerated. (2026-07-27 08:31 EDT)
+      - [ ] KNOWN AND DOCUMENTED v0.5 LIMITATION: the platform widget owns its
+        edit buffer, because `TextFieldPlacement` carries geometry only. A guest
+        can therefore read the value but cannot set, clear, or restore it, and a
+        reload discards it. This is stated plainly in both generated documents
+        rather than left for a guest author to discover. Lifting it needs a
+        guest-authored value in the placement plus reconciliation by accepted
+        revision, mirroring how sliders already reconcile.
+      - [ ] Update `VIEW_PROTOCOL.md` for the delivered text control.
+      - [ ] Extend the browser gate to assert the classifier's second half
+        mechanically: with a text field placed and focused, an editable element
+        MUST hold focus. `__AEDICULE_UI_SNAPSHOT.textFields` now publishes the
+        accepted placements, so the gate can find and click one deterministically.
     - [ ] Add an automated real-WebCore browser lane so this class of defect
       cannot reach Peter's phone again. Nix `playwright-driver.browsers`
       1.61.1 provides `webkit-2311` (and `firefox-1532`) on Linux x86_64.

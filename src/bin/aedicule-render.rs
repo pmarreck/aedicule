@@ -7,7 +7,8 @@ use std::{
 
 use aedicule::{
     ControlPhase, DEFAULT_PLUGIN_ENV, Event, FALLBACK_WAT, Frontplane, Limits, PluginInit,
-    PluginSource, display_refresh_rate_from_environment, initialize_frontplane, render_svg,
+    PluginSource, TextPhase, display_refresh_rate_from_environment, initialize_frontplane,
+    render_svg, text_value_events,
 };
 
 const DEFAULT_WIDTH: f32 = 1024.0;
@@ -24,6 +25,7 @@ Usage:
 Options:
   --ticks N          Advance N fixed simulation ticks before rendering
   --control ID=VALUE Apply an exact declared integer control; repeatable
+  --text ID=VALUE    Commit a declared text field's complete value; repeatable
   --activate-link ID Validate/report a current external-link request; repeatable
   --seed N           Initialize the plugin with deterministic seed N
   --width N          Logical viewport width (default: 1024)
@@ -45,6 +47,7 @@ struct RenderOptions {
     width: f32,
     height: f32,
     controls: Vec<ControlArgument>,
+    texts: Vec<TextArgument>,
     activate_links: Vec<u32>,
 }
 
@@ -52,6 +55,15 @@ struct RenderOptions {
 struct ControlArgument {
     id: u32,
     value: i32,
+}
+
+/// One complete headless text-field value. It is retained as text only so the
+/// adapter-shared expansion can turn it into the exact scalar sequence a native
+/// or browser text field emits; no bytes cross the guest boundary.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TextArgument {
+    id: u32,
+    value: String,
 }
 
 impl Default for RenderOptions {
@@ -64,6 +76,7 @@ impl Default for RenderOptions {
             width: DEFAULT_WIDTH,
             height: DEFAULT_HEIGHT,
             controls: Vec::new(),
+            texts: Vec::new(),
             activate_links: Vec::new(),
         }
     }
@@ -134,6 +147,10 @@ fn parse_arguments(arguments: impl Iterator<Item = String>) -> Result<Action, St
             "--control" => {
                 let value = next_value(&mut arguments, "--control")?;
                 options.controls.push(parse_control(&value)?);
+            }
+            "--text" => {
+                let value = next_value(&mut arguments, "--text")?;
+                options.texts.push(parse_text(&value)?);
             }
             "--activate-link" => {
                 let value = next_value(&mut arguments, "--activate-link")?;
@@ -211,6 +228,21 @@ fn parse_control(value: &str) -> Result<ControlArgument, String> {
     })
 }
 
+/// Splits only at the first `=`, because a text value may legitimately contain
+/// further `=` characters and may also be empty, which clears the field.
+fn parse_text(value: &str) -> Result<TextArgument, String> {
+    let (id, text) = value
+        .split_once('=')
+        .ok_or_else(|| format!("invalid --text value: {value}; expected ID=VALUE"))?;
+    if id.is_empty() {
+        return Err(format!("invalid --text value: {value}; expected ID=VALUE"));
+    }
+    Ok(TextArgument {
+        id: id.parse().map_err(|_| format!("invalid --text ID: {id}"))?,
+        value: text.to_owned(),
+    })
+}
+
 fn set_plugin(options: &mut RenderOptions, path: String) -> Result<(), String> {
     if options.plugin.is_some() {
         return Err("only one plugin input may be specified".into());
@@ -246,6 +278,12 @@ fn run(options: RenderOptions) -> Result<(), String> {
                 phase: ControlPhase::Release,
             })
             .map_err(|error| error.to_string())?;
+    }
+
+    for text in options.texts {
+        for event in text_value_events(text.id, &text.value, TextPhase::Commit) {
+            frontplane.event(event).map_err(|error| error.to_string())?;
+        }
     }
 
     let mut remaining = options.ticks;

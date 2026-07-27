@@ -53,6 +53,7 @@ fn configured_https_link_becomes_one_atomic_guest_positioned_view() {
                     height: 32.0,
                 },
             }],
+            text_fields: Vec::new(),
         })
     );
     assert_eq!(

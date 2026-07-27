@@ -375,3 +375,98 @@ fn headless_controls_are_ordered_after_init_and_before_ticks() {
     }
     fs::remove_dir_all(directory).unwrap();
 }
+
+/// Headless text entry is the third adapter of the parity contract: the same
+/// scalar sequence that a native or browser text field emits must be reachable
+/// deterministically from automation, with no window and no keyboard.
+#[test]
+fn headless_text_entry_delivers_a_committed_scalar_sequence() {
+	let directory =
+		std::env::temp_dir().join(format!("aedicule headless text {}", std::process::id()));
+	fs::create_dir_all(&directory).unwrap();
+	let plugin = directory.join("text-field.wat");
+	fs::write(
+		&plugin,
+		r#"(module
+			(import "aedicule.v0" "AE_text_field" (func $field (param i32 i32 i32 i32 i32) (result i32)))
+			(import "aedicule.v0" "AE_frame_begin_rgba" (func $begin (param i32) (result i32)))
+			(import "aedicule.v0" "AE_frame_end" (func $end (result i32)))
+			(memory (export "memory") 1)
+			(data (i32.const 0) "Name")
+			(global $first (mut i32) (i32.const 0))
+			(global $count (mut i32) (i32.const 0))
+			(global $phase (mut i32) (i32.const 0))
+			(func (export "AE_abi_major") (result i32) i32.const 0)
+			(func (export "AE_abi_minor") (result i32) i32.const 5)
+			(func (export "AE_configure") (result i32)
+				i32.const 3 i32.const 0 i32.const 4 i32.const 8 i32.const 0
+				call $field)
+			(func (export "AE_init_i32") (param i32 i32 i32 i32) (result i32) i32.const 0)
+			(func (export "AE_event_i32") (param i32 i32 i32 i32) (result i32) i32.const 0)
+			(func (export "AE_text_event")
+				(param $id i32) (param $index i32) (param $scalar i32) (param $phase i32) (result i32)
+				local.get $index i32.const -1 i32.eq
+				if
+					local.get $scalar global.set $count
+					local.get $phase global.set $phase
+				else
+					local.get $index i32.eqz
+					if local.get $scalar global.set $first end
+				end
+				i32.const 0)
+			(func (export "AE_tick") (param i32) (result i32) i32.const 0)
+			(func (export "AE_render") (result i32)
+				global.get $first i32.const 0x67 i32.eq
+				global.get $count i32.const 2 i32.eq
+				i32.and
+				global.get $phase i32.const 2 i32.eq
+				i32.and
+				if (result i32) i32.const 0x00ff00ff else i32.const 0xff0000ff end
+				call $begin drop call $end drop i32.const 0)
+			(func (export "AE_state_ptr") (result i32) i32.const 0)
+			(func (export "AE_state_len") (result i32) i32.const 0)
+			(func (export "AE_state_schema") (result i32) i32.const 1))"#,
+	)
+	.unwrap();
+
+	let result = Command::new(env!("CARGO_BIN_EXE_aedicule-render"))
+		.env("MUTE_DEBUG_STATUS", "1")
+		.args([plugin.to_str().unwrap(), "--text", "3=go"])
+		.output()
+		.unwrap();
+
+	assert!(result.status.success(), "{:?}", result.stderr);
+	assert!(result.stderr.is_empty(), "{:?}", result.stderr);
+	assert!(
+		String::from_utf8(result.stdout)
+			.unwrap()
+			.contains("fill=\"#00ff00\"")
+	);
+
+	// An undeclared field and an over-capacity value are both guest-visible
+	// refusals, not silently truncated deliveries.
+	for invalid in ["4=go", "3=overlong!"] {
+		let result = Command::new(env!("CARGO_BIN_EXE_aedicule-render"))
+			.env("MUTE_DEBUG_STATUS", "1")
+			.args([plugin.to_str().unwrap(), "--text", invalid])
+			.output()
+			.unwrap();
+		assert_eq!(result.status.code(), Some(1), "text {invalid}");
+		assert!(result.stdout.is_empty(), "text {invalid}");
+		assert!(
+			String::from_utf8_lossy(&result.stderr).contains("AE_text_event"),
+			"text {invalid}: {:?}",
+			result.stderr
+		);
+	}
+
+	// An empty value is legitimate and must survive argument parsing.
+	let cleared = Command::new(env!("CARGO_BIN_EXE_aedicule-render"))
+		.env("MUTE_DEBUG_STATUS", "1")
+		.args([plugin.to_str().unwrap(), "--text", "3="])
+		.output()
+		.unwrap();
+	assert!(cleared.status.success(), "{:?}", cleared.stderr);
+
+	fs::remove_dir_all(directory).unwrap();
+}

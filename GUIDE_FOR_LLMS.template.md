@@ -133,7 +133,7 @@ Revisions are opaque 32-bit values and must differ from the last accepted revisi
 
 Submitting no UI transaction retains the last accepted snapshot. Submitting a complete empty snapshot removes it. An invalid candidate leaves the prior snapshot intact. After a control or action event, update guest state and submit a new revision if the visible control value or selected state should change.
 
-This current profile contains panels, exact integer sliders, buttons, and external links only. It is not the proposed general layout/tree/text-input surface.
+This current profile contains panels, exact integer sliders, buttons, external links, and single-line text fields only. It is not the proposed general layout/tree surface, and its text field is deliberately narrower than the proposed text-input node: the widget owns its buffer, so a guest reads the value but cannot set it.
 
 ### External links
 
@@ -338,7 +338,7 @@ The following items are roadmap material. Do not import or export names for them
 
 ### General AVP application UI
 
-The intended general Aedicule View Protocol is a retained semantic tree with stable node IDs, atomic complete revisions, host-computed layout, adapter reconciliation, accessibility, and headless inspection. Planned nodes include rows/columns, scroll containers, semantic text, text inputs with IME, toggles, images, canvas regions, tabs, split panes, dialogs, lists, tables, trees, grids, and virtualized collections. The current absolute panel/slider/button/link snapshot is only the working v0 kernel.
+The intended general Aedicule View Protocol is a retained semantic tree with stable node IDs, atomic complete revisions, host-computed layout, adapter reconciliation, accessibility, and headless inspection. Planned nodes include rows/columns, scroll containers, semantic text, guest-owned multi-line text inputs, toggles, images, canvas regions, tabs, split panes, dialogs, lists, tables, trees, grids, and virtualized collections. The current absolute panel/slider/button/link/text-field snapshot is only the working v0 kernel.
 
 The guest will own desired state, content, semantics, and layout constraints. The host will validate and adapt them to GPUI, browser, accessibility, and headless frontplanes.
 

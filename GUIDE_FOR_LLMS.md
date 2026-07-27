@@ -4,7 +4,7 @@
 
 Guide version: `0.3.0`
 
-Current Aedicule WAT ABI: `0.4`
+Current Aedicule WAT ABI: `0.5`
 
 Canonical guide: https://github.com/pmarreck/aedicule/blob/yolo/GUIDE_FOR_LLMS.md
 
@@ -15,7 +15,7 @@ An Aedicule **guest** is a WebAssembly Text (`.wat`) application. Aedicule is th
 ## Ground rules
 
 1. Treat the exact generated appendix as the authority for names and signatures. Import only from `aedicule.v0`, use only `AE_*` names, and declare the ABI version exports.
-2. Everything under **Available now** is implemented in ABI `0.4`. Everything under **Proposed—not callable yet** is design direction, not an import or export you may emit.
+2. Everything under **Available now** is implemented in ABI `0.5`. Everything under **Proposed—not callable yet** is design direction, not an import or export you may emit.
 3. Check every status-returning host import. `0` means success. A nonzero result rejects the guest transaction that contains it; ignoring the result does not make invalid output valid.
 4. Keep application state in guest memory. Treat `AE_render` as a projection of that state, not as the place to advance simulation or fire one-shot effects.
 5. Comment intent, units, invariants, and state layout. WAT is compact enough that an uncommented correct program can still be unmaintainable.
@@ -133,7 +133,7 @@ Revisions are opaque 32-bit values and must differ from the last accepted revisi
 
 Submitting no UI transaction retains the last accepted snapshot. Submitting a complete empty snapshot removes it. An invalid candidate leaves the prior snapshot intact. After a control or action event, update guest state and submit a new revision if the visible control value or selected state should change.
 
-This current profile contains panels, exact integer sliders, buttons, and external links only. It is not the proposed general layout/tree/text-input surface.
+This current profile contains panels, exact integer sliders, buttons, external links, and single-line text fields only. It is not the proposed general layout/tree surface, and its text field is deliberately narrower than the proposed text-input node: the widget owns its buffer, so a guest reads the value but cannot set it.
 
 ### External links
 
@@ -330,7 +330,7 @@ aedicule --test --seed 0x5eed project/
 aedicule-render project/ --ticks 1
 ```
 
-Pin tool versions in reproducible builds. Tool defaults evolve as WebAssembly proposals graduate, while Aedicule ABI `0.4` intentionally exposes a narrower core contract.
+Pin tool versions in reproducible builds. Tool defaults evolve as WebAssembly proposals graduate, while Aedicule ABI `0.5` intentionally exposes a narrower core contract.
 
 ## Proposed—not callable yet
 
@@ -338,7 +338,7 @@ The following items are roadmap material. Do not import or export names for them
 
 ### General AVP application UI
 
-The intended general Aedicule View Protocol is a retained semantic tree with stable node IDs, atomic complete revisions, host-computed layout, adapter reconciliation, accessibility, and headless inspection. Planned nodes include rows/columns, scroll containers, semantic text, text inputs with IME, toggles, images, canvas regions, tabs, split panes, dialogs, lists, tables, trees, grids, and virtualized collections. The current absolute panel/slider/button/link snapshot is only the working v0 kernel.
+The intended general Aedicule View Protocol is a retained semantic tree with stable node IDs, atomic complete revisions, host-computed layout, adapter reconciliation, accessibility, and headless inspection. Planned nodes include rows/columns, scroll containers, semantic text, guest-owned multi-line text inputs, toggles, images, canvas regions, tabs, split panes, dialogs, lists, tables, trees, grids, and virtualized collections. The current absolute panel/slider/button/link/text-field snapshot is only the working v0 kernel.
 
 The guest will own desired state, content, semantics, and layout constraints. The host will validate and adapt them to GPUI, browser, accessibility, and headless frontplanes.
 
@@ -393,7 +393,7 @@ Before calling a guest ready:
 
 The remainder is generated from the same declarative Rust table used to check `WAT_ABI.md`. It is deliberately duplicated here so an LLM with only this file still has every current name, signature, event code, and lifecycle rule.
 
-### Aedicule WAT ABI v0.4
+### Aedicule WAT ABI v0.5
 
 This is the complete client-facing ABI for WAT applications accepted by Aedicule today. The only import module is `aedicule.v0`. Every function at this boundary is named `AE_*`; the provisional `host.v0` / `fp_*` names are rejected.
 
@@ -487,6 +487,16 @@ ABI v0.4 adds a bounded, guest-owned external-navigation control rather than amb
 
 Native and browser adapters resolve activation against the exact currently accepted `(revision, id)` only from the platform control's real click handler. Native delegates to the platform URL service. Browser activation requires transient user activation and opens a new browsing context with `_blank` and `noopener`; popup-policy failure is an adapter diagnostic, not guest-visible state. The guest receives no navigation result and cannot synthesize activation through an import. Headless `aedicule-render --activate-link ID` never opens a browser; it validates the current placement and emits the deterministic revision, ID, and normalized URL to stderr for automation.
 
+#### Text entry
+
+ABI v0.5 adds the one control backed by a real editable element. During `AE_configure`, `AE_text_field` declares a stable ID, a nonempty accessible label, and an exact capacity measured in **Unicode scalar values** — not bytes and not UTF-16 code units — of at most 4096; `flags` must be zero. A guest that declares any text field must export `(func (export "AE_text_event") (param id i32) (param index i32) (param scalar i32) (param phase i32) (result i32))`, and configure is rejected without it. During a changed UI snapshot, `AE_text_field_place_q16` places that ID inside an already-declared panel using the same absolute Q16.16 geometry as every other control.
+
+The guest never receives a byte buffer and the host never writes into guest memory. One complete value arrives as an ordered run of integer events: `index` is the zero-based scalar position, `scalar` is the Unicode scalar value at that position, and `phase` is `0`. A terminating call with `index = -1` carries the authoritative scalar count in `scalar` and the edit phase in `phase`: `1` for a continuous change and `2` for the committed edge. A value of length zero sends only that terminator, which is how a cleared field is expressed. The host rejects any index at or beyond the declared capacity, any count above it, and any code point that is not a Unicode scalar value — surrogates `D800`-`DFFF` and anything above `10FFFF`. Treat the terminator as the transaction boundary and swap the guest-side buffer there rather than acting on a partial run.
+
+Focusing a placed text field is the only thing in Aedicule that may raise a mobile software keyboard: the platform text widget takes focus, GPUI installs its input handler, and the browser backend then moves DOM focus to its editable element. Ordinary canvas interaction leaves no editable element focused, so a touch on non-text content presents no keyboard.
+
+In v0.5 the platform widget owns its edit buffer. A placement carries geometry only, so a guest cannot set, clear, or restore the displayed text, and a reload discards it; a guest that needs to own the value must wait for a later revision of this profile. Headless `aedicule-render --text ID=VALUE` is repeatable, splits at the first `=` so a value may itself contain `=` or be empty, uses phase `2`, and executes after initialization but before requested ticks and rendering.
+
 ##### `AE_title`
 
 ```wat
@@ -574,6 +584,22 @@ Places a declared action as a keyed native button; flag bit 0 is the guest-autho
 ```
 
 Places one declared external link in a guest-owned panel using Q16.16 logical-pixel geometry; version 0 requires `flags = 0`.
+
+##### `AE_text_field`
+
+```wat
+(func $AE_text_field (param id i32) (param label_ptr i32) (param label_len i32) (param max_scalars i32) (param flags i32) (result i32))
+```
+
+Declares one bounded text-entry control during `AE_configure`; committed text arrives as integer scalar events, never as a host write into guest memory. Version 0 requires `flags = 0`.
+
+##### `AE_text_field_place_q16`
+
+```wat
+(func $AE_text_field_place_q16 (param id i32) (param panel_id i32) (param x_q16 i32) (param y_q16 i32) (param width_q16 i32) (param height_q16 i32) (param flags i32) (result i32))
+```
+
+Places one declared text field in a guest-owned panel using Q16.16 logical-pixel geometry; version 0 requires `flags = 0`.
 
 ##### `AE_sin_cos_turn`
 
@@ -817,7 +843,7 @@ Accepts a bounded UTF-8 diagnostic message; version 0 does not expose its sink t
 
 #### Portable text faces
 
-`AE_text` remains source-compatible and uses the active platform UI face. `AE_text_font` and `AE_text_font_q16` accept stable selector `0` for that platform default or `1` for Aedicule's embedded Geist Mono Regular. Selector `1` is registered from identical OFL-1.1 font bytes in native and browser adapters, so aligned numerical data never depends on host installation. Unknown selectors reject the complete render transaction rather than silently substituting a proportional face. Package-supplied font handles are not part of ABI v0.4; they require bounded `.aed` asset transport and collision-safe family identities in every adapter.
+`AE_text` remains source-compatible and uses the active platform UI face. `AE_text_font` and `AE_text_font_q16` accept stable selector `0` for that platform default or `1` for Aedicule's embedded Geist Mono Regular. Selector `1` is registered from identical OFL-1.1 font bytes in native and browser adapters, so aligned numerical data never depends on host installation. Unknown selectors reject the complete render transaction rather than silently substituting a proportional face. Package-supplied font handles are not part of ABI v0.5; they require bounded `.aed` asset transport and collision-safe family identities in every adapter.
 
 #### Stable draw IDs
 

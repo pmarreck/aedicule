@@ -7,8 +7,9 @@ use std::{borrow::Cow, cell::OnceCell};
 use aedicule::{
     ApplicationAssets, ControlLabelPlacement, ControlPhase, Event, ExternalLinkRequest,
     GEIST_MONO_REGULAR, Key, PluginInit, PointerButton, PointerScrollUnit, Rect, SliderControl,
-    UiSnapshot,
+    TextField, TextPhase, UiSnapshot,
     gpui_canvas::paint_frame,
+    text_value_events,
     web::{
         BROWSER_ASSETS_GLOBAL, BROWSER_WAT_GLOBAL, BrowserDeliveredEventCounts,
         BrowserInputOutcome, BrowserRuntime, required_browser_wat,
@@ -26,6 +27,7 @@ use gpui::{
 use gpui_component::{
     Root, Selectable as _, Theme, ThemeMode,
     button::{Button, ButtonVariants as _},
+    input::{Input, InputEvent, InputState},
     slider::{Slider, SliderEvent, SliderState},
 };
 #[cfg(target_family = "wasm")]
@@ -181,6 +183,7 @@ fn publish_browser_ui_snapshot(ui: &UiSnapshot) {
     let sliders = js_sys::Array::new();
     let buttons = js_sys::Array::new();
     let external_links = js_sys::Array::new();
+    let text_fields = js_sys::Array::new();
     for (id, bounds, output) in ui
         .control_panels
         .iter()
@@ -199,6 +202,11 @@ fn publish_browser_ui_snapshot(ui: &UiSnapshot) {
             ui.external_links
                 .iter()
                 .map(|link| (link.id, link.bounds, &external_links)),
+        )
+        .chain(
+            ui.text_fields
+                .iter()
+                .map(|field| (field.id, field.bounds, &text_fields)),
         )
     {
         let placement = js_sys::Object::new();
@@ -221,6 +229,7 @@ fn publish_browser_ui_snapshot(ui: &UiSnapshot) {
     set_js_property(&diagnostic, "sliders", &sliders);
     set_js_property(&diagnostic, "buttons", &buttons);
     set_js_property(&diagnostic, "externalLinks", &external_links);
+    set_js_property(&diagnostic, "textFields", &text_fields);
     js_sys::Reflect::set(
         &js_sys::global(),
         &JsValue::from_str("__AEDICULE_UI_SNAPSHOT"),
@@ -300,7 +309,9 @@ struct WebFrontplane {
     fatal_error: Option<String>,
     pressed_pointer_buttons: [u16; 3],
     sliders: Vec<WebSlider>,
+    text_fields: Vec<WebTextField>,
     _slider_subscriptions: Vec<Subscription>,
+    _text_field_subscriptions: Vec<Subscription>,
     _focus_subscriptions: Vec<Subscription>,
 }
 
@@ -310,6 +321,16 @@ struct WebSlider {
     control: SliderControl,
     state: Entity<SliderState>,
     synced_ui_revision: Option<u32>,
+}
+
+/// Retains one browser text widget per declared field. Focusing it is what
+/// legitimately raises a mobile software keyboard: GPUI installs its input
+/// handler, and the web backend then moves DOM focus to the editable element.
+#[cfg_attr(not(target_family = "wasm"), allow(dead_code))]
+#[derive(Clone)]
+struct WebTextField {
+    id: u32,
+    state: Entity<InputState>,
 }
 
 #[cfg_attr(not(target_family = "wasm"), allow(dead_code))]
@@ -369,6 +390,48 @@ impl WebFrontplane {
         (sliders, subscriptions)
     }
 
+    /// Builds one browser text widget per declared field and forwards every
+    /// edit as the adapter-shared scalar sequence, so browser, native, and
+    /// headless delivery cannot drift apart.
+    fn build_text_fields(
+        fields: &[TextField],
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> (Vec<WebTextField>, Vec<Subscription>) {
+        let mut text_fields = Vec::with_capacity(fields.len());
+        let mut subscriptions = Vec::with_capacity(fields.len());
+        for field in fields {
+            let capacity = field.max_scalars as usize;
+            let placeholder = field.label.clone();
+            let state = cx.new(|cx| {
+                InputState::new(window, cx)
+                    .placeholder(placeholder)
+                    // The widget shows the bound; the host enforces it again,
+                    // because a capability bound may never rest on an
+                    // adapter's good behavior.
+                    .validate(move |text, _| text.chars().count() <= capacity)
+            });
+            let id = field.id;
+            subscriptions.push(cx.subscribe(
+                &state,
+                move |this, state, event: &InputEvent, cx| {
+                    let phase = match event {
+                        InputEvent::Change => TextPhase::Change,
+                        InputEvent::PressEnter { .. } => TextPhase::Commit,
+                        InputEvent::Focus | InputEvent::Blur => return,
+                    };
+                    let value = state.read(cx).value().to_string();
+                    for event in text_value_events(id, &value, phase) {
+                        this.queue_event(event);
+                    }
+                    cx.notify();
+                },
+            ));
+            text_fields.push(WebTextField { id, state });
+        }
+        (text_fields, subscriptions)
+    }
+
     fn new(
         runtime: BrowserRuntime,
         origin: Instant,
@@ -376,6 +439,8 @@ impl WebFrontplane {
         cx: &mut Context<Self>,
     ) -> Self {
         let (sliders, slider_subscriptions) = Self::build_sliders(&runtime.metadata().controls, cx);
+        let (text_fields, text_field_subscriptions) =
+            Self::build_text_fields(&runtime.metadata().text_fields, window, cx);
         let focus_handle = cx.focus_handle();
         let focus_subscriptions = vec![
             cx.on_focus_in(&focus_handle, window, |this, _, cx| {
@@ -400,7 +465,9 @@ impl WebFrontplane {
             fatal_error: None,
             pressed_pointer_buttons: [0; 3],
             sliders,
+            text_fields,
             _slider_subscriptions: slider_subscriptions,
+            _text_field_subscriptions: text_field_subscriptions,
             _focus_subscriptions: focus_subscriptions,
         }
     }
@@ -726,6 +793,21 @@ impl Render for WebFrontplane {
                 )
             })
             .collect::<Vec<_>>();
+        let text_field_layers = ui
+            .iter()
+            .flat_map(|snapshot| snapshot.text_fields.iter())
+            .filter_map(|placement| {
+                let field = self
+                    .text_fields
+                    .iter()
+                    .find(|field| field.id == placement.id)?;
+                Some(
+                    browser_control_layer(placement.bounds)
+                        .id(("text-field", placement.id as usize))
+                        .child(Input::new(&field.state).h_full()),
+                )
+            })
+            .collect::<Vec<_>>();
         let canvas_layer = div()
             .id("aedicule-web-canvas")
             .absolute()
@@ -827,6 +909,7 @@ impl Render for WebFrontplane {
             .children(slider_layers)
             .children(button_layers)
             .children(external_link_layers)
+            .children(text_field_layers)
             .when_some(fatal_error, |this, error| {
                 this.child(
                     div()

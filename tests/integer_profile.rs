@@ -237,6 +237,7 @@ fn integer_lifecycle_omits_legacy_float_exports_and_receives_q16_viewports() {
                 selected: true,
             }],
             external_links: Vec::new(),
+            text_fields: Vec::new(),
         })
     );
     assert_eq!(
