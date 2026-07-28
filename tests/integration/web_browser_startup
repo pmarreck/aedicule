@@ -548,6 +548,7 @@ async function pageSnapshot(protocol) {
 				return { bufferWidth: canvas.width, bufferHeight: canvas.height,
 					cssWidth: bounds.width, cssHeight: bounds.height };
 			}),
+			diagnosticOverlay: document.getElementById("aedicule-diagnostic-overlay") !== null,
 			selectableElements: (() => {
 				const editable = element => element instanceof HTMLInputElement
 					|| element instanceof HTMLTextAreaElement
@@ -1268,6 +1269,12 @@ async function inspect(options) {
 		if (finalSnapshot.runtime?.inProgress
 			|| finalSnapshot.runtime?.framesCompleted <= snapshot.runtime?.framesCompleted) {
 			failures.push("Aedicule runtime did not complete another browser frame after startup");
+		}
+		// Every gate here loads without `?diag`, so the debugging overlay must be
+		// absent. Nothing else would notice it: it inherits the page's selection
+		// suppression and throws nothing, so it would ship invisibly to this gate.
+		if (finalSnapshot.diagnosticOverlay === true) {
+			failures.push("the diagnostic overlay was installed; it is opt-in via ?diag only");
 		}
 		// A long press on a touch platform selects whatever the document allows
 		// it to. This sweeps every element rather than spot-checking the one

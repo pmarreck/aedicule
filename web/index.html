@@ -45,6 +45,46 @@
 	</head>
 	<body>
 		<main id="aedicule-startup-status" role="status" aria-live="polite">Loading Aedicule…</main>
+		<script>
+			/* Opt-in on-screen diagnostic for platforms with no reachable
+			   developer console. A touch device cannot be inspected without a
+			   tethered desktop, so the frame counter and the most recent
+			   uncaught error have to be readable on the device itself. Absent
+			   `?diag` this installs nothing and adds no element. */
+			(() => {
+				if (!new URLSearchParams(location.search).has("diag")) return;
+				const errors = [];
+				addEventListener("error", event => errors.push(
+					`${event.message} @ ${event.filename ?? "?"}:${event.lineno ?? 0}`));
+				addEventListener("unhandledrejection", event => errors.push(
+					`rejection: ${event.reason}`));
+				const panel = document.createElement("pre");
+				panel.id = "aedicule-diagnostic-overlay";
+				panel.style.cssText = "position:fixed;top:0;left:0;z-index:2147483646;"
+					+ "margin:0;padding:.4rem .6rem;pointer-events:none;"
+					+ "font:600 .8rem/1.35 ui-monospace,Menlo,monospace;"
+					+ "color:#c8f7d0;background:rgba(0,0,0,.72);white-space:pre-wrap";
+				let previousFrames = -1;
+				let stalledPolls = 0;
+				setInterval(() => {
+					const runtime = globalThis.__AEDICULE_RUNTIME_DIAGNOSTIC;
+					const frames = runtime?.framesCompleted ?? -1;
+					if (frames === previousFrames) {
+						stalledPolls += 1;
+					} else {
+						stalledPolls = 0;
+						previousFrames = frames;
+					}
+					panel.textContent = [
+						`frames ${frames}  stalled ${stalledPolls}`,
+						`guest ${Math.round(runtime?.lastGuestElapsedMs ?? -1)}ms`,
+						`errors ${errors.length}`,
+						errors.length > 0 ? errors[errors.length - 1] : "(none)",
+					].join("\n");
+				}, 500);
+				addEventListener("DOMContentLoaded", () => document.body.append(panel));
+			})();
+		</script>
 		<script src="./coi-serviceworker.js"></script>
 		<script type="module" src="./bootstrap.js?v=startup-diagnostics-2"></script>
 	</body>
