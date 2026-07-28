@@ -29,6 +29,13 @@ expect_text "$root/web/index.html" 'id="aedicule-startup-status"' \
 	'browser page has no visible startup status surface'
 expect_text "$root/web/index.html" 'aria-live="polite"' \
 	'browser startup status does not announce progress or failure accessibly'
+# Chromium implements neither property, so the browser gate cannot observe these
+# two at runtime; assert them at the source instead. `-webkit-touch-callout` is
+# what actually governs the iOS long-press callout.
+expect_text "$root/web/index.html" '-webkit-touch-callout: none' \
+	'browser page does not suppress the touch long-press callout'
+expect_text "$root/web/index.html" '-webkit-tap-highlight-color: transparent' \
+	'browser page does not suppress the touch tap highlight'
 expect_text "$root/web/bootstrap.js" 'crossOriginIsolated' \
 	'browser bootstrap does not preflight cross-origin isolation'
 expect_text "$root/web/bootstrap.js" 'await globalThis.__AEDICULE_ISOLATION_READY' \

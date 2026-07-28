@@ -10,7 +10,25 @@
 			* { box-sizing: border-box; margin: 0; padding: 0; }
 			html, body, canvas { width: 100%; height: 100%; }
 			body { background: #080b14; color: #f4f7ff; }
-			canvas { display: block; touch-action: none; outline: none; user-select: none; }
+			canvas { display: block; touch-action: none; outline: none; }
+			/* An Aedicule delivery is an application, not a document. Without
+			   this a long press on a touch platform selects the page around the
+			   canvas and raises the system callout, and the selection cannot be
+			   dismissed by tapping back into the application. The prefixed
+			   properties are the ones iOS actually honours; the unprefixed
+			   `user-select` alone left `html` and `body` selectable. */
+			html, body, canvas {
+				-webkit-user-select: none;
+				user-select: none;
+				-webkit-touch-callout: none;
+				-webkit-tap-highlight-color: transparent;
+			}
+			/* Text entry is the one place selection is wanted, so editable
+			   elements opt back in rather than inheriting the suppression. */
+			input, textarea, [contenteditable] {
+				-webkit-user-select: text;
+				user-select: text;
+			}
 			#aedicule-startup-status {
 				position: fixed;
 				inset: 0;

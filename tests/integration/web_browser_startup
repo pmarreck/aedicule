@@ -548,6 +548,19 @@ async function pageSnapshot(protocol) {
 				return { bufferWidth: canvas.width, bufferHeight: canvas.height,
 					cssWidth: bounds.width, cssHeight: bounds.height };
 			}),
+			selectableElements: (() => {
+				const editable = element => element instanceof HTMLInputElement
+					|| element instanceof HTMLTextAreaElement
+					|| element.isContentEditable === true;
+				return Array.from(document.querySelectorAll("*"))
+					.filter(element => !editable(element))
+					.filter(element => {
+						const style = getComputedStyle(element);
+						return style.userSelect !== "none"
+							|| style.getPropertyValue("-webkit-user-select") !== "none";
+					})
+					.map(element => element.tagName.toLowerCase());
+			})(),
 		}))()`,
 		returnByValue: true,
 	});
@@ -1255,6 +1268,17 @@ async function inspect(options) {
 		if (finalSnapshot.runtime?.inProgress
 			|| finalSnapshot.runtime?.framesCompleted <= snapshot.runtime?.framesCompleted) {
 			failures.push("Aedicule runtime did not complete another browser frame after startup");
+		}
+		// A long press on a touch platform selects whatever the document allows
+		// it to. This sweeps every element rather than spot-checking the one
+		// rule the delivery happens to declare, because the selection Peter saw
+		// on iOS came from the document around the canvas, not the canvas.
+		const selectable = finalSnapshot.selectableElements ?? [];
+		if (selectable.length > 0) {
+			const counted = [...new Set(selectable)]
+				.map(tag => `${tag}x${selectable.filter(each => each === tag).length}`)
+				.join(", ");
+			failures.push(`${selectable.length} element(s) remain user-selectable: ${counted}`);
 		}
 		if (options.requireAudioPlayback) {
 			failures.push(...audioPlaybackFailures(

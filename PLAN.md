@@ -1,5 +1,37 @@
 # Plan
 
+- [ ] Fix the two iOS Safari defects Peter reported 2026-07-28 16:38 EDT on the
+  deployed `73891e6` Ulam page. The keyboard defect is CONFIRMED FIXED on
+  hardware; these two are what became reachable once it was.
+  - [ ] Defect 1: pressing Play advances exactly one simulation frame per tap
+    and then stops. Read-only evidence so far, not yet a failing test:
+    `gpui_web`'s `create_raf_closure` re-schedules the next animation frame
+    *after* invoking the frame callback, so a single exception anywhere in a
+    frame permanently kills the animation loop, after which only input-driven
+    redraws render — one frame per tap exactly. Establish whether an exception
+    is actually thrown before changing anything, then make the loop survive one
+    regardless, since a brick-the-app-forever failure mode is wrong even if this
+    is not today's trigger.
+  - [x] Defect 2 FIXED, hardware confirmation still pending. The classifier
+    swept every element and found `html`, `head`, `meta`, `title`, `link`,
+    `style`, `body`, and `script` selectable while `canvas` alone was not, so
+    the selection was the document *around* the application. `web/index.html`
+    now applies `-webkit-user-select`/`user-select`, `-webkit-touch-callout`,
+    and `-webkit-tap-highlight-color` to `html, body, canvas`, with editable
+    elements opting selection back in so text entry keeps it. The browser gate
+    enforces the classifier unconditionally for every app; Chromium implements
+    neither `-webkit-touch-callout` nor tap-highlight suppression, so those two
+    are asserted at the source in `tests/cli/web_startup_surface` and were
+    mutation-checked. (2026-07-28 17:35 EDT: `./test`, `./test_browser`, and
+    `./build` all green.)
+  - [ ] Classify both as regression vs. newly-reachable pre-existing behavior
+    before attributing either to the focus fix. Peter could not get past the
+    keyboard on any prior iOS session, so "new" is not established.
+  - [ ] Predicted third defect, from the same prior art: iOS raises the software
+    keyboard only when `focus()` runs synchronously inside a user-gesture
+    handler. Aedicule focuses the editable element from a render/rAF callback,
+    so the just-shipped text control likely cannot raise the iOS keyboard at
+    all. Test this before believing it either way.
 - [ ] Make the public web delivery demonstrably compatible with Firefox,
   Chromium-family browsers, and Safari on macOS/iOS.
   - [ ] Reproduce and fix the Firefox Beta simultaneous-startup race reported
