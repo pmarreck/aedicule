@@ -166,3 +166,83 @@ fn package_paths_cannot_become_windows_drive_relative_extraction_paths() {
 
     fs::remove_dir_all(temporary).unwrap();
 }
+
+#[test]
+fn package_entries_are_compressed_rather_than_merely_stored() {
+    let temporary = temporary_directory("compressed");
+    let application = temporary.join("application");
+    fs::create_dir_all(application.join("tests")).unwrap();
+    fs::write(application.join("code.wat"), b"(module)").unwrap();
+    // Highly redundant, like the WAT and WAST text that dominates a real
+    // package, so a stored archive and a compressed one differ by a wide margin
+    // rather than by a few bytes of framing.
+    let redundant = "(func $repeated (param i32) (result i32) local.get 0)\n".repeat(4_096);
+    fs::write(application.join("tests/main.wast"), redundant.as_bytes()).unwrap();
+
+    let archive = temporary.join("application.aed");
+    package_application(&application, &archive).unwrap();
+    let bytes = fs::read(&archive).unwrap();
+
+    block_on(async {
+        let reader = ZipFileReader::new(bytes.clone()).await.unwrap();
+        for (index, entry) in reader.file().entries().iter().enumerate() {
+            let name = entry.filename().as_str().unwrap().to_owned();
+            let expected = if index == 0 {
+                // The sentinel stays stored so the package is identifiable by
+                // its leading bytes the way EPUB and ODF are.
+                Compression::Stored
+            } else {
+                Compression::Zstd
+            };
+            assert_eq!(entry.compression(), expected, "compression for {name}");
+        }
+    });
+
+    assert!(
+        (bytes.len() as u64) < redundant.len() as u64 / 8,
+        "package of {} bytes did not compress {} bytes of redundant source",
+        bytes.len(),
+        redundant.len(),
+    );
+
+    fs::remove_dir_all(temporary).unwrap();
+}
+
+#[test]
+fn a_compressed_entry_larger_than_the_cap_is_refused_despite_a_small_package() {
+    let temporary = temporary_directory("oversize-entry");
+    let archive = temporary.join("oversize.aed");
+    // Compression makes an entry's packaged size say nothing about the memory it
+    // demands on the way out, which stored entries never allowed. Seventeen
+    // megabytes of zeros occupy a trivial archive and must still be refused.
+    let oversize = vec![0_u8; 17 * 1024 * 1024];
+    let bytes = block_on(async {
+        let mut writer = ZipFileWriter::new(Cursor::new(Vec::new())).force_no_zip64();
+        writer
+            .write_entry_whole(
+                ZipEntryBuilder::new("mimetype".into(), Compression::Stored),
+                AED_MIME_TYPE.as_bytes(),
+            )
+            .await
+            .unwrap();
+        writer
+            .write_entry_whole(
+                ZipEntryBuilder::new("code.wat".into(), Compression::Zstd),
+                &oversize,
+            )
+            .await
+            .unwrap();
+        writer.close().await.unwrap().into_inner()
+    });
+    assert!(
+        bytes.len() < 1024 * 1024,
+        "expected a small archive, got {} bytes",
+        bytes.len(),
+    );
+    fs::write(&archive, bytes).unwrap();
+
+    let error = read_application_file(&PluginSource::Archive(archive), "code.wat").unwrap_err();
+    assert!(error.contains("exceeds"), "{error}");
+
+    fs::remove_dir_all(temporary).unwrap();
+}

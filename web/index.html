@@ -57,7 +57,48 @@
 				addEventListener("error", event => errors.push(
 					`${event.message} @ ${event.filename ?? "?"}:${event.lineno ?? 0}`));
 				addEventListener("unhandledrejection", event => errors.push(
-					`rejection: ${event.reason}`));
+					`rejection: ${event.reason}\n${
+						String(event.reason?.stack ?? "").split("\n").slice(0, 2).join("\n")}`));
+				/* A touch platform may synthesize a second, mouse-shaped gesture
+				   from one finger. Counting the raw DOM events beside the count
+				   of control events that actually reached the guest is what
+				   separates "the tap was delivered twice" from "the tap was
+				   delivered once and the guest did the wrong thing". */
+				const taps = { pd: 0, pu: 0, ts: 0, te: 0, ck: 0 };
+				const names = { pointerdown: "pd", pointerup: "pu", touchstart: "ts",
+					touchend: "te", click: "ck" };
+				let lastPoint = "-";
+				/* A control only activates if the press and the release both land
+				   inside the same declared rectangle. On a touch platform a finger
+				   drifts, so recording which AVP button contained the press, which
+				   contained the release, and how far the finger travelled between
+				   them is what distinguishes "the target is too small for a finger"
+				   from "delivery dropped the gesture". */
+				const point = event => event.changedTouches?.[0] ?? event;
+				const buttonAt = (x, y) => (globalThis.__AEDICULE_UI_SNAPSHOT?.buttons ?? [])
+					.find(button => x >= button.x && x <= button.x + button.width
+						&& y >= button.y && y <= button.y + button.height)?.id ?? "none";
+				let pressed = { id: "-", x: 0, y: 0 };
+				let released = "-";
+				let drift = "-";
+				for (const [type, key] of Object.entries(names)) {
+					addEventListener(type, event => {
+						taps[key] += 1;
+						const contact = point(event);
+						if (contact?.clientX === undefined) return;
+						const x = contact.clientX;
+						const y = contact.clientY;
+						lastPoint = `${Math.round(x)},${Math.round(y)}`;
+						if (type === "pointerdown") {
+							pressed = { id: buttonAt(x, y), x, y };
+							released = "-";
+							drift = "-";
+						} else if (type === "pointerup") {
+							released = buttonAt(x, y);
+							drift = Math.round(Math.hypot(x - pressed.x, y - pressed.y));
+						}
+					}, { capture: true, passive: true });
+				}
 				const panel = document.createElement("pre");
 				panel.id = "aedicule-diagnostic-overlay";
 				panel.style.cssText = "position:fixed;top:0;left:0;z-index:2147483646;"
@@ -75,9 +116,29 @@
 						stalledPolls = 0;
 						previousFrames = frames;
 					}
+					const delivered = globalThis.__AEDICULE_DELIVERED_EVENT_COUNTS;
 					panel.textContent = [
 						`frames ${frames}  stalled ${stalledPolls}`,
 						`guest ${Math.round(runtime?.lastGuestElapsedMs ?? -1)}ms`,
+						`ctl ${delivered?.controls ?? -1}  ptr ${delivered?.pointer ?? -1}`,
+						`pd ${taps.pd} pu ${taps.pu} ts ${taps.ts} te ${taps.te} ck ${taps.ck}`,
+						`down ${pressed.id}  up ${released}  drift ${drift}px`,
+						`xy ${lastPoint}`,
+						(() => {
+							/* The guest lays out from the viewport it is told it
+							   has. If that disagrees with the CSS viewport by the
+							   device pixel ratio, every control it places is that
+							   much too small to hit with a finger. */
+							const canvas = document.querySelector("canvas");
+							const box = canvas?.getBoundingClientRect();
+							const play = (globalThis.__AEDICULE_UI_SNAPSHOT?.buttons ?? [])
+								.find(button => button.id === 10);
+							return `vp ${innerWidth}x${innerHeight} dpr ${devicePixelRatio}\n`
+								+ `cv ${canvas?.width}x${canvas?.height}`
+								+ ` css ${Math.round(box?.width ?? -1)}x${Math.round(box?.height ?? -1)}\n`
+								+ `btn10 ${play ? `${Math.round(play.width)}x${Math.round(play.height)}`
+									+ ` at ${Math.round(play.x)},${Math.round(play.y)}` : "none"}`;
+						})(),
 						`errors ${errors.length}`,
 						errors.length > 0 ? errors[errors.length - 1] : "(none)",
 					].join("\n");

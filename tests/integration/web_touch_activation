@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+
+# Requires that a finger which presses an AVP control and lifts slightly outside
+# it still activates it, and that one lifting far outside does not. Every other
+# control gate drives the mouse, which cannot observe this at all: a mouse
+# releases where it pressed, while a fingertip rolls off as it lifts. That blind
+# spot is why a 36 px tall button reached Peter's iPhone dropping ~30% of taps.
+
+set -u
+
+if (( $# != 3 )); then
+	printf 'usage: web_touch_activation AEDICULE WEB_RUNTIME APPLICATION.wat\n' >&2
+	exit 2
+fi
+
+frontplane=$1
+runtime=$2
+application=$3
+root=$(cd "$(dirname "$0")/../.." && pwd -P)
+temporary=$(mktemp -d "${TMPDIR:-/tmp}/aedicule-web-external-link.XXXXXX")
+server_pid=
+
+cleanup() {
+	if [[ -n $server_pid ]]; then
+		kill "$server_pid" 2>/dev/null || true
+		wait "$server_pid" 2>/dev/null || true
+	fi
+	rm -rf "$temporary"
+}
+trap cleanup EXIT
+
+fail() {
+	printf 'browser touch-activation probe failed: %s\n' "$1" >&2
+	for diagnostic in "$temporary/server.err" "$temporary/browser.out" \
+		"$temporary/browser.err"; do
+		if [[ -s $diagnostic ]]; then
+			printf '\n%s:\n' "$diagnostic" >&2
+			cat "$diagnostic" >&2
+		fi
+	done
+	exit 1
+}
+
+url_pipe="$temporary/server-url"
+mkfifo "$url_pipe"
+env MUTE_DEBUG_STATUS=1 AEDICULE_WEB_RUNTIME="$runtime" \
+	"$frontplane" --web --port 0 "$application" \
+	>"$url_pipe" 2>"$temporary/server.err" 3>&- 4>&- &
+server_pid=$!
+url=
+IFS= read -r -t 10 url <"$url_pipe"
+(( $? == 0 )) || fail 'server did not emit its URL'
+[[ $url == http://127.0.0.1:*\/ ]] || fail 'server emitted an invalid loopback URL'
+
+"$root/tests/integration/web_browser_startup" --timeout-ms 60000 \
+	--require-touch-activation "$url" \
+	>"$temporary/browser.out" 2>"$temporary/browser.err"
+(( $? == 0 )) || fail 'headless browser rejected touch activation of an AVP control'
+[[ ! -s $temporary/browser.err ]] || fail 'headless browser emitted diagnostics'
+[[ ! -s $temporary/server.err ]] || fail 'application server emitted diagnostics'

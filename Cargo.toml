@@ -43,7 +43,7 @@ gui = [
 gui-test-support = ["gui", "gpui/test-support"]
 
 [dependencies]
-async_zip = { version = "0.0.18", default-features = false }
+async_zip = { version = "0.0.18", default-features = false, features = ["zstd"] }
 claxon = "0.4.3"
 futures-lite = "2.6.1"
 thiserror = "2.0.16"
@@ -72,6 +72,7 @@ smol = { version = "2.0.2", optional = true }
 ahash = { version = "0.8.12", features = ["runtime-rng"] }
 
 [dev-dependencies]
+wasm-bindgen-test = "0.3"
 wasmprinter = "0.251.0"
 
 [[bin]]
@@ -105,3 +106,11 @@ gpui_platform = { git = "https://github.com/pmarreck/zed", rev = "c1ae270bc657ac
 [patch."https://github.com/pmarreck/zed"]
 ztracing = { path = "third_party/ztracing" }
 ztracing_macro = { path = "third_party/ztracing_macro" }
+
+# zstd's C sources reach the browser through async_zip. Two knobs make them
+# build for wasm, both upstream-supported: `no_asm` drops the x86-64 assembly
+# that zstd-sys otherwise compiles unconditionally, and zstd-sys's own
+# `wasm-shim/` supplies the libc headers wasm32-unknown-unknown lacks. The C
+# compiler is selected in web/cargo-config.toml.
+[target.'cfg(target_family = "wasm")'.dependencies]
+zstd-sys = { version = "2.0", default-features = false, features = ["no_asm"] }

@@ -1,9 +1,41 @@
 # Plan
 
+- [ ] BLOCKING: `run_gallery_local_application` (`web_browser_startup --static-root`)
+  times out waiting for `settled`, reproduced in isolation at a 90s timeout with
+  an uncompressed `animated.wat`, so it is not the compressed-package work. It
+  matches the pre-existing `--static-root` defect recorded below, but it PASSED
+  earlier in this same session, so a regression from the larger wasm bundle
+  (zstd now links into it) is NOT excluded. `./test` and `./build` are green;
+  `./test_browser` is red on this gate alone. Resolve before trusting the
+  browser suite.
 - [ ] Fix the two iOS Safari defects Peter reported 2026-07-28 16:38 EDT on the
   deployed `73891e6` Ulam page. The keyboard defect is CONFIRMED FIXED on
   hardware; these two are what became reachable once it was.
-  - [ ] Defect 1: pressing Play advances exactly one simulation frame per tap
+  - [ ] Defect 1 ROOT CAUSE FOUND 2026-07-31: AVP controls have zero touch
+    slop. A press that releases even one pixel outside the declared rectangle is
+    discarded silently. Measured against Peter's exact device geometry
+    (430x775 viewport, button 10 at 70x36 at 24,559, reproduced bit-for-bit
+    headlessly): touch drift 0-17px delivers the action, >=18px delivers
+    nothing, and 577+18 is exactly the button's bottom edge. A 36 CSS px tall
+    target therefore allows +/-18px of finger travel, which a fingertip rolling
+    off on release exceeds routinely — matching both the ~30% miss rate and the
+    ~30% shortfall in Safari's own `click`, which cancels under the same
+    condition. The guest's own comment says "the guest owns this layout and the
+    host owns safe activation", so slop belongs in the host.
+    - [ ] Decide slop policy before implementing: a fixed release margin versus
+      expanding every control to a 44x44 CSS px minimum hit rectangle, and what
+      happens where expanded rectangles would overlap.
+    - [ ] Slop must apply to touch-originated presses only. Drag-off-to-cancel
+      is correct mouse behaviour and must not regress.
+    - [ ] REFUTED EARLIER THEORIES, do not revisit without new evidence: a dead
+      rAF loop (frames climb with stalled 0 on hardware); double gesture
+      delivery (pd/pu/ts/te pair 1:1); and a device-pixel-ratio viewport bug
+      (hardware reports canvas 1290x2325 for css 430x775, exactly 3x, and the
+      guest's own layout math reproduces 70px from a 430px viewport). The DPR
+      theory came from a headless reproduction that was an emulator artifact:
+      Chromium's device-metrics override reports devicePixelRatio 3 while
+      devicePixelContentBox still returns real surface pixels.
+  - [ ] Superseded framing of defect 1: pressing Play advances one frame per tap
     and then stops. Read-only evidence so far, not yet a failing test:
     `gpui_web`'s `create_raf_closure` re-schedules the next animation frame
     *after* invoking the frame callback, so a single exception anywhere in a

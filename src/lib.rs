@@ -42,6 +42,7 @@ pub use flac::{FlacError, decode_flac};
 pub use package::{
     AED_MIME_TYPE, depackage_application, package_application, read_application_assets,
     read_application_file,
+    read_application_archive,
 };
 #[cfg(feature = "native-runtime")]
 pub use web_server::{WebServer, discover_web_runtime};

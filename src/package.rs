@@ -11,7 +11,8 @@ use std::{
 };
 
 use async_zip::{
-    Compression, ZipEntryBuilder, base::read::mem::ZipFileReader, base::write::ZipFileWriter,
+    Compression, DeflateOption, ZipEntryBuilder, base::read::mem::ZipFileReader,
+    base::write::ZipFileWriter,
 };
 use futures_lite::future::block_on;
 use futures_lite::io::Cursor;
@@ -22,6 +23,12 @@ use crate::{ApplicationAssets, DEFAULT_PLUGIN_FILE, FALLBACK_WAT, PluginSource};
 const MAX_PACKAGE_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_ENTRY_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_ENTRIES: usize = 1_024;
+/// Zstandard's maximum ordinary level. Application packages are written once and
+/// read many times, and their dominant content is WAT and WAST text, which is
+/// redundant enough that the highest level pays for itself: a stored package of
+/// Vibesteroids is 1.35 MB against roughly 75 KB compressed. `Compression::Zstd`
+/// is zip method 93, so the container stays an ordinary zip.
+const PACKAGE_COMPRESSION_LEVEL: i32 = 19;
 pub const AED_MIME_TYPE: &str = "application/vnd.aedicule.app+zip";
 const MIME_TYPE_ENTRY: &str = "mimetype";
 
@@ -30,7 +37,9 @@ struct PackageEntry {
     bytes: Vec<u8>,
 }
 
-/// Creates a byte-reproducible stored-ZIP `.aed` without mutating its source tree.
+/// Creates a byte-reproducible Zstandard-compressed `.aed` without mutating its
+/// source tree. Reproducibility comes from sorted entries, fixed timestamps and
+/// permissions, and a pinned compressor, not from the container format.
 pub fn package_application(source: &Path, output: &Path) -> Result<(), String> {
     if !source.is_dir() {
         return Err(format!(
@@ -69,7 +78,8 @@ pub fn package_application(source: &Path, output: &Path) -> Result<(), String> {
             .await
             .map_err(|error| format!("write package mimetype: {error}"))?;
         for entry in entries {
-            let descriptor = ZipEntryBuilder::new(entry.name.into(), Compression::Stored)
+            let descriptor = ZipEntryBuilder::new(entry.name.into(), Compression::Zstd)
+                .deflate_option(DeflateOption::Other(PACKAGE_COMPRESSION_LEVEL))
                 .unix_permissions(0o644);
             writer
                 .write_entry_whole(descriptor, &entry.bytes)
@@ -381,10 +391,18 @@ fn collect_entries(
 
 fn read_archive_entries(path: &Path) -> Result<Vec<PackageEntry>, String> {
     let bytes = read_bounded_file_with_limit(path, MAX_PACKAGE_BYTES)?;
+    archive_entries_from_bytes(bytes, &path.display().to_string())
+}
+
+/// Validates and expands an `.aed` already held in memory. The browser has no
+/// filesystem to name, so every path-free consumer — a wasm host handed the
+/// bytes of a chosen file, and any test that wants to exercise decompression
+/// without writing one — enters here rather than through `read_archive_entries`.
+fn archive_entries_from_bytes(bytes: Vec<u8>, origin: &str) -> Result<Vec<PackageEntry>, String> {
     block_on(async {
         let reader = ZipFileReader::new(bytes)
             .await
-            .map_err(|error| format!("open package {}: {error}", path.display()))?;
+            .map_err(|error| format!("open package {origin}: {error}"))?;
         let stored = reader.file().entries();
         if stored.len() > MAX_ENTRIES + 1 {
             return Err(format!("package has more than {MAX_ENTRIES} entries"));
@@ -392,7 +410,7 @@ fn read_archive_entries(path: &Path) -> Result<Vec<PackageEntry>, String> {
         let Some(first) = stored.first() else {
             return Err(format!(
                 "package {} lacks {MIME_TYPE_ENTRY}",
-                path.display()
+                origin
             ));
         };
         let first_name = first
@@ -402,7 +420,7 @@ fn read_archive_entries(path: &Path) -> Result<Vec<PackageEntry>, String> {
         if first_name != MIME_TYPE_ENTRY || first.compression() != Compression::Stored {
             return Err(format!(
                 "package {} must begin with stored {MIME_TYPE_ENTRY}",
-                path.display()
+                origin
             ));
         }
         let mut names = HashSet::new();
@@ -420,7 +438,10 @@ fn read_archive_entries(path: &Path) -> Result<Vec<PackageEntry>, String> {
             if name.ends_with('/') {
                 continue;
             }
-            if descriptor.compression() != Compression::Stored {
+            if !matches!(
+                descriptor.compression(),
+                Compression::Stored | Compression::Zstd
+            ) {
                 return Err(format!(
                     "package entry uses unsupported compression: {name}"
                 ));
@@ -452,7 +473,7 @@ fn read_archive_entries(path: &Path) -> Result<Vec<PackageEntry>, String> {
                 if entry_bytes != AED_MIME_TYPE.as_bytes() {
                     return Err(format!(
                         "package {} has invalid {MIME_TYPE_ENTRY}",
-                        path.display()
+                        origin
                     ));
                 }
                 continue;
@@ -523,4 +544,15 @@ pub(crate) fn is_valid_asset_name(name: &str) -> bool {
     name.strip_prefix("assets/")
         .is_some_and(|relative| !relative.is_empty())
         && validate_name(name).is_ok()
+}
+
+/// Validates an `.aed` held entirely in memory and returns its entries by
+/// virtual name. A browser has no filesystem to hand `read_archive_entries`, so
+/// this is the entry point for a host that already has the bytes — and the only
+/// way to exercise package decompression where no file can be written.
+pub fn read_application_archive(bytes: Vec<u8>) -> Result<ApplicationAssets, String> {
+    Ok(archive_entries_from_bytes(bytes, "<memory>")?
+        .into_iter()
+        .map(|entry| (entry.name, entry.bytes))
+        .collect())
 }

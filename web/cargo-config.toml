@@ -1,4 +1,7 @@
 [target.wasm32-unknown-unknown]
+# A wasm module cannot be executed as a native binary, so the test harness needs
+# a host to load it.
+runner = "wasm-bindgen-test-runner"
 rustflags = [
 	"-C", "target-feature=+atomics,+bulk-memory,+mutable-globals",
 	"-C", "link-arg=--shared-memory",

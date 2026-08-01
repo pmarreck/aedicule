@@ -88,6 +88,12 @@ run_remaining_checks() {
 	XDG_CACHE_HOME="$XDG_CACHE_HOME/web-binary" run_web_build \
 		nix develop .#web --quiet --ignore-environment --keep HOME --keep TMPDIR -c \
 		cargo --quiet --config web/cargo-config.toml build --bin aedicule-web --target wasm32-unknown-unknown --no-default-features --features web
+	# Runs inside a real wasm module. Nothing else does: the tests above are
+	# native, and the browser unpacks archives in JavaScript, so a Zstandard
+	# decoder that compiled for wasm but did not work there would go unnoticed.
+	XDG_CACHE_HOME="$XDG_CACHE_HOME/web-test" run_check \
+		nix develop .#web --quiet --ignore-environment --keep HOME --keep TMPDIR -c \
+		cargo --config web/cargo-config.toml test --target wasm32-unknown-unknown --test wasm_package --no-default-features --features portable-runtime
 	if (( failures > 255 )); then
 		return 255
 	fi

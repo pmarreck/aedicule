@@ -308,11 +308,54 @@ struct WebFrontplane {
     viewport_bits: Option<(u32, u32)>,
     fatal_error: Option<String>,
     pressed_pointer_buttons: [u16; 3],
+    coarse_pointer: bool,
+    armed_control: Option<ArmedControl>,
     sliders: Vec<WebSlider>,
     text_fields: Vec<WebTextField>,
     _slider_subscriptions: Vec<Subscription>,
     _text_field_subscriptions: Vec<Subscription>,
     _focus_subscriptions: Vec<Subscription>,
+}
+
+/// How far past a control's declared edge a finger may travel between press and
+/// release and still activate it. A fingertip covers far more than a mouse
+/// cursor and its reported centroid shifts as it lifts, so a touch platform
+/// that demanded an exact in-bounds release would discard ordinary taps; a
+/// 36 px tall control only tolerates 18 px of travel without this.
+const TOUCH_RELEASE_SLOP: f32 = 16.0;
+
+/// A press that landed inside a control and may still activate it from slightly
+/// outside. Only touch-shaped input arms one; a mouse keeps the exact
+/// drag-away-to-cancel semantics a pointer user expects.
+#[cfg_attr(not(target_family = "wasm"), allow(dead_code))]
+#[derive(Clone, Copy)]
+struct ArmedControl {
+    action_id: u32,
+    bounds: Rect,
+}
+
+impl ArmedControl {
+    /// Whether a release at this point should still activate the control.
+    /// Releases *inside* the declared bounds are deliberately excluded: those
+    /// already activate through the control's own click handling, and admitting
+    /// them here would deliver the action twice.
+    fn rescues(&self, x: f32, y: f32) -> bool {
+        // Half-open, matching GPUI's own hit test. Treating the far edge as
+        // inside left a one-pixel dead band exactly on it: GPUI declined the
+        // click because it was outside, and this declined the rescue because it
+        // was inside, so the press reached neither path.
+        let inside = x >= self.bounds.x
+            && x < self.bounds.x + self.bounds.width
+            && y >= self.bounds.y
+            && y < self.bounds.y + self.bounds.height;
+        if inside {
+            return false;
+        }
+        x >= self.bounds.x - TOUCH_RELEASE_SLOP
+            && x <= self.bounds.x + self.bounds.width + TOUCH_RELEASE_SLOP
+            && y >= self.bounds.y - TOUCH_RELEASE_SLOP
+            && y <= self.bounds.y + self.bounds.height + TOUCH_RELEASE_SLOP
+    }
 }
 
 #[cfg_attr(not(target_family = "wasm"), allow(dead_code))]
@@ -464,6 +507,8 @@ impl WebFrontplane {
             viewport_bits: None,
             fatal_error: None,
             pressed_pointer_buttons: [0; 3],
+            coarse_pointer: primary_pointer_is_coarse(),
+            armed_control: None,
             sliders,
             text_fields,
             _slider_subscriptions: slider_subscriptions,
@@ -539,6 +584,19 @@ impl WebFrontplane {
     /// Delivers browser keyboard presses through the same physical-key
     /// classifier as native and suppresses browser actions only for admitted
     /// guest keys.
+    /// Delivers a control's action when a finger pressed inside it but lifted
+    /// just outside. The control's own click handling covers every in-bounds
+    /// release and never reaches here, because a control layer occludes the
+    /// root; the two paths are disjoint, so an action cannot be delivered twice.
+    fn rescue_armed_control(&mut self, event: &MouseUpEvent) {
+        let Some(armed) = self.armed_control.take() else {
+            return;
+        };
+        if armed.rescues(f32::from(event.position.x), f32::from(event.position.y)) {
+            self.queue_event(Event::MenuAction(armed.action_id));
+        }
+    }
+
     /// Keyboard input belongs to a focused text control, not the guest. This
     /// is the keyboard counterpart of the pointer occlusion that AVP control
     /// layers already provide; without it a guest steals every letter that
@@ -635,6 +693,33 @@ impl Focusable for WebFrontplane {
     fn focus_handle(&self, _: &App) -> FocusHandle {
         self.focus_handle.clone()
     }
+}
+
+/// Whether the device's primary input is a finger rather than a pointer. GPUI
+/// carries no touch origin on its mouse events, so the release-slop policy is
+/// decided per device here instead of per event; a desktop pointer keeps exact
+/// drag-away-to-cancel behaviour because this reports false for it.
+#[cfg(target_family = "wasm")]
+fn primary_pointer_is_coarse() -> bool {
+    let global = js_sys::global();
+    let Ok(match_media) = js_sys::Reflect::get(&global, &JsValue::from_str("matchMedia")) else {
+        return false;
+    };
+    let Ok(match_media) = match_media.dyn_into::<js_sys::Function>() else {
+        return false;
+    };
+    let Ok(query) = match_media.call1(&global, &JsValue::from_str("(pointer: coarse)")) else {
+        return false;
+    };
+    js_sys::Reflect::get(&query, &JsValue::from_str("matches"))
+        .ok()
+        .and_then(|matches| matches.as_bool())
+        .unwrap_or(false)
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn primary_pointer_is_coarse() -> bool {
+    false
 }
 
 /// Claims browser pointer ownership for a native control so its gesture cannot
@@ -767,9 +852,18 @@ impl Render for WebFrontplane {
                         this.queue_event(Event::MenuAction(action_id));
                         cx.notify();
                     }));
+                let bounds = placement.bounds;
                 Some(
-                    browser_control_layer(placement.bounds)
+                    browser_control_layer(bounds)
                         .id(("native-button", placement.id as usize))
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, _: &MouseDownEvent, _, _| {
+                                this.armed_control = this
+                                    .coarse_pointer
+                                    .then_some(ArmedControl { action_id, bounds });
+                            }),
+                        )
                         .child(button),
                 )
             })
@@ -850,6 +944,7 @@ impl Render for WebFrontplane {
             .on_mouse_up(
                 MouseButton::Left,
                 cx.listener(|this, event: &MouseUpEvent, _, cx| {
+                    this.rescue_armed_control(event);
                     this.queue_pointer_up(PointerButton::Primary, event);
                     cx.notify();
                 }),
@@ -857,6 +952,7 @@ impl Render for WebFrontplane {
             .on_mouse_up_out(
                 MouseButton::Left,
                 cx.listener(|this, event: &MouseUpEvent, _, cx| {
+                    this.rescue_armed_control(event);
                     this.queue_pointer_up(PointerButton::Primary, event);
                     cx.notify();
                 }),

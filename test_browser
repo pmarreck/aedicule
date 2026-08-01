@@ -109,11 +109,47 @@ run_text_entry_browser() {
 		"$binary" "$runtime" tests/fixtures/text_entry.wat
 }
 
+# Packages an application with the current writer and requires the browser to
+# run it. Compiling a decompressor into the wasm runtime is not evidence that it
+# decodes a real package, and every other packaged-application gate loads a
+# stored archive predating compression, so nothing else exercises this path.
+run_compressed_package_browser() {
+	local delivery binary work status
+	delivery=$(<"$gallery_delivery_file")
+	binary="${CARGO_TARGET_DIR:-target}/debug/aedicule"
+	work=$(mktemp -d "${TMPDIR:-/tmp}/aedicule-compressed-package.XXXXXX")
+	mkdir -p "$work/source"
+	cp tests/fixtures/animated.wat "$work/source/code.wat"
+	if ! MUTE_DEBUG_STATUS=1 "$binary" --package "$work/source" "$work/application.aed" \
+		>"$work/package.out" 2>"$work/package.err"; then
+		printf 'packaging a compressed application failed\n' >&2
+		cat "$work/package.err" >&2
+		rm -rf "$work"
+		return 1
+	fi
+	./tests/integration/web_browser_startup --timeout-ms 60000 \
+		--local-application "$work/application.aed" \
+		--static-root "$delivery"
+	status=$?
+	rm -rf "$work"
+	return $status
+}
+
+run_touch_activation_browser() {
+	local runtime binary
+	runtime=$(<"$browser_runtime_file")
+	binary="${CARGO_TARGET_DIR:-target}/debug/aedicule"
+	./tests/integration/web_touch_activation \
+		"$binary" "$runtime" demos/ulam-flower.wat
+}
+
 prepare_packaged_audio_browser || exit $?
 run_packaged_audio_browser || exit $?
 run_gallery_local_application || exit $?
 run_external_link_browser || exit $?
 run_text_entry_browser || exit $?
+run_touch_activation_browser || exit $?
+run_compressed_package_browser || exit $?
 
 marker=$(git rev-parse --git-path aedicule-test-browser-success)
 case "$marker" in

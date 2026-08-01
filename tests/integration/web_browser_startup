@@ -28,8 +28,8 @@ const EXPECTED_STAGES = [
 	"settled",
 ];
 
-const HELP = `usage: web_browser_startup [--chrome PATH] [--timeout-ms N] [--require-audio-playback] [--require-key-delivery] [--require-controls] [--require-external-link] [--require-text-entry] URL
-       web_browser_startup [--chrome PATH] [--timeout-ms N] [--require-audio-playback] [--require-key-delivery] [--require-controls] [--require-external-link] [--require-text-entry] [--local-application PATH] --static-root PATH
+const HELP = `usage: web_browser_startup [--chrome PATH] [--timeout-ms N] [--require-audio-playback] [--require-key-delivery] [--require-controls] [--require-external-link] [--require-text-entry] [--require-touch-activation] URL
+       web_browser_startup [--chrome PATH] [--timeout-ms N] [--require-audio-playback] [--require-key-delivery] [--require-controls] [--require-external-link] [--require-text-entry] [--require-touch-activation] [--local-application PATH] --static-root PATH
 
 Launch a headless Chromium browser, stream Aedicule's structured startup
 timeline, and reject browser exceptions or a missing/1x1 GPUI canvas.
@@ -45,6 +45,9 @@ the normalized destination, _blank, and noopener without opening a real popup.
 --require-text-entry focuses an AVP text field and requires that an editable
 element then holds focus (the software-keyboard condition) and that the typed
 Unicode scalars reach the guest in order.
+--require-touch-activation emulates a coarse pointer and requires that a touch
+released just past a control edge still activates it, while one released far
+outside does not.
 --local-application selects a .wat or .aed through the gallery and requires the
 generic origin-local runner to reach the same settled application state.
 
@@ -61,6 +64,7 @@ function parseArguments(arguments_) {
 	let requireExternalLink = false;
 	let requireTextEntry = false;
 	let requireKeyDelivery = false;
+	let requireTouchActivation = false;
 	let localApplication;
 	let staticRoot;
 	let url;
@@ -110,6 +114,10 @@ function parseArguments(arguments_) {
 			requireTextEntry = true;
 			continue;
 		}
+		if (argument === "--require-touch-activation") {
+			requireTouchActivation = true;
+			continue;
+		}
 		if (argument.startsWith("-")) {
 			throw new Error(`unknown option: ${argument}`);
 		}
@@ -143,6 +151,7 @@ function parseArguments(arguments_) {
 		requireExternalLink,
 		requireKeyDelivery,
 		requireTextEntry,
+		requireTouchActivation,
 		staticRoot,
 		timeoutMs,
 		url: url === undefined ? undefined : new URL(url).href,
@@ -872,6 +881,67 @@ async function dispatchControlClick(protocol, bounds) {
 	});
 }
 
+/**
+ * Presses an AVP control and releases it `drift` pixels below the press, as a
+ * finger that rolls off on lift does. A touch platform must still activate the
+ * control for a small drift; the existing mouse path cannot observe this at all.
+ */
+async function dispatchDriftingTouch(protocol, bounds, drift) {
+	const x = Math.round(bounds.x + bounds.width / 2);
+	const y = Math.round(bounds.y + bounds.height / 2);
+	const point = position => [{ x, y: position, radiusX: 12, radiusY: 12 }];
+	await protocol.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: point(y) });
+	if (drift !== 0) {
+		await protocol.send("Input.dispatchTouchEvent",
+			{ type: "touchMove", touchPoints: point(y + drift) });
+	}
+	await protocol.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+}
+
+/**
+ * Classifies control activation against release drift on a coarse pointer. A
+ * release just past the declared edge must still activate, because a fingertip
+ * routinely travels that far, and a release far outside must not, because slop
+ * that never ends would activate controls the user deliberately slid away from.
+ */
+async function exerciseTouchActivation(protocol, snapshot) {
+	const bounds = snapshot.ui?.buttons?.[0];
+	if (bounds === undefined) {
+		return { touchActivation: false, reason: "no AVP button was placed" };
+	}
+	const coarse = await protocol.send("Runtime.evaluate", {
+		expression: `matchMedia("(pointer: coarse)").matches`,
+		returnByValue: true,
+	});
+	const halfHeight = Math.round(bounds.height / 2);
+	const actions = async () => (await pageSnapshot(protocol)).deliveredEventCounts.menuActions;
+
+	// An in-bounds release must still deliver exactly once. Rescuing a release
+	// the control already handles would deliver the action twice, which reads to
+	// a user as a button that undoes itself.
+	const beforeCentre = await actions();
+	await dispatchDriftingTouch(protocol, bounds, 0);
+	await waitForSemanticEvent(protocol, "menuActions", beforeCentre);
+	const centreDelta = (await actions()) - beforeCentre;
+
+	const beforeNear = await actions();
+	await dispatchDriftingTouch(protocol, bounds, halfHeight + 6);
+	await waitForSemanticEvent(protocol, "menuActions", beforeNear);
+	const nearDelta = (await actions()) - beforeNear;
+
+	const beforeFar = await actions();
+	await dispatchDriftingTouch(protocol, bounds, halfHeight + 120);
+	const escaped = await waitForSemanticEvent(protocol, "menuActions", beforeFar);
+
+	return {
+		touchActivation: centreDelta === 1 && nearDelta === 1 && !escaped,
+		coarsePointer: coarse.result.value === true,
+		centreDelta,
+		nearDelta,
+		activatedOnFarRelease: escaped,
+	};
+}
+
 async function dispatchSliderDrag(protocol, bounds) {
 	const startX = Math.round(bounds.x + bounds.width * 0.25);
 	const endX = Math.round(bounds.x + bounds.width * 0.75);
@@ -1195,6 +1265,14 @@ async function inspect(options) {
 		await protocol.send("Page.addScriptToEvaluateOnNewDocument", {
 			source: inputObserverSource(verboseEvents, options.requireExternalLink),
 		});
+		if (options.requireTouchActivation) {
+			// Peter's device geometry, so the button under test is the same
+			// 70x36 rectangle the hardware lays out rather than a desktop one.
+			await protocol.send("Emulation.setDeviceMetricsOverride",
+				{ width: 430, height: 775, deviceScaleFactor: 1, mobile: true });
+			await protocol.send("Emulation.setTouchEmulationEnabled",
+				{ enabled: true, maxTouchPoints: 5 });
+		}
 		await protocol.send("Page.navigate", { url: options.url });
 		if (options.localApplication !== undefined) {
 			await selectLocalApplication(protocol, options.localApplication, options.timeoutMs);
@@ -1217,6 +1295,15 @@ async function inspect(options) {
 			process.stdout.write(`${JSON.stringify({
 				type: "control-summary",
 				...controlSummary,
+			})}\n`);
+		}
+		const touchActivationSummary = options.requireTouchActivation
+			? await exerciseTouchActivation(protocol, await pageSnapshot(protocol))
+			: undefined;
+		if (touchActivationSummary !== undefined) {
+			process.stdout.write(`${JSON.stringify({
+				type: "touch-activation-summary",
+				...touchActivationSummary,
 			})}\n`);
 		}
 		const externalLinkSummary = options.requireExternalLink
@@ -1269,6 +1356,11 @@ async function inspect(options) {
 		if (finalSnapshot.runtime?.inProgress
 			|| finalSnapshot.runtime?.framesCompleted <= snapshot.runtime?.framesCompleted) {
 			failures.push("Aedicule runtime did not complete another browser frame after startup");
+		}
+		if (touchActivationSummary !== undefined && !touchActivationSummary.touchActivation) {
+			failures.push(
+				`touch activation failed: ${JSON.stringify(touchActivationSummary)}`,
+			);
 		}
 		// Every gate here loads without `?diag`, so the debugging overlay must be
 		// absent. Nothing else would notice it: it inherits the page's selection

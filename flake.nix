@@ -89,8 +89,29 @@
 					installPhase = ''
 						install -Dm755 wasm-bindgen-0.2.126-${artifact.target}/wasm-bindgen \
 							$out/bin/wasm-bindgen
+						# From the same pinned release, so the runner can never
+						# disagree with the `wasm-bindgen` crate the tests link
+						# against. A mismatched runner refuses to load the module.
+						install -Dm755 wasm-bindgen-0.2.126-${artifact.target}/wasm-bindgen-test-runner \
+							$out/bin/wasm-bindgen-test-runner
 					'';
 				};
+			# zstd reaches the browser as C source through `async_zip`, so the wasm
+			# build needs a C compiler that targets wasm32. Nix's `cc-wrapper`
+			# cannot: it injects host glibc include paths, and zstd's `limits.h`
+			# then resolves to glibc and fails on `gnu/stubs-32.h`. The wrapper
+			# says as much itself ("not designed with multi-target compilers in
+			# mind"), so this uses the unwrapped compiler and archiver. The
+			# feature flags match the threaded wasm build in web/cargo-config.toml;
+			# `zstd-sys` supplies the missing libc headers from its own wasm-shim.
+			wasmCEnvironment = pkgs: {
+				CC_wasm32_unknown_unknown =
+					"${pkgs.llvmPackages.clang-unwrapped}/bin/clang";
+				AR_wasm32_unknown_unknown =
+					"${pkgs.llvmPackages.bintools-unwrapped}/bin/llvm-ar";
+				CFLAGS_wasm32_unknown_unknown =
+					"--target=wasm32-unknown-unknown -matomics -mbulk-memory -mmutable-globals";
+			};
 			linuxLibraries = pkgs: with pkgs; [
 				alsa-lib
 				fontconfig
@@ -207,7 +228,7 @@
 					rawApplicationCargoDeps = pkgs.rustPlatform.fetchCargoVendor {
 						name = "aedicule-cargo-deps";
 						src = cargoDependencySource;
-						hash = "sha256-fkwZ0MiKp5s9B2WQKqFfAfEBgbPFYSvxKp7dzg/wn7w=";
+						hash = "sha256-CAIEQb22i0mYag+bJItCGFsbSu1EF5nAjC+lWJ4lVpk=";
 					};
 					# fetchCargoVendor reorders source-identical gpui_macros entries
 					# from the upstream and patched repositories. Cargo accepts either
@@ -648,7 +669,7 @@
 							touch $out/passed
 						'';
 					});
-					webRuntime = (webRustPlatformFor system).buildRustPackage {
+					webRuntime = (webRustPlatformFor system).buildRustPackage ({
 						pname = "aedicule-web-runtime";
 						inherit version;
 						src = frontplaneSource;
@@ -689,7 +710,7 @@
 							cp bindgen/aedicule_web.js $out/
 							install -Dm644 "bindgen/$wasm_name" "$out/$wasm_name"
 						'';
-					};
+					} // wasmCEnvironment pkgs);
 					webFallback = self.lib.${system}.webBundle {
 						wat = ./src/fallback.wat;
 					};
@@ -855,9 +876,14 @@
 						packages = developmentPackages
 							++ pkgs.lib.optionals (system == "x86_64-linux") [ pkgs.chromium ];
 					});
-					web = pkgs.mkShell {
-						packages = [ webToolchain ];
-					};
+					web = pkgs.mkShell ({
+						# The pinned wasm-bindgen must precede any system-wide
+						# install, because its test runner refuses to load a
+						# module built against a different version.
+						# `node` hosts the wasm test runner; `--ignore-environment` means the
+						# shell cannot borrow one from the caller.
+						packages = [ (wasmBindgenFor system) webToolchain pkgs.nodejs ];
+					} // wasmCEnvironment pkgs);
 				});
 		};
 }
