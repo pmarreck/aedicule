@@ -53,3 +53,39 @@ fn a_zstandard_entry_round_trips_through_wasm() {
         Some(contents.as_slice()),
     );
 }
+
+#[wasm_bindgen_test]
+fn a_browser_package_expands_to_guest_and_assets_in_wasm() {
+    // The exact call the browser adapter makes when a visitor picks a `.aed`,
+    // so this proves the whole selected-package path executes under wasm, not
+    // merely the decompressor beneath it.
+    let contents = "(module (func (export \"AE_abi_major\") (result i32) i32.const 0))\n";
+    let mut writer_input: Vec<(&str, Vec<u8>)> = Vec::new();
+    writer_input.push(("code.wat", contents.as_bytes().to_vec()));
+    let archive = block_on(async {
+        let mut writer = ZipFileWriter::new(Cursor::new(Vec::new())).force_no_zip64();
+        writer
+            .write_entry_whole(
+                ZipEntryBuilder::new("mimetype".into(), Compression::Stored),
+                AED_MIME_TYPE.as_bytes(),
+            )
+            .await
+            .unwrap();
+        for (name, bytes) in &writer_input {
+            writer
+                .write_entry_whole(
+                    ZipEntryBuilder::new((*name).into(), Compression::Zstd)
+                        .deflate_option(DeflateOption::Other(19)),
+                    bytes,
+                )
+                .await
+                .unwrap();
+        }
+        writer.close().await.unwrap().into_inner()
+    });
+
+    let (wat, assets) = aedicule::web::browser_application_from_package(archive)
+        .expect("expand browser package");
+    assert_eq!(wat, contents);
+    assert!(assets.is_empty());
+}

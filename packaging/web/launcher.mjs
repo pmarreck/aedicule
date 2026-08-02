@@ -45,10 +45,14 @@ function installLocalApplicationLauncher(
 		try {
 			const application = await applicationRecordFromFile(file);
 			const token = await storeLocalApplication(application);
-			console.info("[Aedicule gallery]", "local-application-stored", JSON.stringify({
-				assets: application.assets.length,
-				watBytes: application.wat.byteLength,
-			}));
+			console.info("[Aedicule gallery]", "local-application-stored", JSON.stringify(
+				application.package !== undefined
+					// A package record is raw bytes by design: expansion happens
+					// in the Wasm runtime's Rust reader, so entry counts are not
+					// knowable (and not this layer's business) at store time.
+					? { packageBytes: application.package.byteLength }
+					: { assets: application.assets.length, watBytes: application.wat.byteLength },
+			));
 			const destination = new URL("./run/", location.href);
 			destination.searchParams.set("local", token);
 			location.assign(destination);
@@ -82,6 +86,14 @@ function installLocalApplicationLauncher(
 		const file = event.dataTransfer?.files?.[0];
 		if (file !== undefined) launch(file);
 	});
+	// The picker element exists from static HTML long before this module has
+	// fetched and run, so DOM presence is not readiness: a change event
+	// dispatched in that gap is silently lost. This attribute is the launcher
+	// declaring that its listeners are live; automation must wait for it.
+	picker.dataset.listening = "true";
+	console.info("[Aedicule gallery]", "listener-attached", JSON.stringify({
+		elapsedMs: Math.round(performance.now()),
+	}));
 }
 
 if (typeof document !== "undefined") {

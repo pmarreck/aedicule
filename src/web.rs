@@ -51,6 +51,30 @@ pub enum BrowserInputOutcome {
     Resumed,
 }
 
+/// Name of the JavaScript global holding a visitor-selected `.aed` package as
+/// raw bytes. The bootstrap performs no archive parsing of its own: handing
+/// the whole file across this boundary is what lets the single Rust `.aed`
+/// implementation serve the browser, replacing the JavaScript zip reader whose
+/// stored-entries-only support silently diverged once packages compressed.
+pub const BROWSER_PACKAGE_GLOBAL: &str = "__AEDICULE_AED";
+
+/// Expands a visitor-selected `.aed` into the guest WAT and its bounded asset
+/// catalog using the same validated archive reader as every native adapter.
+/// Non-asset entries (tests, documentation, license) ride in the package for
+/// humans but never become runtime-visible virtual files.
+pub fn browser_application_from_package(
+    bytes: Vec<u8>,
+) -> Result<(String, ApplicationAssets), String> {
+    let mut entries = crate::read_application_archive(bytes)?;
+    let wat = entries
+        .remove(crate::DEFAULT_PLUGIN_FILE)
+        .ok_or_else(|| format!("package lacks {}", crate::DEFAULT_PLUGIN_FILE))?;
+    let wat = String::from_utf8(wat)
+        .map_err(|_| format!("package {} is not UTF-8", crate::DEFAULT_PLUGIN_FILE))?;
+    entries.retain(|name, _| crate::package::is_valid_asset_name(name));
+    Ok((wat, entries))
+}
+
 /// Requires a non-empty WAT document supplied by the delivery bootstrap.
 ///
 /// A web bundle must never silently substitute the host's fallback guest:
@@ -788,5 +812,64 @@ mod tests {
         );
         assert_eq!(playback[0].volume, 1.0);
         assert_eq!(playback[0].pitch, 1.0);
+    }
+}
+
+#[cfg(test)]
+mod package_expansion_tests {
+    use crate::web::browser_application_from_package;
+    use async_zip::{Compression, DeflateOption, ZipEntryBuilder, base::write::ZipFileWriter};
+    use futures_lite::{future::block_on, io::Cursor};
+
+    fn archive(entries: &[(&str, &[u8], Compression)]) -> Vec<u8> {
+        block_on(async {
+            let mut writer = ZipFileWriter::new(Cursor::new(Vec::new())).force_no_zip64();
+            writer
+                .write_entry_whole(
+                    ZipEntryBuilder::new("mimetype".into(), Compression::Stored),
+                    crate::AED_MIME_TYPE.as_bytes(),
+                )
+                .await
+                .unwrap();
+            for (name, bytes, compression) in entries {
+                let mut descriptor = ZipEntryBuilder::new((*name).into(), *compression);
+                if *compression == Compression::Zstd {
+                    descriptor = descriptor.deflate_option(DeflateOption::Other(19));
+                }
+                writer.write_entry_whole(descriptor, bytes).await.unwrap();
+            }
+            writer.close().await.unwrap().into_inner()
+        })
+    }
+
+    #[test]
+    fn a_compressed_package_expands_to_wat_and_assets_only() {
+        let bytes = archive(&[
+            ("code.wat", b"(module)".as_slice(), Compression::Zstd),
+            ("assets/audio/boom.flac", b"fLaC----".as_slice(), Compression::Zstd),
+            ("tests/main.wast", b"(module)\n".as_slice(), Compression::Zstd),
+            ("README.md", b"# hi\n".as_slice(), Compression::Zstd),
+        ]);
+        let (wat, assets) = browser_application_from_package(bytes).unwrap();
+        assert_eq!(wat, "(module)");
+        assert_eq!(
+            assets.keys().collect::<Vec<_>>(),
+            vec!["assets/audio/boom.flac"],
+            "tests and documentation are package entries, not runtime assets",
+        );
+    }
+
+    #[test]
+    fn a_package_without_a_guest_is_refused() {
+        let bytes = archive(&[("README.md", b"# hi\n".as_slice(), Compression::Zstd)]);
+        let error = browser_application_from_package(bytes).unwrap_err();
+        assert!(error.contains("code.wat"), "{error}");
+    }
+
+    #[test]
+    fn a_guest_that_is_not_utf8_is_refused() {
+        let bytes = archive(&[("code.wat", [0xff, 0xfe, 0x00].as_slice(), Compression::Zstd)]);
+        let error = browser_application_from_package(bytes).unwrap_err();
+        assert!(error.contains("UTF-8"), "{error}");
     }
 }

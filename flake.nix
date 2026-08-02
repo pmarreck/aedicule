@@ -820,17 +820,25 @@
 						'';
 					webPackageBundle = { package, assets ? [], title ? "Aedicule web application" }:
 						let
+							# Expansion goes through `aedicule --depackage` — the same
+							# validated Rust reader every adapter uses — because package
+							# entries are Zstandard-compressed (zip method 93) and
+							# Info-ZIP's `unzip` cannot read them (exit 81). This
+							# derivation was briefly a third independent `.aed`
+							# implementation; the JavaScript one already diverged the
+							# same way, so no external unzipper gets a second chance.
 							assetCommands = pkgs.lib.concatMapStringsSep "\n" (asset: ''
 								mkdir -p "$out/$(dirname ${pkgs.lib.escapeShellArg asset})"
-								unzip -p ${package} ${pkgs.lib.escapeShellArg asset} > "$out/${asset}"
+								cp expanded/${asset} "$out/${asset}"
 								test -s "$out/${asset}"
 							'') assets;
 						in pkgs.runCommand "aedicule-web-package-bundle" {
-							nativeBuildInputs = [ pkgs.unzip ];
+							nativeBuildInputs = [ self.packages.${system}.frontplane ];
 						} ''
 							mkdir -p $out
 							cp -R ${self.packages.${system}.webRuntime}/. $out/
-							unzip -p ${package} code.wat > $out/code.wat
+							MUTE_DEBUG_STATUS=1 aedicule --depackage ${package} expanded
+							cp expanded/code.wat $out/code.wat
 							test -s $out/code.wat
 							printf '%s\n' ${pkgs.lib.escapeShellArg (builtins.toJSON assets)} \
 								> $out/application-assets.json

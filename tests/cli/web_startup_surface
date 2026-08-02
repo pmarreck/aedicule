@@ -191,6 +191,19 @@ expect_text "$root/test_browser" 'demos/ulam-flower.wat' \
 	'optional browser gate does not exercise the shipped Ulam external link'
 expect_text "$root/tests/integration/web_external_link" '--require-external-link' \
 	'direct browser application gate does not require trusted link activation'
+expect_text "$root/test_browser" 'run_touch_activation_browser || exit' \
+	'optional browser gate does not prove coarse-pointer release slop'
+expect_text "$root/test_browser" 'run_compressed_package_browser || exit' \
+	'optional browser gate does not prove a compressed .aed runs end to end'
+reject_text "$root/packaging/web/local-application.mjs" 'parseAedArchive' \
+	'a second JavaScript .aed implementation can diverge from the Rust reader again'
+# Two sides of one readiness contract: the launcher declares its change
+# listener live, and the gate refuses to inject a file until it has. DOM
+# presence alone races module execution and loses roughly one run in five.
+expect_text "$root/packaging/web/launcher.mjs" 'picker.dataset.listening = "true"' \
+	'gallery launcher never declares its file listener ready'
+expect_text "$root/tests/integration/web_browser_startup" '?.dataset.listening === "true"' \
+	'browser gate can inject a picked file before the gallery is listening'
 expect_text "$root/tests/integration/web_browser_startup" '"--mute-audio"' \
 	'headless browser acceptance can emit physical audio during automated tests'
 expect_text "$root/tests/integration/web_packaged_audio" 'server_pid=$!' \

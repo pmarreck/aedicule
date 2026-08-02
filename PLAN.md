@@ -1,13 +1,41 @@
 # Plan
 
-- [ ] BLOCKING: `run_gallery_local_application` (`web_browser_startup --static-root`)
-  times out waiting for `settled`, reproduced in isolation at a 90s timeout with
-  an uncompressed `animated.wat`, so it is not the compressed-package work. It
-  matches the pre-existing `--static-root` defect recorded below, but it PASSED
-  earlier in this same session, so a regression from the larger wasm bundle
-  (zstd now links into it) is NOT excluded. `./test` and `./build` are green;
-  `./test_browser` is red on this gate alone. Resolve before trusting the
-  browser suite.
+- [ ] Land "option C": one `.aed` implementation for every adapter.
+  - [x] `browser_application_from_package(bytes)` in `src/web.rs` expands a
+    package to (WAT, assets) through the same validated Rust reader native
+    uses; unit-tested natively (compressed expansion, missing guest, non-UTF-8
+    guest) and exercised inside a real wasm module by
+    `tests/wasm_package.rs::a_browser_package_expands_to_guest_and_assets_in_wasm`.
+    (2026-08-02 11:35 EDT)
+  - [x] The JavaScript zip parser in `packaging/web/local-application.mjs` is
+    DELETED. A visitor-selected `.aed` now crosses into IndexedDB and then into
+    the wasm boundary as raw bytes (`__AEDICULE_AED`); JavaScript checks only
+    the size bound and the 4-byte zip signature. Legacy stored records with
+    `{wat, assets}` still load. (2026-08-02 11:35 EDT)
+  - [x] `demos/vibesteroids.aed` regenerated compressed per Peter's explicit
+    "Break the SHA" decision: 1,347,921 -> 117,755 bytes (11.4x), content
+    proved byte-identical through depackage/repackage/depackage `diff -r`, and
+    repacking twice is byte-identical. New sha256 `b5e3b290...` pinned in
+    `demos/manifest.tsv` and `tests/cli/demo_snapshots`. (2026-08-02 11:20 EDT)
+  - [x] Full serial `./test` + `./test_browser` + `./build` verification: all
+    three green, including the new compressed-package browser gate proving a
+    zstd `.aed` picked in the gallery runs to `settled` through the Rust
+    reader in wasm. (2026-08-02 12:04 EDT)
+- [x] ROOT CAUSE FOUND AND FIXED: the gallery gate's intermittent
+  zero-stage timeout (~1 failure in 5) was a startup RACE in the gate's own
+  readiness check, not the wasm bundle and not the zstd work. The check
+  accepted `crossOriginIsolated && picker !== null`, but the picker exists in
+  static HTML and isolation is true from document start on the post-reload
+  load, while `launcher.mjs` is a module still fetching through the service
+  worker — so the gate could inject its `change` event before any listener
+  existed, and the event was silently lost. Proven by surfacing the gallery's
+  own console stream in the gate: failing runs reach `isolation-ready` and
+  never emit `local-application-selected`. Fix is a two-sided readiness
+  contract: the launcher sets `picker.dataset.listening = "true"` after
+  attaching listeners (plus a `listener-attached` console stage), and the gate
+  refuses to inject until it sees it; `web_startup_surface` pins both sides.
+  0 failures in 12 consecutive runs after the fix. The wasm-bundle-size
+  hypothesis is REFUTED. (2026-08-02 11:55 EDT)
 - [ ] Fix the two iOS Safari defects Peter reported 2026-07-28 16:38 EDT on the
   deployed `73891e6` Ulam page. The keyboard defect is CONFIRMED FIXED on
   hardware; these two are what became reachable once it was.

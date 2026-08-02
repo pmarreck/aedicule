@@ -179,8 +179,16 @@ async function waitForGalleryReady(protocol, timeoutMs) {
 			checking = true;
 			try {
 				const result = await protocol.send("Runtime.evaluate", {
+					// `dataset.listening` is the launcher module declaring its
+					// change listener live. The picker exists in static HTML while
+					// the module is still fetching, and isolation is true from
+					// document start on the post-reload load, so without this the
+					// injected change event races the listener attachment: a lost
+					// race dispatches into a page where nothing is listening and
+					// is indistinguishable from a hung application.
 					expression: `globalThis.crossOriginIsolated === true
-						&& document.getElementById("local-application-picker") !== null`,
+						&& document.getElementById("local-application-picker")
+							?.dataset.listening === "true"`,
 					returnByValue: true,
 				});
 				if (result.result.value === true) finish();
@@ -1238,6 +1246,16 @@ async function inspect(options) {
 			const values = message.params.args.map(remoteValue);
 			if (message.params.type === "error" && values[0] !== "[Aedicule startup] failed") {
 				process.stderr.write(`${JSON.stringify({ type: "console-error", values })}\n`);
+			}
+			if (values[0] === "[Aedicule gallery]" || values[0] === "[Aedicule isolation]") {
+				// Surfaced for the failure mode where the runner never boots:
+				// with these dropped, a stall between the picker and bootstrap
+				// leaves the gate entirely silent and undiagnosable.
+				process.stdout.write(`${JSON.stringify({
+					type: values[0] === "[Aedicule gallery]" ? "gallery" : "isolation",
+					stage: values[1],
+					detail: values[2] ?? null,
+				})}\n`);
 			}
 			if (values[0] === "[Aedicule startup]") {
 				const stage = values[1];

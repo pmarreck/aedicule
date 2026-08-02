@@ -382,14 +382,27 @@ async function initializeApplication() {
 		await loadApplicationAssets();
 	} else {
 		const application = await loadLocalApplication(localToken);
-		reportStartupDiagnostic("wat-fetched", {
-			status: "local",
-			bytes: application.wat.byteLength,
-		});
-		globalThis.__AEDICULE_WAT = new TextDecoder("utf-8", { fatal: true })
-			.decode(application.wat);
-		showStartupStatus(strings.loadingApplicationAssets);
-		admitLocalApplicationAssets(application.assets);
+		if (application.package !== undefined) {
+			// The Wasm runtime's Rust archive reader is the only `.aed`
+			// implementation, so the package crosses unparsed. Its guest and
+			// asset expansion happen after wasm-initializing, not here.
+			reportStartupDiagnostic("wat-fetched", {
+				status: "local",
+				bytes: application.package.byteLength,
+			});
+			globalThis.__AEDICULE_AED = application.package;
+			showStartupStatus(strings.loadingApplicationAssets);
+			reportStartupDiagnostic("assets-fetched", { count: 0, bytes: 0, source: "local-package" });
+		} else {
+			reportStartupDiagnostic("wat-fetched", {
+				status: "local",
+				bytes: application.wat.byteLength,
+			});
+			globalThis.__AEDICULE_WAT = new TextDecoder("utf-8", { fatal: true })
+				.decode(application.wat);
+			showStartupStatus(strings.loadingApplicationAssets);
+			admitLocalApplicationAssets(application.assets);
+		}
 	}
 	showStartupStatus(strings.starting);
 	reportStartupDiagnostic("wasm-initializing");

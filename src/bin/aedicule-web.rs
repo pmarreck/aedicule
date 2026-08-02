@@ -1074,11 +1074,30 @@ fn browser_assets() -> ApplicationAssets {
     assets
 }
 
+/// Reads a visitor-selected `.aed` package if the bootstrap supplied one. The
+/// bytes cross the boundary unparsed; the shared Rust archive reader is the
+/// only `.aed` implementation, so the browser cannot diverge from native.
+#[cfg(target_family = "wasm")]
+fn browser_package() -> Option<Vec<u8>> {
+    let value = js_sys::Reflect::get(
+        &js_sys::global(),
+        &JsValue::from_str(aedicule::web::BROWSER_PACKAGE_GLOBAL),
+    )
+    .ok()?;
+    if value.is_null() || value.is_undefined() {
+        return None;
+    }
+    Some(js_sys::Uint8Array::new(&value).to_vec())
+}
+
 #[cfg(target_family = "wasm")]
 fn main() {
     gpui_platform::web_init();
-    let wat = browser_wat();
-    let assets = browser_assets();
+    let (wat, assets) = match browser_package() {
+        Some(package) => aedicule::web::browser_application_from_package(package)
+            .expect("Aedicule browser package expands to a guest and its assets"),
+        None => (browser_wat(), browser_assets()),
+    };
     let origin = Instant::now();
     let runtime = BrowserRuntime::new_with_assets(
         &wat,

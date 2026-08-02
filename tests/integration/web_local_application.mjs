@@ -1,10 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-import {
-	applicationRecordFromFile,
-	parseAedArchive,
-} from "../../packaging/web/local-application.mjs";
+import { applicationRecordFromFile } from "../../packaging/web/local-application.mjs";
 import { choosePreviewRotation } from "../../packaging/web/launcher.mjs";
 
 const encoder = new TextEncoder();
@@ -23,24 +20,25 @@ const bareRecord = await applicationRecordFromFile({
 assert.equal(decoder.decode(bareRecord.wat), "(module)");
 assert.deepEqual(bareRecord.assets, []);
 
-const archiveBytes = await readFile(new URL("../../demos/vibesteroids.aed", import.meta.url));
-const packaged = parseAedArchive(archiveBytes);
-assert.match(decoder.decode(packaged.wat), /\(module/);
-assert.deepEqual(
-	packaged.assets.map(asset => asset.name),
-	["assets/audio/satellite-destroyed.flac"],
+// A `.aed` crosses into storage as raw bytes: the Wasm runtime's Rust archive
+// reader is the only `.aed` implementation, so JavaScript must not expand,
+// filter, or otherwise interpret the archive. Byte identity is the contract.
+const archiveBytes = new Uint8Array(
+	await readFile(new URL("../../demos/vibesteroids.aed", import.meta.url)),
 );
-assert.ok(packaged.assets[0].bytes.byteLength > 0);
+const packaged = await applicationRecordFromFile({
+	name: "vibesteroids.aed",
+	arrayBuffer: async () => archiveBytes.buffer,
+});
+assert.equal(packaged.wat, undefined);
+assert.deepEqual(packaged.package, archiveBytes);
 
-const unsupportedCompression = Uint8Array.from(archiveBytes);
-new DataView(
-	unsupportedCompression.buffer,
-	unsupportedCompression.byteOffset,
-	unsupportedCompression.byteLength,
-).setUint16(8, 8, true);
-assert.throws(
-	() => parseAedArchive(unsupportedCompression),
-	/unsupported compression/,
+await assert.rejects(
+	() => applicationRecordFromFile({
+		name: "not-a-zip.aed",
+		arrayBuffer: async () => encoder.encode("plain text").buffer,
+	}),
+	/not a ZIP archive/,
 );
 
 await assert.rejects(
