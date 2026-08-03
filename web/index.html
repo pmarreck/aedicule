@@ -126,6 +126,21 @@
 						`down ${pressed.id}  up ${released}  drift ${drift}px`,
 						`xy ${lastPoint}`,
 						(() => {
+							/* Web Audio on iOS fails silently from several
+							   distinct causes (never unlocked, context
+							   suspended, source errors). Rendering the context
+							   state, the request count, and the last recorded
+							   stage separates "the guest never asked" from
+							   "the host could not play". */
+							const audio = globalThis.__AEDICULE_AUDIO_DIAGNOSTIC;
+							const last = audio?.last;
+							const why = last?.reason ?? last?.errorName ?? "";
+							return `au ${last?.contextState ?? "none"}`
+								+ ` req ${audio?.requestCount ?? 0}`
+								+ ` act ${last?.userActivationActive ?? "-"}\n`
+								+ `au-last ${last?.stage ?? "-"}${why ? ` (${why})` : ""}`;
+						})(),
+						(() => {
 							/* The guest lays out from the viewport it is told it
 							   has. If that disagrees with the CSS viewport by the
 							   device pixel ratio, every control it places is that
