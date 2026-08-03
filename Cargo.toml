@@ -100,8 +100,8 @@ debug = "line-tables-only"
 debug = false
 
 [patch."https://github.com/zed-industries/zed"]
-gpui = { git = "https://github.com/pmarreck/zed", rev = "c1ae270bc657ac83d82174cede7afbf1a27447c8" }
-gpui_platform = { git = "https://github.com/pmarreck/zed", rev = "c1ae270bc657ac83d82174cede7afbf1a27447c8" }
+gpui = { git = "https://github.com/pmarreck/zed", rev = "4afe33f254c0a74cac7e87ed649b1442a1b758b8" }
+gpui_platform = { git = "https://github.com/pmarreck/zed", rev = "4afe33f254c0a74cac7e87ed649b1442a1b758b8" }
 
 [patch."https://github.com/pmarreck/zed"]
 ztracing = { path = "third_party/ztracing" }

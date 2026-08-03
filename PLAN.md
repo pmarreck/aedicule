@@ -50,14 +50,18 @@
     ~30% shortfall in Safari's own `click`, which cancels under the same
     condition. The guest's own comment says "the guest owns this layout and the
     host owns safe activation", so slop belongs in the host.
-    - [ ] Decide slop policy before implementing: a fixed release margin versus
-      expanding every control to a 44x44 CSS px minimum hit rectangle, and what
-      happens where expanded rectangles would overlap.
-    - [ ] Slop must apply to touch-originated presses only. Drag-off-to-cancel
-      is correct mouse behaviour and must not regress.
+    - [x] Slop policy decided by Peter: Option A, a fixed 16px release margin,
+      not 44x44 hit rects. Shipped in 75697fe: `ArmedControl` with half-open
+      `rescues()` in the browser adapter, armed only when
+      `(pointer: coarse)` matches, so mouse drag-off-to-cancel is untouched.
+      Gate: `web_touch_activation` (centre/near activate once, far never).
+      (2026-08-01, EST estimate)
     - [ ] REFUTED EARLIER THEORIES, do not revisit without new evidence: a dead
       rAF loop (frames climb with stalled 0 on hardware); double gesture
-      delivery (pd/pu/ts/te pair 1:1); and a device-pixel-ratio viewport bug
+      delivery AT THE POINTER/TOUCH LAYER ONLY (pd/pu/ts/te pair 1:1 — but
+      those counters never watched mousedown/mouseup, so this refutation
+      never covered the compatibility mouse echo that turned out to be the
+      real second cause, see below); and a device-pixel-ratio viewport bug
       (hardware reports canvas 1290x2325 for css 430x775, exactly 3x, and the
       guest's own layout math reproduces 70px from a 430px viewport). The DPR
       theory came from a headless reproduction that was an emulator artifact:
@@ -84,6 +88,33 @@
     are asserted at the source in `tests/cli/web_startup_surface` and were
     mutation-checked. (2026-07-28 17:35 EDT: `./test`, `./test_browser`, and
     `./build` all green.)
+  - [x] Defect 1 SECOND ROOT CAUSE FOUND AND FIXED 2026-08-03, hardware
+    confirmation pending: after the slop fix, hardware still showed 9/10 taps
+    advancing one frame AND 9/10 failing to pause — the signature of a toggle
+    delivered TWICE per tap (play+pause), not of missed taps (a missed tap
+    while playing would look like success). iOS Safari ignores
+    `preventDefault()` on pointerdown (the spec suppression Chromium honors)
+    and synthesizes a compatibility mousedown/mouseup pair at the touch point
+    after touchend; `gpui_web` listens on both paths, so every tap dispatched
+    twice. Sliders survived because setting a position twice is idempotent;
+    Peter's `ck` counter incrementing on hardware was the tell. Red test
+    first: `dispatchGhostMousePair` in `web_browser_startup` replays Safari's
+    exact stream (ghostActivated=true observed pre-fix). Fix in the fork, rev
+    4afe33f254c0 on `aedicule-gpui-web-input-fixes`: touchstart/touchend
+    `preventDefault()` (the suppression WebKit actually implements) plus a
+    CLOCK-FREE structural guard: every real mouse edge is preceded by its own
+    pointer twin (pointerdown, or pointermove for a chord's collapsed second
+    button) while a compatibility echo is a bare MouseEvent with none, so a
+    two-state device machine (last pointer activity Mouse vs TouchOrPen)
+    swallows bare mouse edges after touch/pen deterministically. A first cut
+    used a 1500ms/32px time+radius classifier (rev 7c69e44d37ad, superseded,
+    kept in fork history): its radius could nondeterministically eat the
+    gate's own mouse clicks near a recent touch point. Ghost edges also skip
+    `apply_focus_host` so a synthesized gesture cannot summon the keyboard.
+    Diag overlay now counts md/mu beside pd/pu/ts/te/ck so ghost pairs are
+    visible on hardware. Pin bumped in Cargo.toml/Cargo.lock.
+    (2026-08-03 16:45 EDT)
+  - [ ] Peter retests Play/Pause on iPhone with the ghost fix deployed.
   - [ ] Classify both as regression vs. newly-reachable pre-existing behavior
     before attributing either to the focus fix. Peter could not get past the
     keyboard on any prior iOS session, so "new" is not established.
@@ -1260,3 +1291,28 @@
   `aedicule-render`, with a repository-wide classifier preventing legacy names
   or aliases from returning. (2026-07-22 18:24 EDT: full test suite, optimized
   native build, and all six checksummed delivery archives passed.)
+
+- [ ] Vibesteroids on iPhone (Peter, 2026-08-03 hardware pass): three gaps, split
+  by responsibility. This is exactly what the demo apps exist to tease out —
+  "aedicule apps may need to be client-aware."
+  - [ ] Protocol gap, host-side: guests have no way to learn the device class
+    (coarse pointer / touch vs. mouse), so Vibesteroids cannot offer its
+    touch-specific controls (side-stroking rotation) on the phone or hide them
+    on desktop. Design a capability signal in the AVP/guest protocol (e.g. a
+    boot-time or resize-time "pointer: coarse" flag mirroring the CSS media
+    query the browser adapter already reads for slop arming). Coordinate the
+    design with vibesteroids_wat before implementing either side.
+  - [ ] Audio silent on iPhone: neither synthetic nor digitized sound, while
+    desktop plays both. `bootstrap.js` already has an unlock handler on
+    pointerdown/keydown/touchstart (capture, passive), so this is NOT the bare
+    missing-unlock case. Suspects, in order: the iOS mute (ringer) switch
+    silences Web Audio in Safari entirely — ask Peter to flip it and retest
+    before code-diving; `guestAudioPaused` refusing the unlock; unlock firing
+    before the AudioContext exists. Needs `?diag=1` audio timeline readout from
+    hardware.
+  - [ ] Guest gaps, vibesteroids_wat's side once the capability signal exists:
+    thrust and Death Blossom have no touch affordance, rotation has no
+    side-stroking control. Send an LLMsend note when the host side is designed.
+- [ ] After the ghost-echo fix is verified green and pushed: update the standing
+  pin recommendation to vibesteroids_wat (their inbox note still says 73891e6,
+  and the browser-cannot-load-compressed-.aed caveat in it is already obsolete).

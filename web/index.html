@@ -64,9 +64,9 @@
 				   of control events that actually reached the guest is what
 				   separates "the tap was delivered twice" from "the tap was
 				   delivered once and the guest did the wrong thing". */
-				const taps = { pd: 0, pu: 0, ts: 0, te: 0, ck: 0 };
+				const taps = { pd: 0, pu: 0, ts: 0, te: 0, md: 0, mu: 0, ck: 0 };
 				const names = { pointerdown: "pd", pointerup: "pu", touchstart: "ts",
-					touchend: "te", click: "ck" };
+					touchend: "te", mousedown: "md", mouseup: "mu", click: "ck" };
 				let lastPoint = "-";
 				/* A control only activates if the press and the release both land
 				   inside the same declared rectangle. On a touch platform a finger
@@ -121,7 +121,8 @@
 						`frames ${frames}  stalled ${stalledPolls}`,
 						`guest ${Math.round(runtime?.lastGuestElapsedMs ?? -1)}ms`,
 						`ctl ${delivered?.controls ?? -1}  ptr ${delivered?.pointer ?? -1}`,
-						`pd ${taps.pd} pu ${taps.pu} ts ${taps.ts} te ${taps.te} ck ${taps.ck}`,
+						`pd ${taps.pd} pu ${taps.pu} ts ${taps.ts} te ${taps.te} `
+							+ `md ${taps.md} mu ${taps.mu} ck ${taps.ck}`,
 						`down ${pressed.id}  up ${released}  drift ${drift}px`,
 						`xy ${lastPoint}`,
 						(() => {

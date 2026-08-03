@@ -1176,7 +1176,7 @@ dependencies = [
 [[package]]
 name = "collections"
 version = "0.1.0"
-source = "git+https://github.com/pmarreck/zed?rev=c1ae270bc657ac83d82174cede7afbf1a27447c8#c1ae270bc657ac83d82174cede7afbf1a27447c8"
+source = "git+https://github.com/pmarreck/zed?rev=4afe33f254c0a74cac7e87ed649b1442a1b758b8#4afe33f254c0a74cac7e87ed649b1442a1b758b8"
 dependencies = [
  "gpui_util",
  "indexmap",
@@ -1791,7 +1791,7 @@ dependencies = [
 [[package]]
 name = "derive_refineable"
 version = "0.1.0"
-source = "git+https://github.com/pmarreck/zed?rev=c1ae270bc657ac83d82174cede7afbf1a27447c8#c1ae270bc657ac83d82174cede7afbf1a27447c8"
+source = "git+https://github.com/pmarreck/zed?rev=4afe33f254c0a74cac7e87ed649b1442a1b758b8#4afe33f254c0a74cac7e87ed649b1442a1b758b8"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2694,7 +2694,7 @@ dependencies = [
 [[package]]
 name = "gpui"
 version = "0.2.2"
-source = "git+https://github.com/pmarreck/zed?rev=c1ae270bc657ac83d82174cede7afbf1a27447c8#c1ae270bc657ac83d82174cede7afbf1a27447c8"
+source = "git+https://github.com/pmarreck/zed?rev=4afe33f254c0a74cac7e87ed649b1442a1b758b8#4afe33f254c0a74cac7e87ed649b1442a1b758b8"
 dependencies = [
  "accesskit",
  "anyhow",
@@ -2722,7 +2722,7 @@ dependencies = [
  "futures",
  "futures-concurrency",
  "getrandom 0.3.4",
- "gpui_macros 0.1.0 (git+https://github.com/pmarreck/zed?rev=c1ae270bc657ac83d82174cede7afbf1a27447c8)",
+ "gpui_macros 0.1.0 (git+https://github.com/pmarreck/zed?rev=4afe33f254c0a74cac7e87ed649b1442a1b758b8)",
  "gpui_shared_string",
  "gpui_util",
  "heapless",
@@ -2852,7 +2852,7 @@ dependencies = [
 [[package]]
 name = "gpui_linux"
 version = "0.1.0"
-source = "git+https://github.com/pmarreck/zed?rev=c1ae270bc657ac83d82174cede7afbf1a27447c8#c1ae270bc657ac83d82174cede7afbf1a27447c8"
+source = "git+https://github.com/pmarreck/zed?rev=4afe33f254c0a74cac7e87ed649b1442a1b758b8#4afe33f254c0a74cac7e87ed649b1442a1b758b8"
 dependencies = [
  "accesskit",
  "accesskit_unix",
@@ -2903,7 +2903,7 @@ dependencies = [
 [[package]]
 name = "gpui_macos"
 version = "0.1.0"
-source = "git+https://github.com/pmarreck/zed?rev=c1ae270bc657ac83d82174cede7afbf1a27447c8#c1ae270bc657ac83d82174cede7afbf1a27447c8"
+source = "git+https://github.com/pmarreck/zed?rev=4afe33f254c0a74cac7e87ed649b1442a1b758b8#4afe33f254c0a74cac7e87ed649b1442a1b758b8"
 dependencies = [
  "accesskit",
  "accesskit_macos",
@@ -2961,7 +2961,7 @@ dependencies = [
 [[package]]
 name = "gpui_macros"
 version = "0.1.0"
-source = "git+https://github.com/pmarreck/zed?rev=c1ae270bc657ac83d82174cede7afbf1a27447c8#c1ae270bc657ac83d82174cede7afbf1a27447c8"
+source = "git+https://github.com/pmarreck/zed?rev=4afe33f254c0a74cac7e87ed649b1442a1b758b8#4afe33f254c0a74cac7e87ed649b1442a1b758b8"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -2972,7 +2972,7 @@ dependencies = [
 [[package]]
 name = "gpui_platform"
 version = "0.1.0"
-source = "git+https://github.com/pmarreck/zed?rev=c1ae270bc657ac83d82174cede7afbf1a27447c8#c1ae270bc657ac83d82174cede7afbf1a27447c8"
+source = "git+https://github.com/pmarreck/zed?rev=4afe33f254c0a74cac7e87ed649b1442a1b758b8#4afe33f254c0a74cac7e87ed649b1442a1b758b8"
 dependencies = [
  "console_error_panic_hook",
  "gpui",
@@ -2985,7 +2985,7 @@ dependencies = [
 [[package]]
 name = "gpui_shared_string"
 version = "0.1.0"
-source = "git+https://github.com/pmarreck/zed?rev=c1ae270bc657ac83d82174cede7afbf1a27447c8#c1ae270bc657ac83d82174cede7afbf1a27447c8"
+source = "git+https://github.com/pmarreck/zed?rev=4afe33f254c0a74cac7e87ed649b1442a1b758b8#4afe33f254c0a74cac7e87ed649b1442a1b758b8"
 dependencies = [
  "schemars",
  "serde",
@@ -2995,7 +2995,7 @@ dependencies = [
 [[package]]
 name = "gpui_util"
 version = "0.1.0"
-source = "git+https://github.com/pmarreck/zed?rev=c1ae270bc657ac83d82174cede7afbf1a27447c8#c1ae270bc657ac83d82174cede7afbf1a27447c8"
+source = "git+https://github.com/pmarreck/zed?rev=4afe33f254c0a74cac7e87ed649b1442a1b758b8#4afe33f254c0a74cac7e87ed649b1442a1b758b8"
 dependencies = [
  "anyhow",
  "log",
@@ -3004,7 +3004,7 @@ dependencies = [
 [[package]]
 name = "gpui_web"
 version = "0.1.0"
-source = "git+https://github.com/pmarreck/zed?rev=c1ae270bc657ac83d82174cede7afbf1a27447c8#c1ae270bc657ac83d82174cede7afbf1a27447c8"
+source = "git+https://github.com/pmarreck/zed?rev=4afe33f254c0a74cac7e87ed649b1442a1b758b8#4afe33f254c0a74cac7e87ed649b1442a1b758b8"
 dependencies = [
  "anyhow",
  "console_error_panic_hook",
@@ -3028,7 +3028,7 @@ dependencies = [
 [[package]]
 name = "gpui_wgpu"
 version = "0.1.0"
-source = "git+https://github.com/pmarreck/zed?rev=c1ae270bc657ac83d82174cede7afbf1a27447c8#c1ae270bc657ac83d82174cede7afbf1a27447c8"
+source = "git+https://github.com/pmarreck/zed?rev=4afe33f254c0a74cac7e87ed649b1442a1b758b8#4afe33f254c0a74cac7e87ed649b1442a1b758b8"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -3057,7 +3057,7 @@ dependencies = [
 [[package]]
 name = "gpui_windows"
 version = "0.1.0"
-source = "git+https://github.com/pmarreck/zed?rev=c1ae270bc657ac83d82174cede7afbf1a27447c8#c1ae270bc657ac83d82174cede7afbf1a27447c8"
+source = "git+https://github.com/pmarreck/zed?rev=4afe33f254c0a74cac7e87ed649b1442a1b758b8#4afe33f254c0a74cac7e87ed649b1442a1b758b8"
 dependencies = [
  "accesskit",
  "accesskit_windows",
@@ -3294,7 +3294,7 @@ dependencies = [
 [[package]]
 name = "http_client"
 version = "0.1.0"
-source = "git+https://github.com/pmarreck/zed?rev=c1ae270bc657ac83d82174cede7afbf1a27447c8#c1ae270bc657ac83d82174cede7afbf1a27447c8"
+source = "git+https://github.com/pmarreck/zed?rev=4afe33f254c0a74cac7e87ed649b1442a1b758b8#4afe33f254c0a74cac7e87ed649b1442a1b758b8"
 dependencies = [
  "anyhow",
  "async-compression",
@@ -4171,7 +4171,7 @@ dependencies = [
 [[package]]
 name = "media"
 version = "0.1.0"
-source = "git+https://github.com/pmarreck/zed?rev=c1ae270bc657ac83d82174cede7afbf1a27447c8#c1ae270bc657ac83d82174cede7afbf1a27447c8"
+source = "git+https://github.com/pmarreck/zed?rev=4afe33f254c0a74cac7e87ed649b1442a1b758b8#4afe33f254c0a74cac7e87ed649b1442a1b758b8"
 dependencies = [
  "anyhow",
  "bindgen",
@@ -5147,7 +5147,7 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 [[package]]
 name = "perf"
 version = "0.1.0"
-source = "git+https://github.com/pmarreck/zed?rev=c1ae270bc657ac83d82174cede7afbf1a27447c8#c1ae270bc657ac83d82174cede7afbf1a27447c8"
+source = "git+https://github.com/pmarreck/zed?rev=4afe33f254c0a74cac7e87ed649b1442a1b758b8#4afe33f254c0a74cac7e87ed649b1442a1b758b8"
 dependencies = [
  "collections",
  "serde",
@@ -5975,7 +5975,7 @@ dependencies = [
 [[package]]
 name = "refineable"
 version = "0.1.0"
-source = "git+https://github.com/pmarreck/zed?rev=c1ae270bc657ac83d82174cede7afbf1a27447c8#c1ae270bc657ac83d82174cede7afbf1a27447c8"
+source = "git+https://github.com/pmarreck/zed?rev=4afe33f254c0a74cac7e87ed649b1442a1b758b8#4afe33f254c0a74cac7e87ed649b1442a1b758b8"
 dependencies = [
  "derive_refineable",
 ]
@@ -6354,7 +6354,7 @@ dependencies = [
 [[package]]
 name = "scheduler"
 version = "0.1.0"
-source = "git+https://github.com/pmarreck/zed?rev=c1ae270bc657ac83d82174cede7afbf1a27447c8#c1ae270bc657ac83d82174cede7afbf1a27447c8"
+source = "git+https://github.com/pmarreck/zed?rev=4afe33f254c0a74cac7e87ed649b1442a1b758b8#4afe33f254c0a74cac7e87ed649b1442a1b758b8"
 dependencies = [
  "async-task",
  "backtrace",
@@ -6942,7 +6942,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 [[package]]
 name = "sum_tree"
 version = "0.1.0"
-source = "git+https://github.com/pmarreck/zed?rev=c1ae270bc657ac83d82174cede7afbf1a27447c8#c1ae270bc657ac83d82174cede7afbf1a27447c8"
+source = "git+https://github.com/pmarreck/zed?rev=4afe33f254c0a74cac7e87ed649b1442a1b758b8#4afe33f254c0a74cac7e87ed649b1442a1b758b8"
 dependencies = [
  "heapless",
  "log",
@@ -7752,7 +7752,7 @@ checksum = "b6c140620e7ffbb22c2dee59cafe6084a59b5ffc27a8859a5f0d494b5d52b6be"
 [[package]]
 name = "util"
 version = "0.1.0"
-source = "git+https://github.com/pmarreck/zed?rev=c1ae270bc657ac83d82174cede7afbf1a27447c8#c1ae270bc657ac83d82174cede7afbf1a27447c8"
+source = "git+https://github.com/pmarreck/zed?rev=4afe33f254c0a74cac7e87ed649b1442a1b758b8#4afe33f254c0a74cac7e87ed649b1442a1b758b8"
 dependencies = [
  "anyhow",
  "async-fs",
@@ -7791,7 +7791,7 @@ dependencies = [
 [[package]]
 name = "util_macros"
 version = "0.1.0"
-source = "git+https://github.com/pmarreck/zed?rev=c1ae270bc657ac83d82174cede7afbf1a27447c8#c1ae270bc657ac83d82174cede7afbf1a27447c8"
+source = "git+https://github.com/pmarreck/zed?rev=4afe33f254c0a74cac7e87ed649b1442a1b758b8#4afe33f254c0a74cac7e87ed649b1442a1b758b8"
 dependencies = [
  "perf",
  "quote",

@@ -169,6 +169,10 @@ expect_text "$root/tests/integration/web_browser_startup" 'Input.dispatchTouchEv
 	'headless browser probe does not synthesize multi-touch input through Chrome'
 expect_text "$root/tests/integration/web_browser_startup" 'touchCancel' \
 	'headless browser probe does not exercise touch cancellation'
+expect_text "$root/tests/integration/web_browser_startup" 'dispatchGhostMousePair' \
+	'headless browser probe does not replay iOS Safari compatibility mouse echoes'
+expect_text "$root/tests/integration/web_browser_startup" 'ghostActivated' \
+	'touch activation verdict tolerates a tap that dispatches twice'
 expect_text "$root/tests/integration/web_browser_startup" 'type: "input-summary"' \
 	'headless browser probe does not compact its synthetic input result'
 expect_text "$root/tests/integration/web_browser_startup" '--require-audio-playback' \

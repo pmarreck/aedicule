@@ -941,13 +941,55 @@ async function exerciseTouchActivation(protocol, snapshot) {
 	await dispatchDriftingTouch(protocol, bounds, halfHeight + 120);
 	const escaped = await waitForSemanticEvent(protocol, "menuActions", beforeFar);
 
+	// iOS Safari ignores `preventDefault()` on pointerdown and, once the touch
+	// ends, still synthesizes a compatibility mousedown/mouseup pair at the
+	// touch point. Chromium suppresses that pair per spec, so its own touch
+	// dispatch can never exercise the defect; the gate replays Safari's exact
+	// stream by hand instead. Delivering the action a second time toggles a
+	// two-state control straight back, which reads on hardware as a Play
+	// button that advances one frame and stops.
+	const beforeGhost = await actions();
+	await dispatchDriftingTouch(protocol, bounds, 0);
+	await waitForSemanticEvent(protocol, "menuActions", beforeGhost);
+	const afterTap = await actions();
+	const tapDelta = afterTap - beforeGhost;
+	await dispatchGhostMousePair(protocol, bounds);
+	const ghostActivated = await waitForSemanticEvent(protocol, "menuActions", afterTap);
+
 	return {
-		touchActivation: centreDelta === 1 && nearDelta === 1 && !escaped,
+		touchActivation: centreDelta === 1 && nearDelta === 1 && !escaped
+			&& tapDelta === 1 && !ghostActivated,
 		coarsePointer: coarse.result.value === true,
 		centreDelta,
 		nearDelta,
 		activatedOnFarRelease: escaped,
+		ghostTapDelta: tapDelta,
+		ghostActivated,
 	};
+}
+
+/**
+ * Replays the compatibility mousedown/mouseup pair iOS Safari synthesizes at
+ * the touch point after touchend. These are plain MouseEvents dispatched from
+ * inside the page because that is exactly what the platform's listeners see on
+ * hardware: no pointer events precede them and no CDP path can produce them,
+ * since Chromium (correctly) suppresses the pair for its own touch input.
+ */
+async function dispatchGhostMousePair(protocol, bounds) {
+	const x = Math.round(bounds.x + bounds.width / 2);
+	const y = Math.round(bounds.y + bounds.height / 2);
+	await protocol.send("Runtime.evaluate", {
+		expression: `(() => {
+			const canvas = document.querySelector("canvas");
+			for (const [type, buttons] of [["mousedown", 1], ["mouseup", 0]]) {
+				canvas.dispatchEvent(new MouseEvent(type, {
+					bubbles: true, cancelable: true, view: window,
+					clientX: ${x}, clientY: ${y}, button: 0, buttons,
+				}));
+			}
+		})()`,
+		returnByValue: true,
+	});
 }
 
 async function dispatchSliderDrag(protocol, bounds) {
