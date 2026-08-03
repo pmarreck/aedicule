@@ -114,7 +114,8 @@
     Diag overlay now counts md/mu beside pd/pu/ts/te/ck so ghost pairs are
     visible on hardware. Pin bumped in Cargo.toml/Cargo.lock.
     (2026-08-03 16:45 EDT)
-  - [ ] Peter retests Play/Pause on iPhone with the ghost fix deployed.
+  - [x] Peter retested Play/Pause on iPhone with the ghost fix deployed: "it
+    now works." Defect 1 is CLOSED on hardware. (2026-08-03 16:40 EDT)
   - [ ] Classify both as regression vs. newly-reachable pre-existing behavior
     before attributing either to the focus fix. Peter could not get past the
     keyboard on any prior iOS session, so "new" is not established.
@@ -1313,6 +1314,8 @@
   - [ ] Guest gaps, vibesteroids_wat's side once the capability signal exists:
     thrust and Death Blossom have no touch affordance, rotation has no
     side-stroking control. Send an LLMsend note when the host side is designed.
-- [ ] After the ghost-echo fix is verified green and pushed: update the standing
-  pin recommendation to vibesteroids_wat (their inbox note still says 73891e6,
-  and the browser-cannot-load-compressed-.aed caveat in it is already obsolete).
+- [x] Updated pin recommendation sent to vibesteroids_wat: 61f287f (CI green),
+  superseding 73891e6; obsolete compressed-.aed caveat retracted; capability
+  signal and audio investigation flagged as coming.
+  (inbox/2026-08-03-from-aedicule-ghost-tap-fix-pin-and-capability-heads-up.md,
+  2026-08-03 17:41 EDT)
