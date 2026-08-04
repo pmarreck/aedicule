@@ -1303,17 +1303,57 @@
     boot-time or resize-time "pointer: coarse" flag mirroring the CSS media
     query the browser adapter already reads for slop arming). Coordinate the
     design with vibesteroids_wat before implementing either side.
-  - [ ] Audio silent on iPhone: neither synthetic nor digitized sound, while
-    desktop plays both. `bootstrap.js` already has an unlock handler on
-    pointerdown/keydown/touchstart (capture, passive), so this is NOT the bare
-    missing-unlock case. Suspects, in order: the iOS mute (ringer) switch
-    silences Web Audio in Safari entirely — ask Peter to flip it and retest
-    before code-diving; `guestAudioPaused` refusing the unlock; unlock firing
-    before the AudioContext exists. Needs `?diag=1` audio timeline readout from
-    hardware.
+  - [x] Audio silent on iPhone — root cause found on hardware (Peter,
+    2026-08-04 ~1:49 PM EDT): Web Audio unlocks ONLY on a completed tap. Sound
+    started the moment Peter tapped (not dragged) and stayed up from then on.
+    Mechanism: iOS grants transient user activation for tap-like gestures, not
+    pans, and the `bootstrap.js` unlock listeners
+    (pointerdown/keydown/touchstart) all fire at gesture START, before WebKit
+    grants activation. Earlier "no sound" reports are consistent with
+    drag-only interaction plus the then-muted ringer switch. Follow-ups below.
+  - [x] Hardware confirmation of the healthy pipeline (Peter, 2026-08-04
+    ~2:03 PM EDT): `au running req 87 act false / au-last source-ended` — the
+    guest made 87 playback requests, the context is running, and the last
+    event is a source finishing. `act false` is normal expiry of transient
+    activation. Audio investigation CLOSED.
+  - [x] Add end-of-gesture events (touchend/pointerup/click) to the unlock
+    listener set so the resume attempt lands inside the freshest activation
+    window. TDD: surface tripwire on the full listener array went red, then
+    green. (2026-08-04 ~2:15 PM EDT)
+  - [ ] Decide whether the host shows a "tap to enable sound" cue when PCM
+    requests arrive while the context is suspended and
+    `userActivation.hasBeenActive` is false (design decision — Peter).
+    Drag-never-unlocks is Apple policy and cannot be coded around.
   - [ ] Guest gaps, vibesteroids_wat's side once the capability signal exists:
     thrust and Death Blossom have no touch affordance, rotation has no
     side-stroking control. Send an LLMsend note when the host side is designed.
+
+- [ ] `?diag=1` startup failure on iPhone (Peter, 2026-08-04): "RangeError:
+  Out of memory", reported stage `startup-lock-released`, 306 ms elapsed, all
+  capability checks green. Code inspection findings (no fix applied yet):
+  - [x] Instrument bug FIXED (2026-08-04 ~2:15 PM EDT): `failedStartupStage`
+    in `startup-lock.mjs` pops trailing `startup-lock-released` entries
+    before `reportStartupFailure` labels the failure; every other lock stage
+    is preserved as a genuine failure position. Failure screen now also shows
+    a two-line stack excerpt (message-line filtered so V8 and Safari render
+    alike). TDD: unit test over the whole lock-stage domain in
+    `web_startup_lock.mjs` went red, then green; surface tripwires added.
+  - Prime suspect for the OOM itself: the served glue calls
+    `new WebAssembly.Memory({initial: 82, maximum: 16384, shared: true})` —
+    a shared memory reserves its full 1 GiB maximum at creation. Adding
+    `?diag=1` to a tab that was just running the game forces a same-tab
+    reload that races the old instance's teardown (its own 1 GiB reservation
+    plus WebGPU buffers still resident), so the new reservation fails.
+  - [x] Experiment (a) (Peter, 2026-08-04 ~2:03 PM EDT): the `?diag=1` URL
+    boots fine in a FRESH tab — the diag overlay is exonerated as a cause.
+  - [ ] Experiment (b), optional: reload the PLAIN URL in a tab that was just
+    playing — hypothesis says it sometimes OOMs with no diag anywhere, which
+    would positively confirm reload pressure. The next OOM's failure screen
+    will now name the true stage and top stack frames either way.
+  - [ ] Candidate mitigations once (b) or a truthful failure screen confirms
+    (do not build yet): retry `init()` after a short backoff on RangeError;
+    and/or lower `--max-memory` below 1 GiB if Aedicule's real ceiling allows
+    (capacity decision for Peter).
 - [x] Updated pin recommendation sent to vibesteroids_wat: 61f287f (CI green),
   superseding 73891e6; obsolete compressed-.aed caveat retracted; capability
   signal and audio investigation flagged as coming.

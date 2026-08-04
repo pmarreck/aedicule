@@ -77,3 +77,43 @@ const { withExclusiveStartupLock } = await import(
 		"startup-lock-released",
 	]);
 }
+
+{
+	const { failedStartupStage } = await import(
+		pathToFileURL(`${root}/web/startup-lock.mjs`)
+	);
+	assert.equal(failedStartupStage([]), "unknown");
+	assert.equal(failedStartupStage([{ stage: "startup-lock-released" }]), "unknown");
+	assert.equal(
+		failedStartupStage([
+			{ stage: "bootstrap" },
+			{ stage: "wasm-initializing" },
+			{ stage: "startup-lock-released" },
+		]),
+		"wasm-initializing",
+		"the lock release bookkeeping must not mask the stage that threw",
+	);
+	// Classify the whole lock-stage domain: only the release entry is
+	// bookkeeping that postdates a failure; every other lock stage is a
+	// truthful last position for a failure that happened right there.
+	for (const stage of [
+		"startup-lock-unavailable",
+		"startup-lock-requested",
+		"startup-lock-waiting",
+		"startup-lock-acquired",
+	]) {
+		assert.equal(
+			failedStartupStage([{ stage: "capabilities" }, { stage }]),
+			stage,
+			`${stage} is a genuine failure position and must be preserved`,
+		);
+	}
+	assert.equal(
+		failedStartupStage([
+			{ stage: "startup-lock-released" },
+			{ stage: "wasm-initialized" },
+		]),
+		"wasm-initialized",
+		"only trailing release entries mask a failure",
+	);
+}

@@ -7,7 +7,7 @@ import {
 } from "./launcher-i18n.mjs";
 import { schedulePcmPlayback } from "./audio.mjs";
 import { loadLocalApplication } from "./local-application.mjs";
-import { withExclusiveStartupLock } from "./startup-lock.mjs";
+import { failedStartupStage, withExclusiveStartupLock } from "./startup-lock.mjs";
 
 const status = document.getElementById("aedicule-startup-status");
 const catalog = loadCatalog(navigator.languages);
@@ -324,7 +324,10 @@ globalThis.__AEDICULE_SET_AUDIO_PAUSED = paused => {
 	transition.catch(error => console.warn(strings.audioUnlockFailed, error));
 };
 
-for (const eventName of ["pointerdown", "keydown", "touchstart"]) {
+// iOS grants user activation on completed tap-like gestures, never at
+// gesture start, so end-of-gesture events must also attempt the unlock or
+// the resume request always precedes the activation it needs.
+for (const eventName of ["pointerdown", "keydown", "touchstart", "pointerup", "touchend", "click"]) {
 	addEventListener(eventName, unlockAudio, { capture: true, passive: true });
 }
 
@@ -438,9 +441,16 @@ async function loadApplication() {
 
 function reportStartupFailure(error) {
 	const capabilities = browserCapabilities();
-	const failedStage = globalThis.__AEDICULE_STARTUP_TIMELINE.at(-1)?.stage ?? "unknown";
+	const failedStage = failedStartupStage(globalThis.__AEDICULE_STARTUP_TIMELINE);
 	const errorName = error?.name ?? typeof error;
 	const detail = error instanceof Error ? error.message : String(error);
+	// V8 stacks repeat the message on their first line; Safari's are frames
+	// only. Filtering on the message keeps the excerpt to frames on both.
+	const stackExcerpt = String(error?.stack ?? "")
+		.split("\n")
+		.filter(line => line !== "" && !line.includes(detail))
+		.slice(0, 2)
+		.join("\n");
 	const failure = {
 		failedStage,
 		errorName,
@@ -457,6 +467,7 @@ function reportStartupFailure(error) {
 		? `\n\n${strings.webGpuAdapterRecovery}`
 		: "";
 	status.textContent = `${strings.couldNotStart}\n\n${errorName}: ${detail}${adapterRecovery}\n\n`
+		+ (stackExcerpt === "" ? "" : `${stackExcerpt}\n\n`)
 		+ `${capabilitySummary(capabilities)}\n`
 		+ `stage: ${failedStage}\n`
 		+ `elapsedMs: ${Math.round(performance.now())}`;

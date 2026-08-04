@@ -92,6 +92,19 @@ expect_text "$root/web/bootstrap.js" 'console.error("[Aedicule startup] failed",
 	'browser bootstrap does not report startup failures to the console'
 expect_text "$root/web/bootstrap.js" 'loadApplication().catch(reportStartupFailure)' \
 	'browser bootstrap can still reject into an invisible blank page'
+# The startup lock's finally reports a release entry after failing work has
+# recorded its true last stage, so the failure screen must derive its stage
+# through the mask-aware helper, not raw timeline.at(-1) (iPhone OOM of
+# 2026-08-04 reported "startup-lock-released" for a wasm-init failure).
+expect_text "$root/web/bootstrap.js" 'failedStartupStage(globalThis.__AEDICULE_STARTUP_TIMELINE)' \
+	'browser failure screen reads the raw timeline tail the lock release masks'
+expect_text "$root/web/bootstrap.js" 'stackExcerpt' \
+	'browser failure screen omits the error stack a console-less device needs'
+# iOS grants user activation on completed tap-like gestures, never at gesture
+# start, so the unlock set must include end-of-gesture events or the resume
+# attempt always precedes the activation it needs.
+expect_text "$root/web/bootstrap.js" '["pointerdown", "keydown", "touchstart", "pointerup", "touchend", "click"]' \
+	'browser audio unlock listens only at gesture start, before iOS grants activation'
 expect_text "$root/web/bootstrap.js" 'fetch("./application-assets.json"' \
 	'browser bootstrap does not fetch the package asset catalog'
 expect_text "$root/web/bootstrap.js" 'globalThis.__AEDICULE_ASSETS' \
