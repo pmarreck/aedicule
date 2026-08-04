@@ -1376,6 +1376,23 @@
     (do not build yet): retry `init()` after a short backoff on RangeError;
     and/or lower `--max-memory` below 1 GiB if Aedicule's real ceiling allows
     (capacity decision for Peter).
+
+- [ ] Remove Peter from the regression-verification loop (his question,
+  2026-08-03 evening; answered in chat only until now). Peter stays acceptance
+  authority at bless time — speaker sound, haptics, feel — but regression
+  re-verification can be mechanized in three stages:
+  - [ ] Standing policy (already practiced): every hardware finding gets
+    encoded as a replayed event stream in the Chromium gate (as the ghost-tap
+    fix was). Catches regressions of KNOWN failures only.
+  - [ ] Playwright-WebKit spike, NOT yet authorized: add WebKit as a second
+    gate engine. Two unknowns to prove first: does its touch emulation
+    synthesize Safari's compatibility mouse events, and can WebKit-on-Linux
+    boot Aedicule's WebGPU path at all. Fallback if the renderer won't boot: a
+    stripped harness page exercising gpui_web input/audio wiring without
+    WebGPU.
+  - [ ] Roadmap: iOS Simulator CI stage on klaus-m1-mac-mini via
+    safaridriver/WebDriver, wired into Mechatron — the strongest available
+    oracle for WebKit-on-iOS behavior short of hardware.
 - [x] Updated pin recommendation sent to vibesteroids_wat: 61f287f (CI green),
   superseding 73891e6; obsolete compressed-.aed caveat retracted; capability
   signal and audio investigation flagged as coming.
