@@ -1296,13 +1296,35 @@
 - [ ] Vibesteroids on iPhone (Peter, 2026-08-03 hardware pass): three gaps, split
   by responsibility. This is exactly what the demo apps exist to tease out —
   "aedicule apps may need to be client-aware."
-  - [ ] Protocol gap, host-side: guests have no way to learn the device class
-    (coarse pointer / touch vs. mouse), so Vibesteroids cannot offer its
-    touch-specific controls (side-stroking rotation) on the phone or hide them
-    on desktop. Design a capability signal in the AVP/guest protocol (e.g. a
-    boot-time or resize-time "pointer: coarse" flag mirroring the CSS media
-    query the browser adapter already reads for slop arming). Coordinate the
-    design with vibesteroids_wat before implementing either side.
+  - [ ] Protocol gap, host-side — DESIGN CHOSEN (Peter, 2026-08-04 ~3:41 PM
+    EDT): extend the existing viewport event (WAT ABI kind 6) into the
+    "device-change event". Its `code` slot is a hardcoded 0 in both ABIs
+    (`src/lib.rs` legacy_event_parameters / integer_event_parameters), so it
+    becomes a device-class flags bitfield: bit 0 = coarse primary pointer
+    (CSS `(pointer: coarse)`, already read host-side for slop arming); other
+    bits reserved-zero, guests mask only known bits. Delivery: at least once
+    at app start (both adapters already fire on first observation — verified
+    2026-08-04), and on any change to dimensions OR flags (dedupe key must
+    grow the flags so a size-unchanged class flip emits, e.g. iPad gaining a
+    trackpad or a Mac window dragged to a Sidecar iPad). Prose rename in
+    VIEW_PROTOCOL.md lands with the implementation.
+    - [x] Contract proposal sent to vibesteroids_wat, asking whether bit 1
+      (hover absence) or anything else is needed; implementation on BOTH
+      sides gated on their reply confirming the bit layout.
+      (inbox/2026-08-04-from-aedicule-device-change-event-contract.md,
+      2026-08-04 ~3:50 PM EDT)
+    - [ ] After their reply: TDD the host side (event encoding over the flag
+      domain, dedupe-key change emission, boot-time guarantee), update
+      VIEW_PROTOCOL.md, then notify them to build the guest side.
+  - [ ] Six-axis motion/orientation input capability (Peter, 2026-08-04):
+    expose device orientation + motion (DeviceMotion/DeviceOrientation) to
+    WAT guests as a separate, explicitly-granted host-service capability per
+    VIEW_PROTOCOL.md — NOT part of the device-change event. iOS requires
+    `DeviceMotionEvent.requestPermission()` from a user gesture over HTTPS;
+    the host must reject the capability when unavailable or denied. Optional
+    same-gate extras: geolocation, compass heading. Demo idea: Physics 101
+    two-springs-and-a-weight app — sliders for spring tension, shaking the
+    phone shakes the weight in realtime. Design stage; no implementation yet.
   - [x] Audio silent on iPhone — root cause found on hardware (Peter,
     2026-08-04 ~1:49 PM EDT): Web Audio unlocks ONLY on a completed tap. Sound
     started the moment Peter tapped (not dragged) and stayed up from then on.
