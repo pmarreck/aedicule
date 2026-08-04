@@ -1342,10 +1342,14 @@
     listener set so the resume attempt lands inside the freshest activation
     window. TDD: surface tripwire on the full listener array went red, then
     green. (2026-08-04 ~2:15 PM EDT)
-  - [ ] Decide whether the host shows a "tap to enable sound" cue when PCM
-    requests arrive while the context is suspended and
-    `userActivation.hasBeenActive` is false (design decision — Peter).
-    Drag-never-unlocks is Apple policy and cannot be coded around.
+  - [x] Tap-for-sound cue DECIDED (Peter, 2026-08-04 ~4:09 PM EDT): no host
+    mechanism. The guest presents a "Start Game" button, which guarantees the
+    first interaction is a tap (not a drag) — and the host's window-capture
+    unlock listeners make any tap unlock audio, so the pattern needs zero new
+    code on either side. Guests cannot query audio state, so the pattern is
+    "always gate at boot"; a conditional cue would need a capability query we
+    have no present requirement for. Drag-never-unlocks is Apple policy and
+    cannot be coded around. FYI note sent to vibesteroids_wat.
   - [ ] Guest gaps, vibesteroids_wat's side once the capability signal exists:
     thrust and Death Blossom have no touch affordance, rotation has no
     side-stroking control. Send an LLMsend note when the host side is designed.
