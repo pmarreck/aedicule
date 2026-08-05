@@ -1375,6 +1375,11 @@
     - ABI minor 6 -> 7; generated docs updated (import row, export, kind 16,
       guarantees); surface tripwires guard the browser wiring; native
       adapter stays sensor-silent by design.
+    - [x] Shipped as 1b4cde7, CI green across all six jobs (2026-08-05
+      ~2 PM EDT); deployed to the Tailscale endpoint; ship notice with the
+      full contract, the minor-7-only-if-required rule, and the lifted
+      playtest hold sent to vibesteroids_wat.
+      (inbox/2026-08-05-from-aedicule-motion-capability-shipped-and-playtest-hold-lifted.md)
     - [ ] Later, unbuilt: DeviceOrientation (attitude) profile, geolocation,
       compass — same registration gate when a demo needs them. Springs demo
       (two springs + weight, shake the phone) remains the six-axis exercise
