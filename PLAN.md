@@ -1412,15 +1412,16 @@
   - [ ] Standing policy (already practiced): every hardware finding gets
     encoded as a replayed event stream in the Chromium gate (as the ghost-tap
     fix was). Catches regressions of KNOWN failures only.
-  - [ ] Playwright-WebKit spike, NOT yet authorized: add WebKit as a second
-    gate engine. Two unknowns to prove first: does its touch emulation
-    synthesize Safari's compatibility mouse events, and can WebKit-on-Linux
-    boot Aedicule's WebGPU path at all. Fallback if the renderer won't boot: a
-    stripped harness page exercising gpui_web input/audio wiring without
-    WebGPU.
-  - [ ] Roadmap: iOS Simulator CI stage on klaus-m1-mac-mini via
-    safaridriver/WebDriver, wired into Mechatron — the strongest available
-    oracle for WebKit-on-iOS behavior short of hardware.
+  - DISFAVORED (Peter, 2026-08-05 ~12 PM EDT: "i hate using headless browser
+    drivers if at all possible to avoid"): the Playwright-WebKit second-engine
+    spike and the iOS-Simulator-CI-via-safaridriver roadmap are both headless
+    driver machinery — keep them as last resorts only, not planned work. The
+    existing Chromium CDP gate stays (established, load-bearing, and the
+    replayed-stream policy above depends on it); the aversion applies to
+    ADDING driver surfaces. Preferred direction instead: hardware-first bless
+    with Peter plus replayed-stream regression, and where WebKit-specific
+    behavior must be mechanized, prefer in-page harnesses served to a real
+    browser over driver-controlled ones.
 - [x] Updated pin recommendation sent to vibesteroids_wat: 61f287f (CI green),
   superseding 73891e6; obsolete compressed-.aed caveat retracted; capability
   signal and audio investigation flagged as coming.
