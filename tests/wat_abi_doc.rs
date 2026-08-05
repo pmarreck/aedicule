@@ -42,8 +42,16 @@ fn checked_in_wat_abi_reference_is_the_generated_canonical_document() {
         "generated ABI reference defines device-class flag bit 0"
     );
     assert!(
-        checked_in.contains("# Aedicule WAT ABI v0.6"),
-        "device-class flags are a new capability, so the host minor advertises v0.6"
+        checked_in.contains("# Aedicule WAT ABI v0.7"),
+        "motion interests are a new capability, so the host minor advertises v0.7"
+    );
+    assert!(
+        checked_in.contains("| 16 | Motion gesture |"),
+        "generated ABI reference documents the shake gesture event kind"
+    );
+    assert!(
+        checked_in.contains("AE_motion_event"),
+        "generated ABI reference documents the six-axis sample export"
     );
     assert!(
         checked_in.contains("`12` F1, `13` W, `14` A, and `15` D"),

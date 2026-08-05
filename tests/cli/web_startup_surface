@@ -270,6 +270,21 @@ expect_text "$root/src/bin/aedicule-web.rs" 'DEVICE_FLAG_COARSE_POINTER' \
 	'browser adapter never sets the coarse-pointer device flag'
 reject_text "$root/src/bin/aedicule-web.rs" 'viewport_bits' \
 	'browser adapter still keys device-change dedupe on viewport size alone'
+# Motion capability: bootstrap captures devicemotion into a bounded ring and
+# requests the iOS permission on a user gesture; the adapter drains the ring
+# and runs the unit-tested rate limit and shake detection in Rust.
+expect_text "$root/web/bootstrap.js" '__AEDICULE_MOTION_SAMPLES' \
+	'browser bootstrap never captures devicemotion samples for the adapter'
+expect_text "$root/web/bootstrap.js" 'DeviceMotionEvent.requestPermission' \
+	'browser bootstrap never requests the iOS motion permission on a gesture'
+expect_text "$root/web/bootstrap.js" '__AEDICULE_MOTION_INTEREST' \
+	'browser bootstrap requests motion permission without a guest interest'
+expect_text "$root/src/bin/aedicule-web.rs" '__AEDICULE_MOTION_SAMPLES' \
+	'browser adapter never drains captured devicemotion samples'
+expect_text "$root/src/bin/aedicule-web.rs" 'ShakeDetector' \
+	'browser adapter does not run the unit-tested shake detector'
+expect_text "$root/src/bin/aedicule-web.rs" '__AEDICULE_MOTION_INTEREST' \
+	'browser adapter never signals guest motion interest to the page'
 
 exit "$failures"
 

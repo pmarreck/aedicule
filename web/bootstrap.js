@@ -329,6 +329,51 @@ globalThis.__AEDICULE_SET_AUDIO_PAUSED = paused => {
 // the resume request always precedes the activation it needs.
 for (const eventName of ["pointerdown", "keydown", "touchstart", "pointerup", "touchend", "click"]) {
 	addEventListener(eventName, unlockAudio, { capture: true, passive: true });
+	addEventListener(eventName, requestMotionPermission, { capture: true, passive: true });
+}
+
+// Motion samples cross to the adapter through a bounded ring: the page
+// captures blindly (before permission the event simply never fires), and
+// the Wasm adapter drains per frame, applying the guest's registered rate
+// limit and shake detection in unit-tested Rust.
+globalThis.__AEDICULE_MOTION_SAMPLES = [];
+globalThis.__AEDICULE_MOTION_DIAGNOSTIC = { permission: "unrequested" };
+addEventListener("devicemotion", event => {
+	const acceleration = event.acceleration?.x == null
+		? event.accelerationIncludingGravity
+		: event.acceleration;
+	const rotation = event.rotationRate;
+	const ring = globalThis.__AEDICULE_MOTION_SAMPLES;
+	ring.push({
+		elapsedMs: Math.round(performance.now()),
+		ax: acceleration?.x ?? 0,
+		ay: acceleration?.y ?? 0,
+		az: acceleration?.z ?? 0,
+		rx: rotation?.alpha ?? 0,
+		ry: rotation?.beta ?? 0,
+		rz: rotation?.gamma ?? 0,
+	});
+	if (ring.length > 32) ring.splice(0, ring.length - 32);
+});
+
+let motionPermissionRequested = false;
+// iOS only grants DeviceMotion after an explicit permission request made
+// inside a user gesture; everywhere else the events flow unprompted. The
+// guest's registered interest arrives as __AEDICULE_MOTION_INTEREST.
+function requestMotionPermission() {
+	if (motionPermissionRequested || !globalThis.__AEDICULE_MOTION_INTEREST) return;
+	motionPermissionRequested = true;
+	if (typeof DeviceMotionEvent?.requestPermission !== "function") {
+		globalThis.__AEDICULE_MOTION_DIAGNOSTIC.permission = "implicit";
+		return;
+	}
+	DeviceMotionEvent.requestPermission()
+		.then(state => {
+			globalThis.__AEDICULE_MOTION_DIAGNOSTIC.permission = state;
+		})
+		.catch(error => {
+			globalThis.__AEDICULE_MOTION_DIAGNOSTIC.permission = `failed: ${error?.name ?? error}`;
+		});
 }
 
 globalThis.__AEDICULE_PLAY_PCM = (sampleRate, channels, samples, volume, pitch) => {

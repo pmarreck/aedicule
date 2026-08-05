@@ -1029,6 +1029,7 @@ pub struct Metadata {
     pub title: String,
     pub menu_items: Vec<MenuItem>,
     pub pause_triggers: Vec<PauseTrigger>,
+    pub motion_interests: Vec<MotionInterest>,
     pub controls: Vec<SliderControl>,
     pub external_links: Vec<ExternalLink>,
     pub text_fields: Vec<TextField>,
@@ -1042,6 +1043,7 @@ impl Default for Metadata {
             title: "WAT Application".into(),
             menu_items: Vec::new(),
             pause_triggers: Vec::new(),
+            motion_interests: Vec::new(),
             controls: Vec::new(),
             external_links: Vec::new(),
             text_fields: Vec::new(),
@@ -1773,6 +1775,17 @@ pub enum Event {
         height: f32,
         flags: u32,
     },
+    /// Host-derived shake gesture (event kind 16, code 1), delivered only to
+    /// guests that registered MotionInterestKind::ShakeGesture.
+    MotionGesture {
+        magnitude: f32,
+    },
+    /// One six-axis sensor sample (acceleration m/s², rotation rate deg/s),
+    /// delivered through `AE_motion_event`, never through `AE_event`.
+    MotionSample {
+        acceleration: [f32; 3],
+        rotation: [f32; 3],
+    },
     MenuAction(u32),
     Focus(bool),
     Control {
@@ -1823,6 +1836,59 @@ impl DeviceChangeTracker {
 
     pub fn invalidate(&mut self) {
         self.last_bits = None;
+    }
+}
+
+/// Maximum absolute motion value (m/s² or deg/s) admitted at the guest
+/// boundary; consumer sensor hardware peaks two orders of magnitude lower.
+pub const MAX_MOTION_ABS: f32 = 10000.0;
+/// User-acceleration magnitude a shake must reach, above handling noise
+/// (~3 m/s²) and below deliberate-shake peaks (~25 m/s²).
+pub const SHAKE_THRESHOLD_MPS2: f32 = 15.0;
+/// One shake produces many over-threshold samples; the cooldown collapses
+/// them into a single gesture and paces repeat activations.
+pub const SHAKE_COOLDOWN_MS: u64 = 1500;
+/// Sample delivery pace when a guest registers rate 0 (host default).
+pub const DEFAULT_MOTION_SAMPLE_RATE_HZ: u32 = 60;
+/// Upper bound a guest may request for six-axis sample delivery.
+pub const MAX_MOTION_SAMPLE_RATE_HZ: u32 = 120;
+
+/// Names the sensor profile a guest registered through `AE_motion_interest`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+pub enum MotionInterestKind {
+    ShakeGesture = 1,
+    SixAxisSample = 2,
+}
+
+/// One registered motion interest: the profile plus its bounded sample rate
+/// (zero for the host-paced shake gesture).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MotionInterest {
+    pub kind: MotionInterestKind,
+    pub rate_hz: u32,
+}
+
+/// Turns a noisy acceleration-magnitude stream into discrete shake gestures:
+/// a threshold crossing fires once, then a cooldown collapses the rest of
+/// the same shake. Time is injected so detection is deterministic in tests.
+#[derive(Default)]
+pub struct ShakeDetector {
+    last_fired_ms: Option<u64>,
+}
+
+impl ShakeDetector {
+    pub fn observe(&mut self, now_ms: u64, magnitude_mps2: f32) -> Option<f32> {
+        if !(magnitude_mps2 >= SHAKE_THRESHOLD_MPS2) {
+            return None;
+        }
+        if let Some(fired) = self.last_fired_ms {
+            if now_ms.saturating_sub(fired) < SHAKE_COOLDOWN_MS {
+                return None;
+            }
+        }
+        self.last_fired_ms = Some(now_ms);
+        Some(magnitude_mps2)
     }
 }
 /// Identifies the guest-visible stages of one host-owned suspension lifecycle.
@@ -2440,6 +2506,7 @@ struct Exports {
     event: EventExport,
     control_event: Option<TypedFunc<(i32, i32, i32), i32>>,
     text_event: Option<TypedFunc<(i32, i32, i32, i32), i32>>,
+    motion_event: Option<TypedFunc<(i32, i32, i32, i32, i32, i32), i32>>,
     tick: TypedFunc<i32, i32>,
     render: TypedFunc<(), i32>,
     state_ptr: TypedFunc<(), i32>,
@@ -2600,6 +2667,9 @@ impl Frontplane {
             text_event: instance
                 .get_typed_func::<(i32, i32, i32, i32), i32>(&mut store, "AE_text_event")
                 .ok(),
+            motion_event: instance
+                .get_typed_func::<(i32, i32, i32, i32, i32, i32), i32>(&mut store, "AE_motion_event")
+                .ok(),
             tick: required_func(&instance, &mut store, "AE_tick")?,
             render: required_func(&instance, &mut store, "AE_render")?,
             state_ptr: required_func(&instance, &mut store, "AE_state_ptr")?,
@@ -2660,6 +2730,13 @@ impl Frontplane {
                 Some("AE_control_event")
             } else if !metadata.text_fields.is_empty() && self.exports.text_event.is_none() {
                 Some("AE_text_event")
+            } else if metadata
+                .motion_interests
+                .iter()
+                .any(|interest| interest.kind == MotionInterestKind::SixAxisSample)
+                && self.exports.motion_event.is_none()
+            {
+                Some("AE_motion_event")
             } else {
                 None
             }
@@ -2821,6 +2898,15 @@ impl Frontplane {
         })
     }
 
+    fn motion_interest_registered(&self, kind: MotionInterestKind) -> bool {
+        self.store
+            .data()
+            .metadata
+            .motion_interests
+            .iter()
+            .any(|interest| interest.kind == kind)
+    }
+
     /// Converts portable typed input into the stable numeric ABI, keeping GPUI
     /// and platform key representations outside the guest boundary.
     pub fn event(&mut self, event: Event) -> Result<(), FrontplaneError> {
@@ -2869,6 +2955,44 @@ impl Frontplane {
                 "AE_text_event",
                 function,
                 (id as i32, index, scalar, phase),
+            );
+        }
+        if let Event::MotionGesture { .. } = event {
+            if !self.motion_interest_registered(MotionInterestKind::ShakeGesture) {
+                return Err(FrontplaneError::UnsupportedCapability {
+                    operation: "motion-gesture",
+                });
+            }
+            // Falls through to the ordinary event exports as kind 16.
+        }
+        if let Event::MotionSample {
+            acceleration,
+            rotation,
+        } = event
+        {
+            if !self.motion_interest_registered(MotionInterestKind::SixAxisSample) {
+                return Err(FrontplaneError::UnsupportedCapability {
+                    operation: "AE_motion_event",
+                });
+            }
+            let mut words = [0i32; 6];
+            for (word, value) in words
+                .iter_mut()
+                .zip(acceleration.iter().chain(rotation.iter()))
+            {
+                *word = logical_to_q16(*value, MAX_MOTION_ABS, "AE_motion_event")?;
+            }
+            let function =
+                self.exports
+                    .motion_event
+                    .clone()
+                    .ok_or(FrontplaneError::MissingExport {
+                        name: "AE_motion_event",
+                    })?;
+            return self.call_status(
+                "AE_motion_event",
+                function,
+                (words[0], words[1], words[2], words[3], words[4], words[5]),
             );
         }
         if let Event::Control { id, value, phase } = event {
@@ -3290,6 +3414,8 @@ fn legacy_event_parameters(event: Event) -> (i32, i32, f32, f32) {
         Event::PointerDown { button, x, y } => (4, button as i32, x, y),
         Event::PointerUp { button, x, y } => (5, button as i32, x, y),
         Event::DeviceChange { width, height, flags } => (6, flags as i32, width, height),
+        Event::MotionGesture { magnitude } => (16, 1, magnitude, 0.0),
+        Event::MotionSample { .. } => unreachable!("motion samples use AE_motion_event"),
         Event::MenuAction(id) => (7, id as i32, 0.0, 0.0),
         Event::Focus(focused) => (8, i32::from(focused), 0.0, 0.0),
         Event::Control { .. } => unreachable!("control events use AE_control_event"),
@@ -3337,6 +3463,13 @@ fn integer_event_parameters(
             let (width, height) = coordinates(width, height)?;
             (6, flags as i32, width, height)
         }
+        Event::MotionGesture { magnitude } => (
+            16,
+            1,
+            logical_to_q16(magnitude, MAX_MOTION_ABS, "AE_event_i32")?,
+            0,
+        ),
+        Event::MotionSample { .. } => unreachable!("motion samples use AE_motion_event"),
         Event::MenuAction(id) => (7, id as i32, 0, 0),
         Event::Focus(focused) => (8, i32::from(focused), 0, 0),
         Event::Control { .. } => unreachable!("control events use AE_control_event"),
@@ -3430,6 +3563,66 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
                     );
                 }
                 caller.data_mut().metadata.pause_triggers.push(trigger);
+                0
+            },
+        )
+        .map_err(runtime_error)?;
+    linker
+        .func_wrap(
+            WAT_IMPORT_MODULE,
+            "AE_motion_interest",
+            |mut caller: Caller<'_, HostState>, kind: i32, rate_hz: i32, flags: i32| {
+                if caller.data().active_operation != Some("AE_configure") {
+                    return caller.data_mut().reject(
+                        PendingError::InvalidFrame("AE_motion_interest is configure-only"),
+                        -8,
+                    );
+                }
+                if flags != 0 {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::Unsupported("AE_motion_interest"), -4);
+                }
+                let kind = match kind {
+                    1 => MotionInterestKind::ShakeGesture,
+                    2 => MotionInterestKind::SixAxisSample,
+                    _ => {
+                        return caller
+                            .data_mut()
+                            .reject(PendingError::Unsupported("AE_motion_interest"), -4);
+                    }
+                };
+                let rate_hz = match (kind, rate_hz) {
+                    (MotionInterestKind::ShakeGesture, 0) => 0,
+                    (MotionInterestKind::SixAxisSample, 0) => DEFAULT_MOTION_SAMPLE_RATE_HZ,
+                    (MotionInterestKind::SixAxisSample, rate)
+                        if rate > 0 && rate as u32 <= MAX_MOTION_SAMPLE_RATE_HZ =>
+                    {
+                        rate as u32
+                    }
+                    _ => {
+                        return caller
+                            .data_mut()
+                            .reject(PendingError::InvalidNumber("AE_motion_interest"), -5);
+                    }
+                };
+                if caller
+                    .data()
+                    .metadata
+                    .motion_interests
+                    .iter()
+                    .any(|interest| interest.kind == kind)
+                {
+                    return caller.data_mut().reject(
+                        PendingError::DuplicateId("AE_motion_interest", kind as u32),
+                        -7,
+                    );
+                }
+                caller
+                    .data_mut()
+                    .metadata
+                    .motion_interests
+                    .push(MotionInterest { kind, rate_hz });
                 0
             },
         )

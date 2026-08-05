@@ -6,7 +6,7 @@ use std::{borrow::Cow, cell::OnceCell};
 #[cfg_attr(not(target_family = "wasm"), allow(unused_imports))]
 use aedicule::{
     ApplicationAssets, ControlLabelPlacement, ControlPhase, DEVICE_FLAG_COARSE_POINTER,
-    DeviceChangeTracker, Event, ExternalLinkRequest,
+    DeviceChangeTracker, Event, ExternalLinkRequest, MotionInterestKind, ShakeDetector,
     GEIST_MONO_REGULAR, Key, PluginInit, PointerButton, PointerScrollUnit, Rect, SliderControl,
     TextField, TextPhase, UiSnapshot,
     gpui_canvas::paint_frame,
@@ -310,6 +310,10 @@ struct WebFrontplane {
     fatal_error: Option<String>,
     pressed_pointer_buttons: [u16; 3],
     coarse_pointer: bool,
+    shake_interest: bool,
+    motion_sample_interval_ms: Option<f64>,
+    shake_detector: ShakeDetector,
+    last_motion_sample_ms: f64,
     armed_control: Option<ArmedControl>,
     sliders: Vec<WebSlider>,
     text_fields: Vec<WebTextField>,
@@ -482,6 +486,20 @@ impl WebFrontplane {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        let shake_interest = runtime
+            .metadata()
+            .motion_interests
+            .iter()
+            .any(|interest| interest.kind == MotionInterestKind::ShakeGesture);
+        let motion_sample_interval_ms = runtime
+            .metadata()
+            .motion_interests
+            .iter()
+            .find(|interest| interest.kind == MotionInterestKind::SixAxisSample)
+            .map(|interest| 1000.0 / f64::from(interest.rate_hz.max(1)));
+        if shake_interest || motion_sample_interval_ms.is_some() {
+            Self::publish_motion_interest();
+        }
         let (sliders, slider_subscriptions) = Self::build_sliders(&runtime.metadata().controls, cx);
         let (text_fields, text_field_subscriptions) =
             Self::build_text_fields(&runtime.metadata().text_fields, window, cx);
@@ -509,6 +527,10 @@ impl WebFrontplane {
             fatal_error: None,
             pressed_pointer_buttons: [0; 3],
             coarse_pointer: primary_pointer_is_coarse(),
+            shake_interest,
+            motion_sample_interval_ms,
+            shake_detector: ShakeDetector::default(),
+            last_motion_sample_ms: -f64::INFINITY,
             armed_control: None,
             sliders,
             text_fields,
@@ -517,6 +539,85 @@ impl WebFrontplane {
             _focus_subscriptions: focus_subscriptions,
         }
     }
+
+    /// Tells the page a guest registered motion interest so bootstrap can
+    /// request the iOS DeviceMotion permission inside a user gesture.
+    #[cfg(target_family = "wasm")]
+    fn publish_motion_interest() {
+        let global = js_sys::global();
+        let _ = js_sys::Reflect::set(
+            &global,
+            &JsValue::from_str("__AEDICULE_MOTION_INTEREST"),
+            &JsValue::TRUE,
+        );
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn publish_motion_interest() {}
+
+    /// Drains the page-captured devicemotion ring (`__AEDICULE_MOTION_SAMPLES`)
+    /// and applies the guest.s registered pacing: the unit-tested ShakeDetector
+    /// collapses one physical shake into one gesture, and six-axis samples are
+    /// throttled to the registered rate before crossing the guest boundary.
+    #[cfg(target_family = "wasm")]
+    fn drain_motion_samples(&mut self) {
+        if !self.shake_interest && self.motion_sample_interval_ms.is_none() {
+            return;
+        }
+        let global = js_sys::global();
+        let Ok(ring) =
+            js_sys::Reflect::get(&global, &JsValue::from_str("__AEDICULE_MOTION_SAMPLES"))
+        else {
+            return;
+        };
+        let Ok(ring) = ring.dyn_into::<js_sys::Array>() else {
+            return;
+        };
+        if ring.length() == 0 {
+            return;
+        }
+        let field = |sample: &JsValue, name: &str| -> f64 {
+            js_sys::Reflect::get(sample, &JsValue::from_str(name))
+                .ok()
+                .and_then(|value| value.as_f64())
+                .unwrap_or(0.0)
+        };
+        for sample in ring.splice(0, ring.length(), &JsValue::UNDEFINED).iter() {
+            let elapsed_ms = field(&sample, "elapsedMs");
+            let acceleration = [
+                field(&sample, "ax") as f32,
+                field(&sample, "ay") as f32,
+                field(&sample, "az") as f32,
+            ];
+            let rotation = [
+                field(&sample, "rx") as f32,
+                field(&sample, "ry") as f32,
+                field(&sample, "rz") as f32,
+            ];
+            if self.shake_interest {
+                let magnitude = (acceleration[0] * acceleration[0]
+                    + acceleration[1] * acceleration[1]
+                    + acceleration[2] * acceleration[2])
+                    .sqrt();
+                if let Some(magnitude) = self.shake_detector.observe(elapsed_ms as u64, magnitude)
+                {
+                    self.queue_event(Event::MotionGesture { magnitude });
+                }
+            }
+            if let Some(interval) = self.motion_sample_interval_ms {
+                if elapsed_ms - self.last_motion_sample_ms >= interval {
+                    self.last_motion_sample_ms = elapsed_ms;
+                    self.queue_event(Event::MotionSample {
+                        acceleration,
+                        rotation,
+                    });
+                }
+            }
+        }
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn drain_motion_samples(&mut self) {}
 
     /// Samples the browser's monotonic animation timeline; a rendering error
     /// freezes the last complete frame instead of escaping into a paint call.
@@ -767,6 +868,7 @@ impl Render for WebFrontplane {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         report_browser_frame_started(self.origin.elapsed().as_secs_f64() * 1000.0);
         self.observe_device_change(window);
+        self.drain_motion_samples();
         self.advance();
         if self.fatal_error.is_none() && !self.runtime.is_suspended() {
             window.request_animation_frame();

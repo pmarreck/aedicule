@@ -1293,6 +1293,16 @@
   or aliases from returning. (2026-07-22 18:24 EDT: full test suite, optimized
   native build, and all six checksummed delivery archives passed.)
 
+- STANDING POLICY (Peter via vibesteroids_wat's 2026-08-05 note, quoting him:
+  "aedicule's manifest should always be updated to the latest ulam-flower,
+  vibesteroids, and other demos"): demo freshness is continuous, not
+  per-request. Advance `demos/manifest.tsv` + `tests/cli/demo_snapshots`
+  together whenever a demo lands a tranche (they send pin pairs unprompted;
+  pulling their repo directly is equally valid). This supersedes the earlier
+  "no .aed regeneration without explicit say-so" instruction. The b3e1949
+  advance to df61ffe already conforms; their note's pin pair independently
+  matched ours. They will adopt 2ca03e5 + declare AE_abi_minor 6 with their
+  touch tranche, after Peter's current 61f287f playtest.
 - [ ] Vibesteroids on iPhone (Peter, 2026-08-03 hardware pass): three gaps, split
   by responsibility. This is exactly what the demo apps exist to tease out —
   "aedicule apps may need to be client-aware."
@@ -1340,15 +1350,35 @@
     - [x] VIEW_PROTOCOL.md prose renamed: the layout section now says a
       device change (viewport dimensions or device-class flags, kind 6)
       produces the ordered event. (2026-08-04 ~10:05 PM EDT)
-  - [ ] Six-axis motion/orientation input capability (Peter, 2026-08-04):
-    expose device orientation + motion (DeviceMotion/DeviceOrientation) to
-    WAT guests as a separate, explicitly-granted host-service capability per
-    VIEW_PROTOCOL.md — NOT part of the device-change event. iOS requires
-    `DeviceMotionEvent.requestPermission()` from a user gesture over HTTPS;
-    the host must reject the capability when unavailable or denied. Optional
-    same-gate extras: geolocation, compass heading. Demo idea: Physics 101
-    two-springs-and-a-weight app — sliders for spring tension, shaking the
-    phone shakes the weight in realtime. Design stage; no implementation yet.
+  - [x] Six-axis motion capability IMPLEMENTED at ABI v0.7 (Peter authorized
+    2026-08-05 ~1 PM EDT "proceed w/any building"; built via strict TDD):
+    - Registration: `AE_motion_interest(kind, rate_hz, flags)` host import,
+      configure-only, following the AE_pause_trigger precedent. Kind 1 =
+      host-derived shake gesture (rate 0); kind 2 = six-axis sample stream
+      (rate 0 -> 60 Hz default, else 1..=120). Whole argument domain
+      classified in tests/motion.rs; invalid registrations reject the
+      configure transaction; a kind-2 interest without an `AE_motion_event`
+      export rolls configure back (same rule as sliders/text fields).
+    - Delivery: shake = event kind 16 code 1 with peak magnitude (f32
+      legacy / Q16.16 integer); samples = dedicated `AE_motion_event(ax ay
+      az rx ry rz)` export, Q16.16 in BOTH profiles (m/s2, deg/s), never
+      through AE_event. Undeclared motion events are rejected, not
+      delivered. Sensor absence / denied permission = silence, never error;
+      guests keep a manual fallback (vibesteroids' documented plan).
+    - Pure `ShakeDetector` (threshold 15 m/s2, cooldown 1500 ms, injected
+      time) unit-tested over synthetic streams; browser adapter drains a
+      bounded page-side devicemotion ring per frame and runs detection and
+      the guest's registered rate limit in Rust. bootstrap.js requests the
+      iOS DeviceMotion permission inside the first user gesture when the
+      guest declared interest (`__AEDICULE_MOTION_INTEREST`), recording the
+      outcome in `__AEDICULE_MOTION_DIAGNOSTIC`.
+    - ABI minor 6 -> 7; generated docs updated (import row, export, kind 16,
+      guarantees); surface tripwires guard the browser wiring; native
+      adapter stays sensor-silent by design.
+    - [ ] Later, unbuilt: DeviceOrientation (attitude) profile, geolocation,
+      compass — same registration gate when a demo needs them. Springs demo
+      (two springs + weight, shake the phone) remains the six-axis exercise
+      app idea, now unblocked.
   - [x] Audio silent on iPhone — root cause found on hardware (Peter,
     2026-08-04 ~1:49 PM EDT): Web Audio unlocks ONLY on a completed tap. Sound
     started the moment Peter tapped (not dragged) and stayed up from then on.

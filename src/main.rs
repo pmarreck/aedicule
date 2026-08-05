@@ -2402,6 +2402,7 @@ mod tests {
     #[test]
     fn arbitrary_declared_actions_supply_native_button_labels_and_events() {
         let metadata = Metadata {
+            motion_interests: Vec::new(),
             menu_items: vec![
                 PluginMenuItem::separator(),
                 PluginMenuItem::action(42, "Play/Pause", None),
@@ -2445,6 +2446,7 @@ mod tests {
     fn plugin_metadata_drives_only_recognized_standard_native_actions() {
         let metadata = Metadata {
             title: "Example".into(),
+            motion_interests: Vec::new(),
             menu_items: vec![
                 PluginMenuItem::action(1, "Begin", Some("Ctrl+N")),
                 PluginMenuItem::separator(),
