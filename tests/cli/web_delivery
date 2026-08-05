@@ -38,6 +38,10 @@ else
 		printf 'web runtime JavaScript does not reference its content-addressed Wasm\n' >&2
 		failures=$((failures + 1))
 	fi
+	if ! rg -F 'maximum:4096,shared:true' "$out_link/aedicule_web.js" >/dev/null; then
+		printf 'web runtime does not cap each tab shared memory at 256 MiB\n' >&2
+		failures=$((failures + 1))
+	fi
 	if [[ -e "$out_link/aedicule_web_bg.wasm" ]]; then
 		printf 'web fallback delivery still exposes an unhashed runtime Wasm URL\n' >&2
 		failures=$((failures + 1))

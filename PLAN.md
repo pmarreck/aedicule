@@ -987,6 +987,17 @@
     IDs, use exact Q16.16 bounds, expose a selected state, and deliver the
     existing ordered kind-7 event without embedding playback semantics.
     (2026-07-21 22:31 EDT)
+  - [ ] Add a configure-time standalone `AE_action` declaration so a real AVP
+    button can own bounded visible/accessibility text without publishing an
+    always-present application-menu item. Share collision checking with menu
+    actions, preserve legacy menu-backed buttons, and prove exact activation
+    identity plus absence from native/browser menus in native, browser, and
+    headless adapters. Peter explicitly authorized the real GPUI Component
+    button surface on every adapter; no canvas or ad hoc substitute. Requested
+    by vibesteroids_wat on 2026-08-05; send an immutable green pin when shipped.
+    Curiosity poke: a standalone action and a menu declaration must never be
+    able to disagree about the label for one ID, regardless of declaration
+    order.
   - [x] Paint asset-independent high-contrast title-bar glyphs over GPUI
     Component's still-functional native control hit regions, preserving host
     pointer occlusion. (2026-07-21 22:31 EDT)
@@ -1518,3 +1529,20 @@
     loopback-only staged Caddy server; verified gallery and spring route return
     200 and the downloaded package retains its pinned SHA-256.
     (2026-08-05 17:57 EDT)
+
+- [ ] Diagnose and fix the intermittent browser startup stall at
+  `wasm-initializing` across demos (Peter, 2026-08-05 18:58 EDT); compare public
+  Pages and Tailscale staging and preserve the existing multi-tab admission
+  guarantee.
+  Curiosity poke: a lock holder that never reaches `wasm-initialized` can make
+  later tabs look stuck at `startup-lock-waiting`, while memory pressure or a
+  rejected `init()` can leave the first tab stuck at `wasm-initializing`.
+  - [x] Encode the concrete resource-pressure finding red-first: the generated
+    delivery reserved up to 1 GiB of shared Wasm memory per tab. Cap it at
+    256 MiB (4,096 pages), then prove the generated glue carries that ceiling.
+    Complete `./test` and real Chromium/WebGPU startups for Vibesteroids, Ulam
+    Flower, and Spring Simulator passed. (2026-08-05 19:10 EDT)
+  - [ ] Obtain Peter's iPhone/WebKit acceptance from the rebuilt Tailscale
+    delivery after closing old tabs that retain the 1 GiB runtime. If it still
+    stalls, capture whether the last stage is `wasm-initializing` or
+    `startup-lock-waiting` before choosing a second mitigation.
