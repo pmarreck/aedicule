@@ -1313,9 +1313,30 @@
       sides gated on their reply confirming the bit layout.
       (inbox/2026-08-04-from-aedicule-device-change-event-contract.md,
       2026-08-04 ~3:50 PM EDT)
-    - [ ] After their reply: TDD the host side (event encoding over the flag
-      domain, dedupe-key change emission, boot-time guarantee), update
-      VIEW_PROTOCOL.md, then notify them to build the guest side.
+    - [x] vibesteroids_wat confirmed bit 0 only (their reasoned declines of
+      hover-absence and any-pointer bits are in
+      inbox/processed/2026-08-04-from-vibesteroids_wat-device-change-bit-0-confirmed.md);
+      they also accepted the Start Game gate and flagged the six-axis
+      dependency for Death Blossom's shake. (2026-08-04 ~9:32 PM EDT)
+    - [x] Host side implemented via strict TDD (2026-08-04 ~10 PM EDT):
+      `Event::Viewport` renamed `Event::DeviceChange` with a `flags` field
+      carried in the kind-6 code slot (runtime red proved the encoding);
+      shared `DeviceChangeTracker` in lib dedupes on size AND flags (red
+      proved a size-unchanged flag flip emits) and both adapters use it; the
+      browser adapter re-reads `(pointer: coarse)` per observation so slop
+      arming follows live flips; ABI minor bumped 5 → 6 (red: a minor-6
+      guest was rejected `UnsupportedAbiMinor`) so guests can REQUIRE the
+      capability; WAT_ABI.md + GUIDE_FOR_LLMS.md regenerated with the
+      device-change row, flag-bit definition, and delivery guarantees;
+      surface tripwires guard the adapter wiring.
+    - [ ] Notify vibesteroids_wat the host side shipped (pin rev + "declare
+      AE_abi_minor 6 only if you REQUIRE device flags") after CI is green.
+    - [ ] Optional hardening: end-to-end Chromium gate asserting the boot
+      device-change event carries bit 0 under forced `(pointer: coarse)`
+      emulated media (CDP Emulation.setEmulatedMedia), once worth the wiring.
+    - [x] VIEW_PROTOCOL.md prose renamed: the layout section now says a
+      device change (viewport dimensions or device-class flags, kind 6)
+      produces the ordered event. (2026-08-04 ~10:05 PM EDT)
   - [ ] Six-axis motion/orientation input capability (Peter, 2026-08-04):
     expose device orientation + motion (DeviceMotion/DeviceOrientation) to
     WAT guests as a separate, explicitly-granted host-service capability per

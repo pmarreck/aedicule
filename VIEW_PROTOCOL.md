@@ -136,8 +136,9 @@ Phase one uses a bounded flex-style layout rather than reproducing all of CSS:
 Lengths are signed Q16.16 logical pixels where a scalar is required. Size modes
 are enums rather than magic sentinel numbers. The guest specifies constraints;
 the adapter performs measurement and placement. Layout results are not sent
-back every frame. A viewport or meaningful constraint change produces one
-ordered event, after which the guest may publish a different document.
+back every frame. A device change (viewport dimensions or device-class
+flags, WAT ABI kind 6) or meaningful constraint change produces one ordered
+event, after which the guest may publish a different document.
 
 Grid and free absolute positioning are later additive profiles. Absolute
 positioning remains useful for overlays but must not be the only way to create

@@ -244,9 +244,10 @@ fn paused_focus_loss_reconciles_held_inputs_and_resize_is_maintenance_only() {
         SuspensionDisposition::Pause
     );
 
-    let viewport = Event::Viewport {
+    let viewport = Event::DeviceChange {
         width: 1200.0,
         height: 700.0,
+        flags: 0,
     };
     assert_eq!(
         suspension.handle(viewport),

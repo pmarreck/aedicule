@@ -5,7 +5,8 @@ use std::{borrow::Cow, cell::OnceCell};
 
 #[cfg_attr(not(target_family = "wasm"), allow(unused_imports))]
 use aedicule::{
-    ApplicationAssets, ControlLabelPlacement, ControlPhase, Event, ExternalLinkRequest,
+    ApplicationAssets, ControlLabelPlacement, ControlPhase, DEVICE_FLAG_COARSE_POINTER,
+    DeviceChangeTracker, Event, ExternalLinkRequest,
     GEIST_MONO_REGULAR, Key, PluginInit, PointerButton, PointerScrollUnit, Rect, SliderControl,
     TextField, TextPhase, UiSnapshot,
     gpui_canvas::paint_frame,
@@ -305,7 +306,7 @@ struct WebFrontplane {
     origin: Instant,
     focus_handle: FocusHandle,
     reported_delivered_events: u64,
-    viewport_bits: Option<(u32, u32)>,
+    device_change: DeviceChangeTracker,
     fatal_error: Option<String>,
     pressed_pointer_buttons: [u16; 3],
     coarse_pointer: bool,
@@ -504,7 +505,7 @@ impl WebFrontplane {
             origin,
             focus_handle,
             reported_delivered_events: 0,
-            viewport_bits: None,
+            device_change: DeviceChangeTracker::default(),
             fatal_error: None,
             pressed_pointer_buttons: [0; 3],
             coarse_pointer: primary_pointer_is_coarse(),
@@ -671,21 +672,25 @@ impl WebFrontplane {
         }
     }
 
-    /// Emits a viewport event only for an actual logical-size change, avoiding
-    /// per-frame guest work while retaining resize semantics.
-    fn observe_viewport(&mut self, window: &Window) {
+    /// Emits a device-change event only when the logical size or the device
+    /// class actually changed, avoiding per-frame guest work while letting a
+    /// live pointer-class flip (an iPad gaining a trackpad) emit at constant
+    /// size. Re-reads the media query so release-slop arming follows the flip.
+    fn observe_device_change(&mut self, window: &Window) {
         let viewport = window.viewport_size();
-        let width = f32::from(viewport.width);
-        let height = f32::from(viewport.height);
-        if !width.is_finite() || !height.is_finite() || width <= 0.0 || height <= 0.0 {
-            return;
+        self.coarse_pointer = primary_pointer_is_coarse();
+        let flags = if self.coarse_pointer {
+            DEVICE_FLAG_COARSE_POINTER
+        } else {
+            0
+        };
+        if let Some((width, height, flags)) = self.device_change.observe(
+            f32::from(viewport.width),
+            f32::from(viewport.height),
+            flags,
+        ) {
+            self.queue_event(Event::DeviceChange { width, height, flags });
         }
-        let bits = (width.to_bits(), height.to_bits());
-        if self.viewport_bits == Some(bits) {
-            return;
-        }
-        self.viewport_bits = Some(bits);
-        self.queue_event(Event::Viewport { width, height });
     }
 }
 
@@ -761,7 +766,7 @@ fn browser_external_link_control(
 impl Render for WebFrontplane {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         report_browser_frame_started(self.origin.elapsed().as_secs_f64() * 1000.0);
-        self.observe_viewport(window);
+        self.observe_device_change(window);
         self.advance();
         if self.fatal_error.is_none() && !self.runtime.is_suspended() {
             window.request_animation_frame();

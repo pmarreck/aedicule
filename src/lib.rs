@@ -1736,6 +1736,12 @@ pub enum HostEffect {
     OpenUrl,
 }
 
+/// Device-class bit for the device-change event's flags field: the primary
+/// pointer is coarse (a finger-first touch device rather than a mouse),
+/// mirroring the CSS `(pointer: coarse)` interaction media query. All other
+/// bits are reserved and sent as zero; guests mask only the bits they know.
+pub const DEVICE_FLAG_COARSE_POINTER: u32 = 1;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Event {
     KeyDown(Key),
@@ -1759,9 +1765,13 @@ pub enum Event {
         delta_x: f32,
         delta_y: f32,
     },
-    Viewport {
+    /// Viewport dimensions plus device-class flags — WAT ABI event kind 6,
+    /// the "device-change event". Delivered at least once at start and on
+    /// any change to either the dimensions or the flags.
+    DeviceChange {
         width: f32,
         height: f32,
+        flags: u32,
     },
     MenuAction(u32),
     Focus(bool),
@@ -1789,6 +1799,32 @@ pub enum Event {
     },
 }
 
+/// Coalesces device-change emissions for host adapters: dedupes on the exact
+/// f32 bit patterns of the logical viewport size plus the device-class flags,
+/// so the first observation always emits (the boot-time delivery guarantee)
+/// and a flag flip with an unchanged size still emits one event.
+#[derive(Default)]
+pub struct DeviceChangeTracker {
+    last_bits: Option<(u32, u32, u32)>,
+}
+
+impl DeviceChangeTracker {
+    pub fn observe(&mut self, width: f32, height: f32, flags: u32) -> Option<(f32, f32, u32)> {
+        if !width.is_finite() || !height.is_finite() || width <= 0.0 || height <= 0.0 {
+            return None;
+        }
+        let bits = (width.to_bits(), height.to_bits(), flags);
+        if self.last_bits == Some(bits) {
+            return None;
+        }
+        self.last_bits = Some(bits);
+        Some((width, height, flags))
+    }
+
+    pub fn invalidate(&mut self) {
+        self.last_bits = None;
+    }
+}
 /// Identifies the guest-visible stages of one host-owned suspension lifecycle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(i32)]
@@ -2156,7 +2192,7 @@ impl GuestSuspension {
                 self.reconciliation.push(event);
                 SuspensionDisposition::Consumed
             }
-            Event::Viewport { .. } | Event::DisplayRefresh(_) if self.suspended => {
+            Event::DeviceChange { .. } | Event::DisplayRefresh(_) if self.suspended => {
                 SuspensionDisposition::Maintenance(event)
             }
             _ if self.suspended => SuspensionDisposition::Consumed,
@@ -3253,7 +3289,7 @@ fn legacy_event_parameters(event: Event) -> (i32, i32, f32, f32) {
         Event::PointerMove { x, y } => (3, 0, x, y),
         Event::PointerDown { button, x, y } => (4, button as i32, x, y),
         Event::PointerUp { button, x, y } => (5, button as i32, x, y),
-        Event::Viewport { width, height } => (6, 0, width, height),
+        Event::DeviceChange { width, height, flags } => (6, flags as i32, width, height),
         Event::MenuAction(id) => (7, id as i32, 0.0, 0.0),
         Event::Focus(focused) => (8, i32::from(focused), 0.0, 0.0),
         Event::Control { .. } => unreachable!("control events use AE_control_event"),
@@ -3297,9 +3333,9 @@ fn integer_event_parameters(
             let (x, y) = coordinates(x, y)?;
             (5, button as i32, x, y)
         }
-        Event::Viewport { width, height } => {
+        Event::DeviceChange { width, height, flags } => {
             let (width, height) = coordinates(width, height)?;
-            (6, 0, width, height)
+            (6, flags as i32, width, height)
         }
         Event::MenuAction(id) => (7, id as i32, 0, 0),
         Event::Focus(focused) => (8, i32::from(focused), 0, 0),

@@ -261,4 +261,15 @@ if (( quiet_web_shells != 3 )); then
 	failures=$((failures + 1))
 fi
 
+# The device-change event (kind 6) must carry live device-class flags and
+# dedupe through the shared tracker, not a hand-rolled size-only key that
+# would swallow a pointer-class flip at constant viewport size.
+expect_text "$root/src/bin/aedicule-web.rs" 'DeviceChangeTracker' \
+	'browser adapter hand-rolls device-change dedupe instead of the shared tracker'
+expect_text "$root/src/bin/aedicule-web.rs" 'DEVICE_FLAG_COARSE_POINTER' \
+	'browser adapter never sets the coarse-pointer device flag'
+reject_text "$root/src/bin/aedicule-web.rs" 'viewport_bits' \
+	'browser adapter still keys device-change dedupe on viewport size alone'
+
 exit "$failures"
+

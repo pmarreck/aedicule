@@ -14,7 +14,8 @@ use std::{
 #[cfg(test)]
 use aedicule::audio::{DECIMAL_SCALE, fixed_sine, render_synth_program_fixed};
 use aedicule::{
-    AudioEvent, ControlLabelPlacement, ControlPhase, DEFAULT_PLUGIN_ENV, Event, FALLBACK_WAT,
+    AudioEvent, ControlLabelPlacement, ControlPhase, DEFAULT_PLUGIN_ENV, DeviceChangeTracker,
+    Event, FALLBACK_WAT,
     FileRevision, FrameOutput, Frontplane, GEIST_MONO_REGULAR, GuestSuspension, HostEffect, Key,
     LaunchAction, Limits, Metadata, PausePhase, PluginInit, PluginSource, PointerButton,
     PointerScrollUnit, Rect, RevisionTracker, SampleAsset, SampleAudioEvent, SimulationCall,
@@ -473,7 +474,7 @@ struct FrontplaneView {
     fatal_error: Option<String>,
     reload_error: Option<String>,
     reload_notice: Option<&'static str>,
-    viewport: ViewportTracker,
+    viewport: DeviceChangeTracker,
     plugin_init: PluginInit,
     monotonic_origin: Instant,
     scheduler: SimulationScheduler,
@@ -507,11 +508,6 @@ struct NativeTextField {
     state: Entity<InputState>,
 }
 
-#[derive(Default)]
-struct ViewportTracker {
-    last_bits: Option<(u32, u32)>,
-}
-
 /// Tracks presses that began on the guest canvas so a host-control release
 /// cannot leak through GPUI's global `on_mouse_up_out` capture listener.
 #[derive(Default)]
@@ -530,26 +526,6 @@ impl GuestPointerButtons {
         let was_down = self.0 & bit != 0;
         self.0 &= !bit;
         was_down
-    }
-}
-
-impl ViewportTracker {
-    /// Coalesces repeated layout passes while preserving fractional logical
-    /// pixel sizes exactly at the GPUI-to-guest boundary.
-    fn observe(&mut self, width: f32, height: f32) -> Option<(f32, f32)> {
-        if !width.is_finite() || !height.is_finite() || width <= 0.0 || height <= 0.0 {
-            return None;
-        }
-        let bits = (width.to_bits(), height.to_bits());
-        if self.last_bits == Some(bits) {
-            return None;
-        }
-        self.last_bits = Some(bits);
-        Some((width, height))
-    }
-
-    fn invalidate(&mut self) {
-        self.last_bits = None;
     }
 }
 
@@ -736,7 +712,7 @@ impl FrontplaneView {
             fatal_error: None,
             reload_error,
             reload_notice: None,
-            viewport: ViewportTracker::default(),
+            viewport: DeviceChangeTracker::default(),
             plugin_init,
             monotonic_origin,
             scheduler,
@@ -1447,11 +1423,12 @@ fn external_link_control(
 impl Render for FrontplaneView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let viewport = window.viewport_size();
-        if let Some((width, height)) = self
+        // A native window has a fine primary pointer; no device flags apply yet.
+        if let Some((width, height, flags)) = self
             .viewport
-            .observe(f32::from(viewport.width), f32::from(viewport.height))
+            .observe(f32::from(viewport.width), f32::from(viewport.height), 0)
         {
-            self.queue_native_event(Event::Viewport { width, height }, cx);
+            self.queue_native_event(Event::DeviceChange { width, height, flags }, cx);
         }
         let frame = self.frame.clone();
         let ui = self.frontplane.ui_snapshot().cloned();
@@ -2251,14 +2228,14 @@ fn main() -> ExitCode {
 mod tests {
     use super::{
         DECIMAL_SCALE, GuestPointerButtons, OpenPathKind, StandardMenuEntry, TITLE_BAR_GLYPH_RGBA,
-        ViewportTracker, external_link_control, fixed_sine, guest_positioned_control_layer,
+        external_link_control, fixed_sine, guest_positioned_control_layer,
         host_title_bar_layer, menu_action_event, menu_action_label, native_menus,
         open_path_prompt_options, render_sample_for_host, render_synth_program_fixed,
         shift_audio_cooldowns, standard_menu_entries, title_bar_control_glyph_overlay,
         title_bar_control_glyphs,
     };
     use aedicule::{
-        Event, Key, MenuItem as PluginMenuItem, Metadata, SampleAsset, SynthFilter, SynthVoice,
+        DEVICE_FLAG_COARSE_POINTER, DeviceChangeTracker, Event, Key, MenuItem as PluginMenuItem, Metadata, SampleAsset, SynthFilter, SynthVoice,
         SynthWaveform, gpui_canvas::viewport_transform,
     };
     use gpui::{
@@ -2578,14 +2555,31 @@ mod tests {
     }
 
     #[test]
-    fn viewport_updates_emit_once_per_distinct_valid_size() {
-        let mut tracker = ViewportTracker::default();
+    fn device_flag_flips_emit_even_when_the_size_is_unchanged() {
+        let mut tracker = DeviceChangeTracker::default();
 
-        assert_eq!(tracker.observe(1600.5, 900.25), Some((1600.5, 900.25)));
-        assert_eq!(tracker.observe(1600.5, 900.25), None);
-        assert_eq!(tracker.observe(1700.0, 900.25), Some((1700.0, 900.25)));
-        assert_eq!(tracker.observe(0.0, 900.0), None);
-        assert_eq!(tracker.observe(f32::NAN, 900.0), None);
+        assert_eq!(tracker.observe(800.0, 600.0, 0), Some((800.0, 600.0, 0)));
+        assert_eq!(tracker.observe(800.0, 600.0, 0), None);
+        assert_eq!(
+            tracker.observe(800.0, 600.0, DEVICE_FLAG_COARSE_POINTER),
+            Some((800.0, 600.0, DEVICE_FLAG_COARSE_POINTER)),
+        );
+        assert_eq!(
+            tracker.observe(800.0, 600.0, DEVICE_FLAG_COARSE_POINTER),
+            None,
+        );
+        assert_eq!(tracker.observe(800.0, 600.0, 0), Some((800.0, 600.0, 0)));
+    }
+
+    #[test]
+    fn viewport_updates_emit_once_per_distinct_valid_size() {
+        let mut tracker = DeviceChangeTracker::default();
+
+        assert_eq!(tracker.observe(1600.5, 900.25, 0), Some((1600.5, 900.25, 0)));
+        assert_eq!(tracker.observe(1600.5, 900.25, 0), None);
+        assert_eq!(tracker.observe(1700.0, 900.25, 0), Some((1700.0, 900.25, 0)));
+        assert_eq!(tracker.observe(0.0, 900.0, 0), None);
+        assert_eq!(tracker.observe(f32::NAN, 900.0, 0), None);
     }
 
     #[test]

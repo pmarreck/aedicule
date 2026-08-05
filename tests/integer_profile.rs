@@ -1,4 +1,5 @@
 use aedicule::{
+    DEVICE_FLAG_COARSE_POINTER,
     ButtonPlacement, ControlLabelPlacement, ControlPanel, ControlPhase, DrawCommand, Event,
     Frontplane, Key, Limits, PathSegment, Point, Rect, SliderControl, SliderPlacement, UiSnapshot,
     sin_cos_turn_q30,
@@ -26,7 +27,7 @@ const INTEGER_LIFECYCLE_WAT: &str = r#"(module
 	(global $sent_ui_revision (mut i32) (i32.const 0))
 	(global $invalid_ui (mut i32) (i32.const 0))
 	(func (export "AE_abi_major") (result i32) i32.const 0)
-	(func (export "AE_abi_minor") (result i32) i32.const 1)
+	(func (export "AE_abi_minor") (result i32) i32.const 6)
 	(func (export "AE_configure") (result i32)
 		i32.const 7
 		i32.const 0
@@ -48,11 +49,12 @@ const INTEGER_LIFECYCLE_WAT: &str = r#"(module
 		i32.const 68 local.get $height i32.store
 		i32.const 72 i32.const 1050 i32.store
 		i32.const 0)
-	(func (export "AE_event_i32") (param $kind i32) (param i32) (param $a i32) (param $b i32) (result i32)
+	(func (export "AE_event_i32") (param $kind i32) (param $code i32) (param $a i32) (param $b i32) (result i32)
 		local.get $kind i32.const 6 i32.eq
 		if
 			i32.const 64 local.get $a i32.store
 			i32.const 68 local.get $b i32.store
+			i32.const 88 local.get $code i32.store
 			global.get $ui_revision i32.const 1 i32.add global.set $ui_revision
 		end
 		local.get $kind i32.const 1 i32.eq
@@ -124,7 +126,7 @@ const INTEGER_LIFECYCLE_WAT: &str = r#"(module
 		call $frame_end drop
 		i32.const 0)
 	(func (export "AE_state_ptr") (result i32) i32.const 64)
-	(func (export "AE_state_len") (result i32) i32.const 24)
+	(func (export "AE_state_len") (result i32) i32.const 28)
 	(func (export "AE_state_schema") (result i32) i32.const 1)
 )"#;
 
@@ -152,6 +154,37 @@ fn snapshot_trig(frontplane: &mut Frontplane) -> (i32, i32) {
     )
 }
 
+fn snapshot_device_flags(frontplane: &mut Frontplane) -> i32 {
+    let bytes = frontplane.snapshot().unwrap().bytes;
+    i32::from_le_bytes(bytes[24..28].try_into().unwrap())
+}
+
+#[test]
+fn device_change_events_carry_device_flags_in_the_code_slot() {
+    let mut frontplane = Frontplane::from_wat(INTEGER_LIFECYCLE_WAT, Limits::default()).unwrap();
+    frontplane.configure().unwrap();
+    frontplane.init(7, 320.5, 240.25).unwrap();
+    frontplane
+        .event(Event::DeviceChange {
+            width: 640.5,
+            height: 480.25,
+            flags: DEVICE_FLAG_COARSE_POINTER,
+        })
+        .unwrap();
+    assert_eq!(
+        snapshot_device_flags(&mut frontplane),
+        DEVICE_FLAG_COARSE_POINTER as i32,
+    );
+    frontplane
+        .event(Event::DeviceChange {
+            width: 800.0,
+            height: 600.0,
+            flags: 0,
+        })
+        .unwrap();
+    assert_eq!(snapshot_device_flags(&mut frontplane), 0);
+}
+
 #[test]
 fn integer_lifecycle_omits_legacy_float_exports_and_receives_q16_viewports() {
     let mut frontplane = Frontplane::from_wat(INTEGER_LIFECYCLE_WAT, Limits::default()).unwrap();
@@ -171,9 +204,10 @@ fn integer_lifecycle_omits_legacy_float_exports_and_receives_q16_viewports() {
     assert_eq!(snapshot_viewport(&mut frontplane), (21_004_288, 15_745_024));
 
     frontplane
-        .event(Event::Viewport {
+        .event(Event::DeviceChange {
             width: 640.5,
             height: 480.25,
+            flags: 0,
         })
         .unwrap();
     assert_eq!(snapshot_viewport(&mut frontplane), (41_975_808, 31_473_664));
