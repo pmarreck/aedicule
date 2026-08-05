@@ -1462,3 +1462,12 @@
   signal and audio investigation flagged as coming.
   (inbox/2026-08-03-from-aedicule-ghost-tap-fix-pin-and-capability-heads-up.md,
   2026-08-03 17:41 EDT)
+
+- [x] Deleted the superseded `native-titlebar-routing` branch (local +
+  origin) with Peter's approval after a content-level audit: its occlusion
+  fix (`host_title_bar_layer`), its headless proof test
+  (`host_title_bar_occludes_guest_pointer_edges`), and its gpui
+  test-support idea all live on yolo since `1de9822`, which extended the
+  pattern to control surfaces. Dead /tmp worktree records pruned in the
+  same pass. Commit `a10241d` stays reflog-recoverable ~90 days.
+  (2026-08-05 15:05 EDT)
