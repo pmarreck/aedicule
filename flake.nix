@@ -666,6 +666,7 @@
 							node ./tests/integration/web_browser_startup_unit.mjs
 							node ./tests/integration/web_local_application.mjs
 							node ./tests/integration/web_startup_lock.mjs "$PWD"
+							node ./tests/integration/web_service_worker_retirement.mjs "$PWD"
 							runHook postCheck
 						'';
 						installPhase = ''
@@ -687,7 +688,7 @@
 								--features web --bin aedicule-web
 							wasm-bindgen --target web --out-name aedicule_web --out-dir bindgen \
 								target/wasm32-unknown-unknown/release/aedicule-web.wasm
-							wasm-opt --enable-threads -Oz bindgen/aedicule_web_bg.wasm \
+							wasm-opt -Oz bindgen/aedicule_web_bg.wasm \
 								-o bindgen/aedicule_web_bg.optimized.wasm
 							mv bindgen/aedicule_web_bg.optimized.wasm bindgen/aedicule_web_bg.wasm
 							wasm_hash=$(sha256sum bindgen/aedicule_web_bg.wasm)
@@ -704,9 +705,9 @@
 							install -Dm644 ${./web/bootstrap.js} $out/bootstrap.js
 							install -Dm644 ${./web/audio.mjs} $out/audio.mjs
 							install -Dm644 ${./web/startup-lock.mjs} $out/startup-lock.mjs
+							install -Dm644 ${./packaging/web/service-worker-retirement.mjs} $out/service-worker-retirement.mjs
 							install -Dm644 ${./packaging/web/launcher-i18n.mjs} $out/launcher-i18n.mjs
 							install -Dm644 ${./packaging/web/local-application.mjs} $out/local-application.mjs
-							install -Dm644 ${./web/coi-serviceworker.js} $out/coi-serviceworker.js
 							install -Dm644 ${./packaging/web/manifest.webmanifest} $out/manifest.webmanifest
 							install -Dm644 ${./assets/icons/aedicule-app.png} $out/icon.png
 							install -Dm644 ${./assets/fonts/OFL.txt} \
@@ -765,7 +766,7 @@
 							cp ${./packaging/web/launcher.mjs} $out/launcher.mjs
 							cp ${./packaging/web/launcher-i18n.mjs} $out/launcher-i18n.mjs
 							cp ${./packaging/web/local-application.mjs} $out/local-application.mjs
-							cp ${./web/coi-serviceworker.js} $out/coi-serviceworker.js
+							cp ${./packaging/web/service-worker-retirement.mjs} $out/service-worker-retirement.mjs
 							cp ${./packaging/web/manifest.webmanifest} $out/manifest.webmanifest
 							cp ${./assets/icons/aedicule-app.png} $out/icon.png
 							cp -R ${ulam}/. $out/ulam-flower/

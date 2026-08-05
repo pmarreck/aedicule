@@ -1,5 +1,43 @@
 # Plan
 
+- [ ] Remove the browser runtime's unnecessary shared-Wasm-memory requirement
+  and obtain iPhone acceptance on the Tailscale staging delivery.
+  - [x] Bound the imported shared memory from 1 GiB to 256 MiB and prove the
+    exact generated maximum with the delivery gate. Native/full tests and the
+    real Chromium/WebGPU gates passed; committed as `59e807c`.
+    (2026-08-05 19:10 EDT)
+  - [x] Peter tested that exact staging build on iOS Safari. The first load
+    paused at `isolation-ready` after 290 ms; a reload reached
+    `wasm-initializing` after 798 ms and eventually loaded. This refutes a
+    permanent deadlock but still leaves an unacceptable apparent hang.
+    WebKit bugs 222097, 269777, and 281657 make shared-Wasm reload retention
+    and memory pressure the leading mechanism. (2026-08-05 19:28 EDT)
+  - [x] Prove GPUI compiles and runs without explicitly enabled atomics or
+    shared memory, then write the red delivery/startup tests before removing
+    the COI service-worker reload, SharedArrayBuffer/Atomics preflight, shared
+    linker/TLS flags, and thread-enabled wasm optimization. The emitted module
+    validates, owns ordinary `(memory 81)`, wasm-bindgen accepts it, and
+    `wasm-opt -Oz` produces 15,992,441 bytes. Fresh-profile Chromium/WebGPU
+    probes reached `settled` for fallback, Ulam, Vibesteroids, and Spring in
+    1.75–1.92 seconds with `crossOriginIsolated: false`; Wasm initialization
+    took 169–220 ms. (2026-08-05 19:37 EDT)
+  - [x] Add a pure set-classifier and non-blocking migration adapter that
+    unregisters only old `coi-serviceworker.js` registrations across active,
+    waiting, and installing lifecycle slots. It never delays gallery readiness
+    or application startup and preserves unrelated origin workers. This is
+    required because a prior Safari registration may outlive removal of the
+    worker script. (2026-08-05 19:46 EDT)
+  - [ ] Deploy the non-shared exact delivery to Tailscale staging and have
+    Peter test it from a fresh iPhone tab after closing every old shared-memory
+    Aedicule tab.
+  - Curiosity poke: preserve secure-context and WebGPU checks, multi-tab
+    startup serialization, diagnostics, and content-addressed runtime caching
+    without retaining any accidental dependency on cross-origin isolation.
+- [ ] Refresh the staged and shipped Vibesteroids demo from its newest
+  immutable sibling release pin. Peter reports the currently pinned package is
+  visibly old. Verify the sibling commit/package hash and its WAST acceptance,
+  then replace every gallery, delivery, manifest, and release-bundle copy.
+  (Reported 2026-08-05 19:30 EDT.)
 - [ ] Land "option C": one `.aed` implementation for every adapter.
   - [x] `browser_application_from_package(bytes)` in `src/web.rs` expands a
     package to (WAT, assets) through the same validated Rust reader native

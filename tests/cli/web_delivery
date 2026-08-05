@@ -19,7 +19,7 @@ if (( rc != 0 )); then
 	printf 'web fallback delivery build failed:\n%s\n' "$err" >&2
 	failures=$((failures + 1))
 else
-	for asset in index.html bootstrap.js audio.mjs local-application.mjs startup-lock.mjs coi-serviceworker.js aedicule_web.js code.wat; do
+	for asset in index.html bootstrap.js audio.mjs local-application.mjs startup-lock.mjs service-worker-retirement.mjs aedicule_web.js code.wat; do
 		if [[ ! -s "$out_link/$asset" ]]; then
 			printf 'web fallback delivery is missing non-empty %s\n' "$asset" >&2
 			failures=$((failures + 1))
@@ -38,8 +38,12 @@ else
 		printf 'web runtime JavaScript does not reference its content-addressed Wasm\n' >&2
 		failures=$((failures + 1))
 	fi
-	if ! rg -F 'maximum:4096,shared:true' "$out_link/aedicule_web.js" >/dev/null; then
-		printf 'web runtime does not cap each tab shared memory at 256 MiB\n' >&2
+	if rg -F 'shared:true' "$out_link/aedicule_web.js" >/dev/null; then
+		printf 'web runtime still imports shared Wasm memory\n' >&2
+		failures=$((failures + 1))
+	fi
+	if [[ -e "$out_link/coi-serviceworker.js" ]]; then
+		printf 'web fallback delivery still includes the obsolete isolation service worker\n' >&2
 		failures=$((failures + 1))
 	fi
 	if [[ -e "$out_link/aedicule_web_bg.wasm" ]]; then

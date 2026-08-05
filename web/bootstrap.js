@@ -7,6 +7,7 @@ import {
 } from "./launcher-i18n.mjs";
 import { schedulePcmPlayback } from "./audio.mjs";
 import { loadLocalApplication } from "./local-application.mjs";
+import { retireLegacyIsolationServiceWorkers } from "./service-worker-retirement.mjs";
 import { failedStartupStage, withExclusiveStartupLock } from "./startup-lock.mjs";
 
 const status = document.getElementById("aedicule-startup-status");
@@ -72,7 +73,6 @@ function browserEnvironment() {
 		platform: navigator.userAgentData?.platform ?? navigator.platform,
 		visibilityState: document.visibilityState,
 		documentFocused: document.hasFocus(),
-		serviceWorkerControlled: navigator.serviceWorker?.controller != null,
 		navigationType: performance.getEntriesByType("navigation")[0]?.type ?? "unknown",
 	};
 }
@@ -96,9 +96,6 @@ function reportAudioDiagnostic(stage, detail = {}) {
 function browserCapabilities() {
 	return {
 		secureContext: globalThis.isSecureContext === true,
-		crossOriginIsolated: globalThis.crossOriginIsolated === true,
-		sharedArrayBuffer: typeof globalThis.SharedArrayBuffer === "function",
-		atomicsWaitAsync: typeof globalThis.Atomics?.waitAsync === "function",
 		webGpu: typeof navigator.gpu?.requestAdapter === "function",
 	};
 }
@@ -112,12 +109,6 @@ function capabilitySummary(capabilities) {
 async function preflightBrowser(capabilities) {
 	if (!capabilities.secureContext) {
 		throw new Error(strings.requiresSecureContext);
-	}
-	if (!capabilities.crossOriginIsolated) {
-		throw new Error(strings.requiresIsolation);
-	}
-	if (!capabilities.sharedArrayBuffer) {
-		throw new Error(strings.requiresSharedMemory);
 	}
 	if (!capabilities.webGpu) {
 		throw new Error(webGpuFailureMessage("missing", strings));
@@ -470,7 +461,6 @@ async function initializeApplication() {
 }
 
 async function loadApplication() {
-	await globalThis.__AEDICULE_ISOLATION_READY;
 	return withExclusiveStartupLock(
 		navigator.locks,
 		"aedicule-startup-v1",
@@ -518,4 +508,11 @@ function reportStartupFailure(error) {
 		+ `elapsedMs: ${Math.round(performance.now())}`;
 }
 
+void retireLegacyIsolationServiceWorkers(navigator.serviceWorker)
+	.then(({ matched, unregistered }) => {
+		if (matched > 0) {
+			reportStartupDiagnostic("legacy-isolation-retired", { matched, unregistered });
+		}
+	})
+	.catch(error => console.warn("[Aedicule startup] legacy isolation retirement failed", error));
 loadApplication().catch(reportStartupFailure);

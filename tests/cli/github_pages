@@ -21,6 +21,14 @@ require_text() {
 	fi
 }
 
+reject_text() {
+	local path=$1 text=$2 description=$3
+	if rg -F -- "$text" "$path" >/dev/null 2>&1; then
+		printf '%s: %s still contains %s\n' "$description" "$path" "$text" >&2
+		failures=$((failures + 1))
+	fi
+}
+
 workflow="$root/.github/workflows/ci.yml"
 require_file "$workflow" 'CI and GitHub Pages workflow'
 
@@ -39,9 +47,12 @@ if [[ -s $workflow ]]; then
 	fi
 fi
 
-require_file "$root/web/coi-serviceworker.js" 'cross-origin-isolation service worker'
-require_text "$root/web/index.html" './coi-serviceworker.js' 'demo isolation bootstrap'
-require_text "$root/packaging/web/index.html" './coi-serviceworker.js' 'gallery isolation bootstrap'
+if [[ -e "$root/web/coi-serviceworker.js" ]]; then
+	printf 'obsolete cross-origin-isolation service worker still exists\n' >&2
+	failures=$((failures + 1))
+fi
+reject_text "$root/web/index.html" './coi-serviceworker.js' 'demo isolation bootstrap'
+reject_text "$root/packaging/web/index.html" './coi-serviceworker.js' 'gallery isolation bootstrap'
 require_file "$root/packaging/web/about.html" 'About Aedicule page'
 require_text "$root/packaging/web/index.html" './about.html' 'gallery About Aedicule link'
 require_text "$root/packaging/web/index.html" 'data-i18n="aboutLink"' \

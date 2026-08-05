@@ -55,8 +55,6 @@ run_web_build() {
 	while IFS= read -r line; do
 		case "$line" in
 			''|'  |'|\
-			'warning: unstable feature specified for `-Ctarget-feature`: `atomics`'|\
-			'  = note: this feature is not stably supported; its behavior can change in the future'|\
 			warning:\ *warning*\ emitted)
 				;;
 			*)
@@ -79,6 +77,7 @@ run_remaining_checks() {
 	run_check node ./tests/integration/web_browser_startup_unit.mjs
 	run_check node ./tests/integration/web_local_application.mjs
 	run_check node ./tests/integration/web_startup_lock.mjs "$PWD"
+	run_check node ./tests/integration/web_service_worker_retirement.mjs "$PWD"
 	run_check cargo test --no-default-features --features native-runtime
 	run_check cargo test --no-default-features --features portable-runtime
 	run_check cargo test --lib --no-default-features --features web web::tests

@@ -36,25 +36,47 @@ expect_text "$root/web/index.html" '-webkit-touch-callout: none' \
 	'browser page does not suppress the touch long-press callout'
 expect_text "$root/web/index.html" '-webkit-tap-highlight-color: transparent' \
 	'browser page does not suppress the touch tap highlight'
-expect_text "$root/web/bootstrap.js" 'crossOriginIsolated' \
-	'browser bootstrap does not preflight cross-origin isolation'
-expect_text "$root/web/bootstrap.js" 'await globalThis.__AEDICULE_ISOLATION_READY' \
-	'browser bootstrap can race the headerless-host isolation reload'
-expect_text "$root/web/coi-serviceworker.js" 'globalThis.__AEDICULE_EARLY_DIAGNOSTICS' \
-	'browser isolation adapter exposes no pre-module diagnostic timeline'
-for isolation_stage in isolation-registering isolation-registered \
-	isolation-ready isolation-reloading isolation-failed; do
-	expect_text "$root/web/coi-serviceworker.js" "\"$isolation_stage\"" \
-		"browser isolation trace omits $isolation_stage"
+reject_text "$root/web/cargo-config.toml" '+atomics' \
+	'browser Rust target still enables atomic Wasm instructions explicitly'
+for linker_flag in --shared-memory --max-memory= --import-memory \
+	__wasm_init_tls __tls_size __tls_align __tls_base; do
+	reject_text "$root/web/cargo-config.toml" "$linker_flag" \
+		"browser Rust target retains threaded-only linker flag $linker_flag"
 done
+reject_text "$root/flake.nix" 'wasm-opt --enable-threads' \
+	'browser Wasm optimizer still requires the threads proposal'
+reject_text "$root/flake.nix" 'web/coi-serviceworker.js' \
+	'browser delivery still installs the cross-origin-isolation service worker'
+reject_text "$root/web/index.html" './coi-serviceworker.js' \
+	'direct browser app still starts through an isolation service worker reload'
+reject_text "$root/packaging/web/index.html" './coi-serviceworker.js' \
+	'browser gallery still starts through an isolation service worker reload'
+reject_text "$root/web/bootstrap.js" '__AEDICULE_ISOLATION_READY' \
+	'browser bootstrap still waits on isolation machinery'
+reject_text "$root/web/bootstrap.js" 'crossOriginIsolated' \
+	'browser bootstrap still treats cross-origin isolation as a capability'
+reject_text "$root/web/bootstrap.js" 'SharedArrayBuffer' \
+	'browser bootstrap still treats shared memory as a capability'
+reject_text "$root/web/bootstrap.js" 'atomicsWaitAsync' \
+	'browser bootstrap still treats Wasm atomics as a capability'
+expect_text "$root/web/bootstrap.js" 'retireLegacyIsolationServiceWorkers' \
+	'direct browser app does not retire a previously registered isolation worker'
+expect_text "$root/packaging/web/launcher.mjs" 'retireLegacyIsolationServiceWorkers' \
+	'browser gallery does not retire a previously registered isolation worker'
+expect_text "$root/web/bootstrap.js" 'void retireLegacyIsolationServiceWorkers' \
+	'direct browser app blocks startup on legacy worker retirement'
+expect_text "$root/packaging/web/launcher.mjs" 'void retireLegacyIsolationServiceWorkers' \
+	'browser gallery blocks readiness on legacy worker retirement'
+reject_text "$root/web/Caddyfile" 'Cross-Origin-Embedder-Policy' \
+	'browser development server still forces cross-origin embedding isolation'
+reject_text "$root/web/Caddyfile" 'Cross-Origin-Opener-Policy' \
+	'browser development server still forces a separate browsing-context group'
+if [[ -e "$root/web/coi-serviceworker.js" ]]; then
+	printf 'obsolete browser isolation service worker still exists\n' >&2
+	failures=$((failures + 1))
+fi
 expect_text "$root/web/bootstrap.js" 'loadCatalog(navigator.languages)' \
 	'browser runtime strings do not use the shared prepare-phase locale catalog'
-expect_text "$root/web/coi-serviceworker.js" 'Cross-Origin-Embedder-Policy' \
-	'headerless static hosts cannot enable shared WebAssembly memory'
-expect_text "$root/web/coi-serviceworker.js" 'Cross-Origin-Opener-Policy' \
-	'headerless static hosts cannot isolate the browser browsing context'
-expect_text "$root/web/bootstrap.js" 'SharedArrayBuffer' \
-	'browser bootstrap does not preflight shared WebAssembly memory support'
 expect_text "$root/web/bootstrap.js" 'navigator.gpu.requestAdapter()' \
 	'browser bootstrap does not preflight an available WebGPU adapter'
 expect_text "$root/web/bootstrap.js" 'globalThis.__AEDICULE_STARTUP_TIMELINE' \
@@ -63,6 +85,8 @@ expect_text "$root/web/bootstrap.js" 'withExclusiveStartupLock(' \
 	'browser startup does not serialize its adapter/Wasm critical section across tabs'
 expect_text "$root/flake.nix" 'install -Dm644 ${./web/startup-lock.mjs} $out/startup-lock.mjs' \
 	'browser delivery omits the cross-tab startup-lock module'
+expect_text "$root/flake.nix" 'install -Dm644 ${./packaging/web/service-worker-retirement.mjs} $out/service-worker-retirement.mjs' \
+	'browser runtime delivery omits legacy isolation-worker retirement'
 for lock_stage in startup-lock-requested startup-lock-waiting \
 	startup-lock-acquired startup-lock-released; do
 	expect_text "$root/web/startup-lock.mjs" "\"$lock_stage\"" \
@@ -76,8 +100,6 @@ expect_text "$root/web/bootstrap.js" 'errorName' \
 	'browser startup failure hides the browser exception class'
 expect_text "$root/web/bootstrap.js" 'userAgent' \
 	'browser startup failure omits browser identity'
-expect_text "$root/web/bootstrap.js" 'serviceWorkerControlled' \
-	'browser startup failure omits scoped isolation-controller state'
 expect_text "$root/web/bootstrap.js" 'globalThis.__AEDICULE_RUNTIME_DIAGNOSTIC' \
 	'browser runtime exposes no sustained frame-progress diagnostic'
 expect_text "$root/src/bin/aedicule-web.rs" 'report_browser_frame_started' \
@@ -166,10 +188,6 @@ expect_text "$root/web/Caddyfile" 'Cache-Control "public, max-age=31536000, immu
 	'browser delivery server does not retain content-addressed runtime Wasm'
 expect_text "$root/web/Caddyfile" 'Cache-Control "no-store"' \
 	'browser development server can reuse stale mutable application assets'
-expect_text "$root/web/coi-serviceworker.js" 'aedicule-runtime-v1' \
-	'headerless static hosting does not cache immutable runtime Wasm'
-expect_text "$root/web/coi-serviceworker.js" 'cache.match(request)' \
-	'headerless static hosting lacks cache-first lookup for content-addressed runtime Wasm'
 expect_text "$root/tests/integration/web_browser_startup" 'AEDICULE_BROWSER_TRACE_EVENTS' \
 	'headless browser input detail has no opt-in environment gate'
 expect_text "$root/src/bin/aedicule-web.rs" '__AEDICULE_TRACE_EVENTS' \
@@ -235,7 +253,7 @@ reject_text "$root/test_browser" 'if [[ ! -x $binary ]]' \
 	'optional browser gate can execute a stale host binary merely because it exists'
 reject_text "$root/test" 'web_packaged_audio' \
 	'fast complete suite still launches live Chromium'
-expect_text "$root/tests/integration/web_browser_startup" '--static-root serves PATH without isolation headers' \
+expect_text "$root/tests/integration/web_browser_startup" '--static-root serves PATH with ordinary static headers' \
 	'headless browser probe cannot emulate GitHub Pages response headers'
 expect_text "$root/tests/integration/web_browser_startup" 'serviceWorkerControlled' \
 	'headless browser snapshot does not expose service-worker control'
@@ -245,8 +263,8 @@ expect_text "$root/.github/workflows/ci.yml" '--timeout-ms 60000' \
 	'GitHub Pages acceptance retains a browser-launch timeout too short for contended hosted runners'
 expect_text "$root/test" 'run_web_build() {' \
 	'full suite does not capture and classify expected browser compiler diagnostics'
-expect_text "$root/test" 'warning: unstable feature specified for `-Ctarget-feature`: `atomics`' \
-	'full suite does not explicitly classify the required unstable atomics warning'
+reject_text "$root/test" 'warning: unstable feature specified for `-Ctarget-feature`: `atomics`' \
+	'full suite still tolerates the obsolete unstable-atomics compiler warning'
 expect_text "$root/test" 'cargo --quiet --config web/cargo-config.toml build --lib' \
 	'browser library compilation emits dependency progress and compatibility notices in the full suite'
 expect_text "$root/test" 'cargo --quiet --config web/cargo-config.toml build --bin aedicule-web' \

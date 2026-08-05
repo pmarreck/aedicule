@@ -1,10 +1,6 @@
 {$AEDICULE_WEB_LISTEN::8080} {
 	bind {$AEDICULE_WEB_BIND:127.0.0.1}
 	root * {env.AEDICULE_WEB_ROOT}
-	header {
-		Cross-Origin-Embedder-Policy "require-corp"
-		Cross-Origin-Opener-Policy "same-origin"
-	}
 	@immutable_runtime path_regexp immutable_runtime ^/aedicule_web_bg\.[0-9a-f]{64}\.wasm$
 	header @immutable_runtime Cache-Control "public, max-age=31536000, immutable"
 	@mutable_runtime not path_regexp ^/aedicule_web_bg\.[0-9a-f]{64}\.wasm$

@@ -7,6 +7,7 @@ import {
 	applicationRecordFromFile,
 	storeLocalApplication,
 } from "./local-application.mjs";
+import { retireLegacyIsolationServiceWorkers } from "./service-worker-retirement.mjs";
 
 export function choosePreviewRotation(random = Math.random) {
 	return random() < 0.5 ? "counterclockwise" : "clockwise";
@@ -97,6 +98,16 @@ function installLocalApplicationLauncher(
 }
 
 if (typeof document !== "undefined") {
+	void retireLegacyIsolationServiceWorkers(navigator.serviceWorker)
+		.then(({ matched, unregistered }) => {
+			if (matched > 0) {
+				console.info("[Aedicule gallery]", "legacy-isolation-retired", JSON.stringify({
+					matched,
+					unregistered,
+				}));
+			}
+		})
+		.catch(error => console.warn("[Aedicule gallery] legacy isolation retirement failed", error));
 	localizeDocument(document, navigator.languages);
 	installPreviewMotion(document);
 	installLocalApplicationLauncher(document);
