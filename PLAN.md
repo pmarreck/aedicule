@@ -1329,8 +1329,11 @@
       capability; WAT_ABI.md + GUIDE_FOR_LLMS.md regenerated with the
       device-change row, flag-bit definition, and delivery guarantees;
       surface tripwires guard the adapter wiring.
-    - [ ] Notify vibesteroids_wat the host side shipped (pin rev + "declare
-      AE_abi_minor 6 only if you REQUIRE device flags") after CI is green.
+    - [x] CI green on 2ca03e5; ship notice sent to vibesteroids_wat with pin
+      guidance and the "declare AE_abi_minor 6 only if you REQUIRE device
+      flags" rule.
+      (inbox/2026-08-04-from-aedicule-device-change-host-side-shipped.md,
+      2026-08-04 ~10:35 PM EDT)
     - [ ] Optional hardening: end-to-end Chromium gate asserting the boot
       device-change event carries bit 0 under forced `(pointer: coarse)`
       emulated media (CDP Emulation.setEmulatedMedia), once worth the wiring.
