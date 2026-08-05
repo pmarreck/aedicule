@@ -1471,3 +1471,50 @@
   pattern to control surfaces. Dead /tmp worktree records pruned in the
   same pass. Commit `a10241d` stays reflog-recoverable ~90 days.
   (2026-08-05 15:05 EDT)
+
+- [x] Add the first demoable `spring_sim_aed` pin to the web gallery with
+  the same source/commit/hash provenance and snapshot control as the existing
+  demos: `985f7657651e6af7ce331c1fddcf97a23b041235`,
+  SHA-256 `d722df0e62d39d5e47bbe2942e8881ff2a648180f426c555f1d88acd5603ddfc`.
+  Start from a failing manifest/gallery classifier, verify the vendored bytes
+  against the sender's deterministic pin pair, run the focused gates and full
+  suite, commit green, then send the spring agent the Aedicule commit.
+  Curiosity poke: a third demo must not expose an accidental two-demo cardinality
+  assumption in snapshots, page layout, or cache metadata. (2026-08-05 17:29 EDT)
+  - [x] Verified the original 37,405-byte artifact and SHA-256 independently;
+    its packaged `tests/main.wast` passes through current Aedicule, and the
+    complete Nix web delivery builds with matching bytes. Added the manifest,
+    responsive third gallery card, direct download, all-release copies, guide,
+    provenance classifiers, and localized English strings under a red-first
+    focused test tranche. That pin was superseded by the control-geometry fix
+    below before publication. (2026-08-05 17:47 EDT)
+  - [x] Release blocker found by the real Chromium WebGPU gate: all five spring
+    buttons deliver without canvas leakage, but none of its seven 24-pixel-high
+    above-label slider rows delivers a semantic control event. The same gate
+    passes Ulam's 44-pixel slider rows. Sent the spring agent the full evidence
+    and requested a guest-owned geometry fix plus replacement pin pair; do not
+    publish the original hash. (2026-08-05 17:50 EDT)
+    - [x] Replacement received: commit
+      `985f7657651e6af7ce331c1fddcf97a23b041235`, 40,506-byte package,
+      SHA-256 `d722df0e62d39d5e47bbe2942e8881ff2a648180f426c555f1d88acd5603ddfc`.
+      Verify those bytes independently, replace the staged snapshot and
+      provenance, rerun the spring WAST and Chromium control gates, then close
+      the blocker only on green. Independent package hash and WAST pass green;
+      browser gate now reports seven sliders and five buttons delivered with no
+      canvas leakage. (2026-08-05 18:35 EDT)
+  - [x] Animate the gallery's spring mass horizontally only while its card is
+    hovered or keyboard-focused, matching the other two interactive previews
+    and respecting `prefers-reduced-motion`. Start with a failing gallery
+    classifier and show Peter the actual rebuilt page before committing.
+    Curiosity poke: keep the travel short enough that the fixed spring artwork
+    still appears connected to the mass throughout the cycle.
+    Focused red/green classifiers and complete `./test` suite passed; rebuilt
+    Tailscale staging endpoint serves the new animation and replacement package.
+    (2026-08-05 18:36 EDT)
+  - [x] Keep the staged gallery available for Peter's iPhone visual acceptance
+    over the Thelio's Tailscale HTTPS name on port 8911 while the corrected
+    spring pin is under acceptance; verify HTTPS reachability before handing off the URL.
+    Tailscale Serve now terminates HTTPS at port 8911 and proxies to the
+    loopback-only staged Caddy server; verified gallery and spring route return
+    200 and the downloaded package retains its pinned SHA-256.
+    (2026-08-05 17:57 EDT)

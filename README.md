@@ -113,8 +113,9 @@ specified future work, not silently treated as available today.
 
 Open the [browser gallery](https://pmarreck.github.io/aedicule/), play
 [Ulam Flower](https://pmarreck.github.io/aedicule/ulam-flower/) or
-[Vibesteroids](https://pmarreck.github.io/aedicule/vibesteroids/) directly, or
-download a native build below.
+[Vibesteroids](https://pmarreck.github.io/aedicule/vibesteroids/), explore the
+[Spring Simulator](https://pmarreck.github.io/aedicule/spring-sim/), or download
+a native build below.
 
 The [Vibesteroids `.aed` application](https://pmarreck.github.io/aedicule/vibesteroids.aed)
 is also directly downloadable. It contains the current schema-11 guest, its
@@ -124,10 +125,15 @@ asset bytes; its one-way Web Audio adapter unlocks on the first pointer, key,
 or touch gesture and plays guest-requested PCM without feeding device timing
 back into deterministic simulation.
 
+The [Spring Simulator `.aed` application](https://pmarreck.github.io/aedicule/spring_sim.aed)
+is also directly downloadable. It models a two-spring oscillator in SI units,
+compares predicted and measured periods, exposes its energy ledger, and accepts
+measured phone acceleration through Aedicule's bounded motion ABI.
+
 Download the latest packaged builds from
 [GitHub Releases](https://github.com/pmarreck/aedicule/releases/latest). Every
-release includes immutable Ulam Flower and Vibesteroids WAT snapshots, the
-complete Vibesteroids `.aed` application, and a checksum manifest.
+release includes immutable Ulam Flower and Vibesteroids WAT snapshots, complete
+Vibesteroids and Spring Simulator `.aed` applications, and a checksum manifest.
 
 | Target | Package |
 | --- | --- |

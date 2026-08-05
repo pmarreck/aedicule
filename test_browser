@@ -93,6 +93,16 @@ run_gallery_local_application() {
 		--static-root "$delivery"
 }
 
+# Exercises the exact package-backed Spring Simulator published by the gallery,
+# including semantic delivery through every guest-authored AVP control layer.
+run_spring_sim_browser() {
+	local delivery
+	delivery=$(<"$gallery_delivery_file")
+	./tests/integration/web_browser_startup --timeout-ms 60000 \
+		--require-controls \
+		--static-root "$delivery/spring-sim"
+}
+
 run_external_link_browser() {
 	local runtime binary
 	runtime=$(<"$browser_runtime_file")
@@ -146,6 +156,7 @@ run_touch_activation_browser() {
 prepare_packaged_audio_browser || exit $?
 run_packaged_audio_browser || exit $?
 run_gallery_local_application || exit $?
+run_spring_sim_browser || exit $?
 run_external_link_browser || exit $?
 run_text_entry_browser || exit $?
 run_touch_activation_browser || exit $?

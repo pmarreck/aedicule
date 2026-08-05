@@ -206,6 +206,10 @@ expect_text "$root/test_browser" '--local-application tests/fixtures/animated.wa
 	'optional browser gate does not prove the gallery local-file delivery path'
 expect_text "$root/test_browser" 'demos/ulam-flower.wat' \
 	'optional browser gate does not exercise the shipped Ulam external link'
+expect_text "$root/test_browser" 'run_spring_sim_browser || exit' \
+	'optional browser gate does not prove the shipped Spring Simulator controls'
+expect_text "$root/test_browser" 'spring-sim' \
+	'optional browser gate does not launch the shipped Spring Simulator web bundle'
 expect_text "$root/tests/integration/web_external_link" '--require-external-link' \
 	'direct browser application gate does not require trusted link activation'
 expect_text "$root/test_browser" 'run_touch_activation_browser || exit' \
@@ -287,4 +291,3 @@ expect_text "$root/src/bin/aedicule-web.rs" '__AEDICULE_MOTION_INTEREST' \
 	'browser adapter never signals guest motion interest to the page'
 
 exit "$failures"
-

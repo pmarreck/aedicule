@@ -435,6 +435,8 @@
 								$out/share/aedicule/demos/vibesteroids.wat
 							install -Dm644 ${./demos/vibesteroids.aed} \
 								$out/share/aedicule/demos/vibesteroids.aed
+							install -Dm644 ${./demos/spring_sim.aed} \
+								$out/share/aedicule/demos/spring_sim.aed
 							install -Dm644 ${./demos/manifest.tsv} \
 								$out/share/aedicule/demos/manifest.tsv
 							install -Dm644 ${./GUIDE_FOR_LLMS.md} $out/share/aedicule/demos/GUIDE_FOR_LLMS.md
@@ -461,6 +463,7 @@
 							cp ${./demos/ulam-flower.wat} $out/Demos/ulam-flower.wat
 							cp ${./demos/vibesteroids.wat} $out/Demos/vibesteroids.wat
 							cp ${./demos/vibesteroids.aed} $out/Demos/vibesteroids.aed
+							cp ${./demos/spring_sim.aed} $out/Demos/spring_sim.aed
 							cp ${./demos/manifest.tsv} $out/Demos/manifest.tsv
 							cp ${./GUIDE_FOR_LLMS.md} $out/Demos/GUIDE_FOR_LLMS.md
 							install -Dm644 ${./assets/fonts/OFL.txt} \
@@ -493,6 +496,7 @@
 							cp ${./demos/ulam-flower.wat} $app/Contents/Resources/Demos/ulam-flower.wat
 							cp ${./demos/vibesteroids.wat} $app/Contents/Resources/Demos/vibesteroids.wat
 							cp ${./demos/vibesteroids.aed} $app/Contents/Resources/Demos/vibesteroids.aed
+							cp ${./demos/spring_sim.aed} $app/Contents/Resources/Demos/spring_sim.aed
 							cp ${./demos/manifest.tsv} $app/Contents/Resources/Demos/manifest.tsv
 							cp ${./GUIDE_FOR_LLMS.md} $app/Contents/Resources/Demos/GUIDE_FOR_LLMS.md
 							install -Dm644 ${./assets/fonts/OFL.txt} \
@@ -750,8 +754,12 @@
 								];
 								title = "Vibesteroids — Aedicule";
 							};
+							spring = self.lib.${system}.webPackageBundle {
+								package = ./demos/spring_sim.aed;
+								title = "Spring Simulator — Aedicule";
+							};
 						in pkgs.runCommand "aedicule-delivery-web" {} ''
-							mkdir -p $out/ulam-flower $out/vibesteroids $out/run
+							mkdir -p $out/ulam-flower $out/vibesteroids $out/spring-sim $out/run
 							cp ${./packaging/web/index.html} $out/index.html
 							cp ${./packaging/web/about.html} $out/about.html
 							cp ${./packaging/web/launcher.mjs} $out/launcher.mjs
@@ -762,9 +770,12 @@
 							cp ${./assets/icons/aedicule-app.png} $out/icon.png
 							cp -R ${ulam}/. $out/ulam-flower/
 							cp -R ${vibesteroids}/. $out/vibesteroids/
+							cp -R ${spring}/. $out/spring-sim/
 							cp ${./GUIDE_FOR_LLMS.md} $out/ulam-flower/GUIDE_FOR_LLMS.md
 							cp ${./GUIDE_FOR_LLMS.md} $out/vibesteroids/GUIDE_FOR_LLMS.md
+							cp ${./GUIDE_FOR_LLMS.md} $out/spring-sim/GUIDE_FOR_LLMS.md
 							cp ${./demos/vibesteroids.aed} $out/vibesteroids.aed
+							cp ${./demos/spring_sim.aed} $out/spring_sim.aed
 							cp ${./demos/manifest.tsv} $out/manifest.tsv
 							cp -R ${self.packages.${system}.webRuntime}/. $out/run/
 						'';

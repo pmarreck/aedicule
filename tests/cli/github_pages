@@ -58,6 +58,10 @@ require_text "$root/packaging/web/index.html" '[data-rotation="clockwise"]:is(:h
 	'Vibesteroids clockwise hover/focus animation'
 require_text "$root/packaging/web/index.html" '[data-rotation="counterclockwise"]:is(:hover, :focus-visible) .ship' \
 	'Vibesteroids counterclockwise hover/focus animation'
+require_text "$root/packaging/web/index.html" '.card:is(:hover, :focus-visible) .spring-mass' \
+	'Spring Simulator hover/focus animation trigger'
+require_text "$root/packaging/web/index.html" '@keyframes spring-oscillate' \
+	'Spring Simulator mass oscillation'
 require_text "$root/flake.nix" 'cp ${./packaging/web/local-application.mjs} $out/local-application.mjs' \
 	'local application loader delivery'
 require_text "$root/flake.nix" 'cp -R ${self.packages.${system}.webRuntime}/. $out/run/' \
@@ -83,11 +87,16 @@ require_text "$root/packaging/web/launcher-i18n.mjs" 'not available yet' \
 require_text "$root/README.md" 'https://pmarreck.github.io/aedicule/' 'public demo link'
 require_text "$root/README.md" 'https://pmarreck.github.io/aedicule/ulam-flower/' 'direct Ulam Flower demo link'
 require_text "$root/README.md" 'https://pmarreck.github.io/aedicule/vibesteroids/' 'direct Vibesteroids demo link'
+require_text "$root/README.md" 'https://pmarreck.github.io/aedicule/spring-sim/' 'direct Spring Simulator demo link'
 require_text "$root/packaging/web/index.html" './vibesteroids.aed' 'direct Vibesteroids package download'
+require_text "$root/packaging/web/index.html" './spring-sim/' 'Spring Simulator gallery card'
+require_text "$root/packaging/web/index.html" './spring_sim.aed' 'direct Spring Simulator package download'
 require_text "$root/flake.nix" 'webPackageBundle = { package, assets ? []' \
 	'package-backed static web bundle constructor'
 require_text "$root/flake.nix" 'package = ./demos/vibesteroids.aed;' \
 	'Pages Vibesteroids source package'
+require_text "$root/flake.nix" 'package = ./demos/spring_sim.aed;' \
+	'Pages Spring Simulator source package'
 require_text "$root/flake.nix" '"assets/audio/satellite-destroyed.flac"' \
 	'Pages Vibesteroids sampled-audio asset'
 require_text "$root/flake.nix" 'application-assets.json' \

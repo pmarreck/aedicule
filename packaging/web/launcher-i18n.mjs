@@ -8,7 +8,7 @@ export const supportedLocales = Object.freeze([
 
 export const english = Object.freeze({
 	title: "Aedicule",
-	intro: "Two tiny WAT worlds. One portable frontplane.",
+	intro: "Three tiny WAT worlds. One portable frontplane.",
 	aboutTitle: "About Aedicule",
 	aboutLink: "About Aedicule",
 	aboutBack: "Back to demos",
@@ -38,6 +38,9 @@ export const english = Object.freeze({
 	aboutGuideLink: "Guide for humans and LLMs",
 	ulamName: "Ulam Flower",
 	ulamDescription: "Exact arithmetic, recursive motion.",
+	springName: "Spring Simulator",
+	springDescription: "A two-spring oscillator lab with real SI units.",
+	springPackage: "Download Spring Simulator .aed",
 	vibesteroidsName: "Vibesteroids",
 	vibesteroidsDescription: "Vector arcade action with generated audio.",
 	open: "Launch",

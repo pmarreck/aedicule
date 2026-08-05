@@ -56,6 +56,7 @@ annotate=[
 	check_reproducible = Independently rebuilds the exact six raw delivery targets and fails on byte differences.
 	delivery-targets = Canonical ordered list of the six supported release targets.
 	demos/manifest.tsv = Immutable provenance and SHA-256 manifest for bundled WAT demos and shareable .aed application.
+	demos/spring_sim.aed = Immutable Spring Simulator demo package pinned by demos/manifest.tsv for native and web delivery.
 	demos/ulam-flower.wat = Pinned zero-float Ulam Flower demo release snapshot.
 	demos/vibesteroids.aed = Byte-pinned schema-11 Vibesteroids application package with FLAC asset, WAST entry point, README, and license.
 	demos/vibesteroids.wat = Pinned Vibesteroids demo release snapshot.

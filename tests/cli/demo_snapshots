@@ -3,14 +3,14 @@
 set -u
 
 root=$(cd "$(dirname "$0")/../.." && pwd -P)
-expected=$'slug\tfile\tsource\tcommit\tsha256\nulam-flower\tulam-flower.wat\thttps://github.com/pmarreck/ulam-flower-wat\t30cc41b4fa6e12b2b691d8eecc9ef490d252d937\t21952a212febf96d102be1ab31424641a7db4fa4255688f19dc55dadae5d0dd7\nvibesteroids\tvibesteroids.wat\thttps://github.com/pmarreck/vibesteroids_wat\tdf61ffe021976babdd500919a752f9e1c106520f\t2e0ad5cf14b28c149631d4a2ebcb0c4349b13146593229554415420260d18ea2\nvibesteroids-package\tvibesteroids.aed\thttps://github.com/pmarreck/vibesteroids_wat\tdf61ffe021976babdd500919a752f9e1c106520f\td2e10d29eaf02ff5186091bdc57a8a1b67fcd360326d592ca329527f06484fb9'
+expected=$'slug\tfile\tsource\tcommit\tsha256\nulam-flower\tulam-flower.wat\thttps://github.com/pmarreck/ulam-flower-wat\t30cc41b4fa6e12b2b691d8eecc9ef490d252d937\t21952a212febf96d102be1ab31424641a7db4fa4255688f19dc55dadae5d0dd7\nvibesteroids\tvibesteroids.wat\thttps://github.com/pmarreck/vibesteroids_wat\tdf61ffe021976babdd500919a752f9e1c106520f\t2e0ad5cf14b28c149631d4a2ebcb0c4349b13146593229554415420260d18ea2\nvibesteroids-package\tvibesteroids.aed\thttps://github.com/pmarreck/vibesteroids_wat\tdf61ffe021976babdd500919a752f9e1c106520f\td2e10d29eaf02ff5186091bdc57a8a1b67fcd360326d592ca329527f06484fb9\nspring-sim\tspring_sim.aed\thttps://github.com/pmarreck/spring_sim_aed\t985f7657651e6af7ce331c1fddcf97a23b041235\td722df0e62d39d5e47bbe2942e8881ff2a648180f426c555f1d88acd5603ddfc'
 failures=0
 
 if [[ ! -f "$root/demos/manifest.tsv" ]]; then
 	printf 'demo provenance manifest is missing\n' >&2
 	failures=$((failures + 1))
 elif [[ $(<"$root/demos/manifest.tsv") != "$expected" ]]; then
-	printf 'demo provenance manifest is not the approved two-snapshot set\n' >&2
+	printf 'demo provenance manifest is not the approved snapshot set\n' >&2
 	failures=$((failures + 1))
 fi
 
