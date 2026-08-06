@@ -32,9 +32,24 @@
     serve the non-blocking retirement module. The HTTP integration test and a
     real Chromium/WebGPU launch both reproduce the old failure and pass the
     corrected path. (2026-08-05 20:28 EDT)
-  - [ ] Deploy the non-shared exact delivery to Tailscale staging and have
-    Peter test it from a fresh iPhone tab after closing every old shared-memory
-    Aedicule tab.
+  - [x] Deploy the non-shared exact delivery to Tailscale staging. All three
+    direct demos reached `settled` through fresh Chromium/WebGPU profiles in
+    1.85–1.95 seconds. Peter's first iPhone attempt still showed the retired
+    `isolation-ready` stage, proving Safari retained the old launcher; the next
+    load reached the current `wasm-initializing` stage and eventually ran.
+    (2026-08-05 20:40 EDT)
+  - [x] Fix the Tailscale server's nested runtime delivery before asking for a
+    second iPhone acceptance pass. Root cause found: the immutable matcher
+    recognized only a site-root runtime, so every demo served its 15.98 MiB
+    content-addressed Wasm uncompressed with `Cache-Control: no-store` on every
+    reload. The root/nested set now receives one-year immutable caching and is
+    excluded from mutable headers; Caddy serves gzip/zstd. A real nested GET
+    proved a 6.22 MiB gzip transfer, immutable headers, and continued no-store
+    treatment for `bootstrap.js`; the complete `./test` suite passed.
+    (2026-08-05 21:09 EDT)
+  - [ ] Rebuild and restart exact Tailscale staging, stress repeated fresh
+    startups after Mechatron releases local build pressure, then obtain Peter's
+    second iPhone acceptance pass.
   - Curiosity poke: preserve secure-context and WebGPU checks, multi-tab
     startup serialization, diagnostics, and content-addressed runtime caching
     without retaining any accidental dependency on cross-origin isolation.

@@ -190,8 +190,12 @@ expect_text "$root/web/Caddyfile" '{$AEDICULE_WEB_LISTEN::8080}' \
 	'browser delivery server cannot select a non-default loopback listener'
 expect_text "$root/web/Caddyfile" 'bind {$AEDICULE_WEB_BIND:127.0.0.1}' \
 	'browser delivery server does not bind its default listener to loopback'
-expect_text "$root/web/Caddyfile" 'path_regexp immutable_runtime ^/aedicule_web_bg\.[0-9a-f]{64}\.wasm$' \
-	'browser delivery server does not recognize content-addressed runtime Wasm'
+expect_text "$root/web/Caddyfile" 'path_regexp immutable_runtime ^/(?:.*/)?aedicule_web_bg\.[0-9a-f]{64}\.wasm$' \
+	'browser delivery server does not recognize nested content-addressed runtime Wasm'
+expect_text "$root/web/Caddyfile" '@mutable_runtime not path_regexp ^/(?:.*/)?aedicule_web_bg\.[0-9a-f]{64}\.wasm$' \
+	'browser delivery server misclassifies nested content-addressed runtime Wasm as mutable'
+expect_text "$root/web/Caddyfile" 'encode zstd gzip' \
+	'browser delivery server does not compress the large Wasm runtime'
 expect_text "$root/web/Caddyfile" 'Cache-Control "public, max-age=31536000, immutable"' \
 	'browser delivery server does not retain content-addressed runtime Wasm'
 expect_text "$root/web/Caddyfile" 'Cache-Control "no-store"' \
