@@ -53,11 +53,20 @@
   - Curiosity poke: preserve secure-context and WebGPU checks, multi-tab
     startup serialization, diagnostics, and content-addressed runtime caching
     without retaining any accidental dependency on cross-origin isolation.
-- [ ] Refresh the staged and shipped Vibesteroids demo from its newest
+- [x] Refresh the staged and shipped Vibesteroids demo from its newest
   immutable sibling release pin. Peter reports the currently pinned package is
   visibly old. Verify the sibling commit/package hash and its WAST acceptance,
   then replace every gallery, delivery, manifest, and release-bundle copy.
-  (Reported 2026-08-05 19:30 EDT.)
+  Clean sibling commit `f15a5fe` (three tranches beyond the old `df61ffe` pin)
+  passed its complete suite and produced a deterministic 125,044-byte `.aed`;
+  source and package hashes were pinned under a red-first provenance test. The
+  package's own `tests/main.wast` and the real Chromium/WebGPU startup/input
+  gate pass through current Aedicule. This publishes the seeded star field,
+  Start Game gate, and viewport-edge projectile lifetime while preserving the
+  sibling's newer uncommitted work. (2026-08-05 21:18 EDT.)
+  - [ ] Supersede this clean interim pin when the Vibesteroids agent finishes
+    its already-requested native `AE_action` Start/Resume conversion and sends
+    a new public commit/package pair.
 - [ ] Land "option C": one `.aed` implementation for every adapter.
   - [x] `browser_application_from_package(bytes)` in `src/web.rs` expands a
     package to (WAT, assets) through the same validated Rust reader native
