@@ -2224,15 +2224,16 @@ fn main() -> ExitCode {
 mod tests {
     use super::{
         DECIMAL_SCALE, GuestPointerButtons, OpenPathKind, StandardMenuEntry, TITLE_BAR_GLYPH_RGBA,
-        external_link_control, fixed_sine, guest_positioned_control_layer,
-        host_title_bar_layer, menu_action_event, menu_action_label, native_menus,
+        external_link_control, fixed_sine, guest_action_event, guest_action_label,
+        guest_positioned_control_layer, host_title_bar_layer, native_menus,
         open_path_prompt_options, render_sample_for_host, render_synth_program_fixed,
         shift_audio_cooldowns, standard_menu_entries, title_bar_control_glyph_overlay,
         title_bar_control_glyphs,
     };
     use aedicule::{
-        DEVICE_FLAG_COARSE_POINTER, DeviceChangeTracker, Event, Key, MenuItem as PluginMenuItem, Metadata, SampleAsset, SynthFilter, SynthVoice,
-        SynthWaveform, gpui_canvas::viewport_transform,
+        DEVICE_FLAG_COARSE_POINTER, DeclaredAction, DeviceChangeTracker, Event, Key,
+        MenuItem as PluginMenuItem, Metadata, SampleAsset, SynthFilter, SynthVoice, SynthWaveform,
+        gpui_canvas::viewport_transform,
     };
     use gpui::{
         Bounds, Context, InteractiveElement as _, IntoElement, MouseButton, ParentElement as _,
