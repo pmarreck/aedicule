@@ -18,6 +18,10 @@ fn external_link_wat() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/external_link.wat")
 }
 
+fn standalone_action_wat() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/standalone_action.wat")
+}
+
 fn render(arguments: &[&str]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_aedicule-render"))
         .env("MUTE_DEBUG_STATUS", "1")
@@ -112,6 +116,48 @@ fn headless_link_activation_reports_the_current_request_without_opening_a_browse
     assert_eq!(
         unavailable.stderr,
         b"aedicule-render: unsupported or unavailable capability in external link activation\n"
+    );
+}
+
+#[test]
+fn headless_standalone_action_activation_delivers_the_exact_placed_button_id() {
+    let source = standalone_action_wat();
+    let before = render(&[source.to_str().unwrap(), "--output", "-"]);
+    let activated = render(&[
+        source.to_str().unwrap(),
+        "--activate-action",
+        "42",
+        "--output",
+        "-",
+    ]);
+
+    assert!(before.status.success(), "{:?}", before.stderr);
+    assert!(activated.status.success(), "{:?}", activated.stderr);
+    assert!(before.stderr.is_empty(), "{:?}", before.stderr);
+    assert!(activated.stderr.is_empty(), "{:?}", activated.stderr);
+    assert!(
+        String::from_utf8(before.stdout)
+            .unwrap()
+            .contains("fill=\"#ff0000\"")
+    );
+    assert!(
+        String::from_utf8(activated.stdout)
+            .unwrap()
+            .contains("fill=\"#00ff00\"")
+    );
+
+    let unavailable = render(&[
+        source.to_str().unwrap(),
+        "--activate-action",
+        "43",
+        "--output",
+        "-",
+    ]);
+    assert!(!unavailable.status.success());
+    assert!(unavailable.stdout.is_empty());
+    assert_eq!(
+        unavailable.stderr,
+        b"aedicule-render: unsupported or unavailable capability in action activation\n"
     );
 }
 
@@ -213,6 +259,7 @@ fn cli_reports_help_about_and_invalid_arguments_cleanly() {
     assert!(help.status.success());
     assert!(String::from_utf8_lossy(&help.stdout).contains("--output"));
     assert!(String::from_utf8_lossy(&help.stdout).contains("--control"));
+    assert!(String::from_utf8_lossy(&help.stdout).contains("--activate-action"));
     assert!(
         String::from_utf8_lossy(&help.stdout).contains(DISPLAY_REFRESH_RATE_ENV),
         "headless help documents the display-refresh override"

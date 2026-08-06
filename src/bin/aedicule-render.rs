@@ -26,6 +26,8 @@ Options:
   --ticks N          Advance N fixed simulation ticks before rendering
   --control ID=VALUE Apply an exact declared integer control; repeatable
   --text ID=VALUE    Commit a declared text field's complete value; repeatable
+  --activate-action ID
+                     Activate an exact currently placed guest action; repeatable
   --activate-link ID Validate/report a current external-link request; repeatable
   --seed N           Initialize the plugin with deterministic seed N
   --width N          Logical viewport width (default: 1024)
@@ -48,6 +50,7 @@ struct RenderOptions {
     height: f32,
     controls: Vec<ControlArgument>,
     texts: Vec<TextArgument>,
+    activate_actions: Vec<u32>,
     activate_links: Vec<u32>,
 }
 
@@ -77,6 +80,7 @@ impl Default for RenderOptions {
             height: DEFAULT_HEIGHT,
             controls: Vec::new(),
             texts: Vec::new(),
+            activate_actions: Vec::new(),
             activate_links: Vec::new(),
         }
     }
@@ -151,6 +155,14 @@ fn parse_arguments(arguments: impl Iterator<Item = String>) -> Result<Action, St
             "--text" => {
                 let value = next_value(&mut arguments, "--text")?;
                 options.texts.push(parse_text(&value)?);
+            }
+            "--activate-action" => {
+                let value = next_value(&mut arguments, "--activate-action")?;
+                options.activate_actions.push(
+                    value
+                        .parse()
+                        .map_err(|_| format!("invalid --activate-action ID: {value}"))?,
+                );
             }
             "--activate-link" => {
                 let value = next_value(&mut arguments, "--activate-link")?;
@@ -283,6 +295,24 @@ fn run(options: RenderOptions) -> Result<(), String> {
     for text in options.texts {
         for event in text_value_events(text.id, &text.value, TextPhase::Commit) {
             frontplane.event(event).map_err(|error| error.to_string())?;
+        }
+    }
+
+    if !options.activate_actions.is_empty() {
+        frontplane.render().map_err(|error| error.to_string())?;
+        for action_id in options.activate_actions {
+            let available = frontplane.ui_snapshot().is_some_and(|snapshot| {
+                snapshot
+                    .buttons
+                    .iter()
+                    .any(|button| button.action_id == action_id)
+            });
+            if !available {
+                return Err("unsupported or unavailable capability in action activation".into());
+            }
+            frontplane
+                .event(Event::MenuAction(action_id))
+                .map_err(|error| error.to_string())?;
         }
     }
 

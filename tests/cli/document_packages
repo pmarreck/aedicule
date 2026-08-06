@@ -14,6 +14,15 @@ require_text() {
 	fi
 }
 
+reject_text() {
+	file=$1
+	needle=$2
+	if [[ -f "$root/$file" ]] && rg -F -- "$needle" "$root/$file" >/dev/null; then
+		printf '%s unexpectedly declares %s\n' "$file" "$needle" >&2
+		failures=$((failures + 1))
+	fi
+}
+
 for icon in \
 	assets/icons/aedicule-app.png \
 	assets/icons/aedicule-aed-document.png \
@@ -65,8 +74,8 @@ require_text flake.nix 'cp ${./GUIDE_FOR_LLMS.md} $out/ulam-flower/GUIDE_FOR_LLM
 require_text flake.nix 'cp ${./GUIDE_FOR_LLMS.md} $out/vibesteroids/GUIDE_FOR_LLMS.md'
 require_text flake.nix 'cp ${./GUIDE_FOR_LLMS.md} $out/spring-sim/GUIDE_FOR_LLMS.md'
 require_text flake.nix '--set AEDICULE_WEB_RUNTIME ${self.packages.${system}.webRuntime}'
-require_text src/web_server.rs 'Cross-Origin-Embedder-Policy: require-corp'
-require_text src/web_server.rs 'Cross-Origin-Opener-Policy: same-origin'
+reject_text src/web_server.rs 'Cross-Origin-Embedder-Policy'
+reject_text src/web_server.rs 'Cross-Origin-Opener-Policy'
 
 library_scan_loops=$(rg -F 'for libraryDirectory in "$storePath/lib" "$storePath/lib64"; do' \
 	"$root/flake.nix" | wc -l)

@@ -28,8 +28,8 @@ const EXPECTED_STAGES = [
 	"settled",
 ];
 
-const HELP = `usage: web_browser_startup [--chrome PATH] [--timeout-ms N] [--require-audio-playback] [--require-key-delivery] [--require-controls] [--require-external-link] [--require-text-entry] [--require-touch-activation] URL
-       web_browser_startup [--chrome PATH] [--timeout-ms N] [--require-audio-playback] [--require-key-delivery] [--require-controls] [--require-external-link] [--require-text-entry] [--require-touch-activation] [--local-application PATH] --static-root PATH
+const HELP = `usage: web_browser_startup [--chrome PATH] [--timeout-ms N] [--require-audio-playback] [--require-key-delivery] [--require-controls] [--require-action ID] [--require-external-link] [--require-text-entry] [--require-touch-activation] URL
+       web_browser_startup [--chrome PATH] [--timeout-ms N] [--require-audio-playback] [--require-key-delivery] [--require-controls] [--require-action ID] [--require-external-link] [--require-text-entry] [--require-touch-activation] [--local-application PATH] --static-root PATH
 
 Launch a headless Chromium browser, stream Aedicule's structured startup
 timeline, and reject browser exceptions or a missing/1x1 GPUI canvas.
@@ -40,6 +40,8 @@ source start, and source completion through the Web Audio adapter.
 --require-key-delivery rejects a static guest unless W/A/D down/up edges all
 cross the browser-to-WAT boundary and produce one committed frame change.
 --require-controls requires AVP buttons/sliders and proves their events reach the guest.
+--require-action ID clicks the matching AVP button and proves that exact action
+identity reaches the guest and commits a changed frame.
 --require-external-link clicks an AVP link and requires transient activation,
 the normalized destination, _blank, and noopener without opening a real popup.
 --require-text-entry focuses an AVP text field and requires that an editable
@@ -61,6 +63,7 @@ function parseArguments(arguments_) {
 	let timeoutMs = 15_000;
 	let requireAudioPlayback = false;
 	let requireControls = false;
+	let requiredActionId;
 	let requireExternalLink = false;
 	let requireTextEntry = false;
 	let requireKeyDelivery = false;
@@ -102,6 +105,10 @@ function parseArguments(arguments_) {
 			requireControls = true;
 			continue;
 		}
+		if (argument === "--require-action") {
+			requiredActionId = Number(arguments_[index += 1]);
+			continue;
+		}
 		if (argument === "--require-external-link") {
 			requireExternalLink = true;
 			continue;
@@ -129,6 +136,13 @@ function parseArguments(arguments_) {
 	if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {
 		throw new Error("--timeout-ms must be a positive integer");
 	}
+	if (requiredActionId !== undefined && (
+		!Number.isSafeInteger(requiredActionId)
+		|| requiredActionId < 0
+		|| requiredActionId > 0xffff_ffff
+	)) {
+		throw new Error("--require-action must be an unsigned 32-bit integer");
+	}
 	if ((url === undefined) === (staticRoot === undefined)) {
 		throw new Error("exactly one URL or --static-root PATH is required");
 	}
@@ -148,6 +162,7 @@ function parseArguments(arguments_) {
 		localApplication,
 		requireAudioPlayback,
 		requireControls,
+		requiredActionId,
 		requireExternalLink,
 		requireKeyDelivery,
 		requireTextEntry,
@@ -1047,6 +1062,31 @@ async function exerciseControls(protocol, snapshot) {
 	};
 }
 
+async function exerciseAction(protocol, snapshot, actionId) {
+	const button = snapshot.ui?.buttons?.find(candidate => candidate.actionId === actionId);
+	if (button === undefined) {
+		return {
+			actionId,
+			buttonFound: false,
+			deliveredActionId: null,
+			frameChanged: false,
+			pointerLeaked: false,
+		};
+	}
+	const before = snapshot.deliveredEventCounts;
+	const beforeFrame = snapshot.frameBackground;
+	await dispatchControlClick(protocol, button);
+	await waitForSemanticEvent(protocol, "menuActions", before.menuActions);
+	const after = await pageSnapshot(protocol);
+	return {
+		actionId,
+		buttonFound: true,
+		deliveredActionId: after.deliveredEventCounts.lastMenuActionId ?? null,
+		frameChanged: after.frameBackground !== beforeFrame,
+		pointerLeaked: after.deliveredEventCounts.pointer !== before.pointer,
+	};
+}
+
 async function exerciseExternalLink(protocol, snapshot) {
 	const link = snapshot.ui?.externalLinks?.[0];
 	if (link === undefined) {
@@ -1355,6 +1395,19 @@ async function inspect(options) {
 				...controlSummary,
 			})}\n`);
 		}
+		const actionSummary = options.requiredActionId === undefined
+			? undefined
+			: await exerciseAction(
+				protocol,
+				await pageSnapshot(protocol),
+				options.requiredActionId,
+			);
+		if (actionSummary !== undefined) {
+			process.stdout.write(`${JSON.stringify({
+				type: "action-summary",
+				...actionSummary,
+			})}\n`);
+		}
 		const touchActivationSummary = options.requireTouchActivation
 			? await exerciseTouchActivation(protocol, await pageSnapshot(protocol))
 			: undefined;
@@ -1472,6 +1525,16 @@ async function inspect(options) {
 		)) {
 			failures.push(
 				"AVP controls were absent, failed semantic delivery, or leaked into canvas input",
+			);
+		}
+		if (actionSummary !== undefined && (
+			!actionSummary.buttonFound
+			|| actionSummary.deliveredActionId !== options.requiredActionId
+			|| !actionSummary.frameChanged
+			|| actionSummary.pointerLeaked
+		)) {
+			failures.push(
+				`AVP action ${options.requiredActionId} was absent, misidentified, visually inert, or leaked into canvas input`,
 			);
 		}
 		if (options.requireExternalLink && (

@@ -982,6 +982,7 @@ pub struct Limits {
     pub max_commands: usize,
     pub max_string_bytes: usize,
     pub max_menu_items: usize,
+    pub max_actions: usize,
     pub max_controls: usize,
     pub max_control_steps: u32,
     pub max_synth_voices: usize,
@@ -1007,6 +1008,7 @@ impl Default for Limits {
             max_commands: 4_096,
             max_string_bytes: 4_096,
             max_menu_items: 128,
+            max_actions: 128,
             max_controls: 32,
             max_control_steps: 1_000_000,
             max_synth_voices: 128,
@@ -1027,6 +1029,7 @@ impl Default for Limits {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Metadata {
     pub title: String,
+    pub actions: Vec<DeclaredAction>,
     pub menu_items: Vec<MenuItem>,
     pub pause_triggers: Vec<PauseTrigger>,
     pub motion_interests: Vec<MotionInterest>,
@@ -1041,6 +1044,7 @@ impl Default for Metadata {
     fn default() -> Self {
         Self {
             title: "WAT Application".into(),
+            actions: Vec::new(),
             menu_items: Vec::new(),
             pause_triggers: Vec::new(),
             motion_interests: Vec::new(),
@@ -1050,6 +1054,20 @@ impl Default for Metadata {
             synth_voices: Vec::new(),
             sample_assets: Vec::new(),
         }
+    }
+}
+
+impl Metadata {
+    /// Resolves one configure-time action independently of whether the guest
+    /// also chose to present it in an application menu.
+    pub fn action(&self, id: u32) -> Option<&DeclaredAction> {
+        self.actions.iter().find(|action| action.id == id)
+    }
+
+    /// Supplies the guest-owned visible and accessible label to every button
+    /// adapter without coupling view presentation to menu presentation.
+    pub fn action_label(&self, id: u32) -> Option<&str> {
+        self.action(id).map(|action| action.label.as_str())
     }
 }
 
@@ -1188,6 +1206,14 @@ pub struct MenuItem {
     pub label: String,
     pub shortcut: Option<String>,
     pub separator: bool,
+}
+
+/// One immutable guest action identity and its visible/accessibility label.
+/// Menu presentation is a separate declaration that may reference the same ID.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeclaredAction {
+    pub id: u32,
+    pub label: String,
 }
 
 impl MenuItem {
@@ -2449,7 +2475,7 @@ struct HostState {
     store_limits: StoreLimits,
     metadata: Metadata,
     application_assets: ApplicationAssets,
-    menu_ids: HashSet<u32>,
+    action_ids: HashSet<u32>,
     control_ids: HashSet<u32>,
     external_link_ids: HashSet<u32>,
     text_field_ids: HashSet<u32>,
@@ -2603,7 +2629,7 @@ impl Frontplane {
             store_limits,
             metadata: Metadata::default(),
             application_assets,
-            menu_ids: HashSet::new(),
+            action_ids: HashSet::new(),
             control_ids: HashSet::new(),
             external_link_ids: HashSet::new(),
             text_field_ids: HashSet::new(),
@@ -2711,7 +2737,7 @@ impl Frontplane {
     /// partial menus and resources if any host import or export fails.
     pub fn configure(&mut self) -> Result<(), FrontplaneError> {
         self.store.data_mut().metadata = Metadata::default();
-        self.store.data_mut().menu_ids.clear();
+        self.store.data_mut().action_ids.clear();
         self.store.data_mut().control_ids.clear();
         self.store.data_mut().external_link_ids.clear();
         self.store.data_mut().text_field_ids.clear();
@@ -2746,7 +2772,7 @@ impl Frontplane {
         if let Some(name) = undeliverable {
             let state = self.store.data_mut();
             state.metadata = Metadata::default();
-            state.menu_ids.clear();
+            state.action_ids.clear();
             state.control_ids.clear();
             state.external_link_ids.clear();
             state.text_field_ids.clear();
@@ -2759,7 +2785,7 @@ impl Frontplane {
         if result.is_err() {
             let state = self.store.data_mut();
             state.metadata = Metadata::default();
-            state.menu_ids.clear();
+            state.action_ids.clear();
             state.control_ids.clear();
             state.external_link_ids.clear();
             state.sample_ids.clear();
@@ -3772,7 +3798,7 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
                         .reject(PendingError::InvalidNumber("AE_button_place_q16"), -5);
                 }
                 let action_id = action_id as u32;
-                if !caller.data().menu_ids.contains(&action_id) {
+                if !caller.data().action_ids.contains(&action_id) {
                     return caller.data_mut().reject(
                         PendingError::InvalidFrame("button placement uses undeclared action"),
                         -8,
@@ -3877,6 +3903,46 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
     linker
         .func_wrap(
             WAT_IMPORT_MODULE,
+            "AE_action",
+            |mut caller: Caller<'_, HostState>, id: i32, ptr: i32, len: i32, flags: i32| {
+                if flags != 0 {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::Unsupported("AE_action"), -4);
+                }
+                if caller.data().metadata.actions.len() >= caller.data().limits.max_actions {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::Budget("AE_action", "action"), -2);
+                }
+                let id = id as u32;
+                if !caller.data_mut().action_ids.insert(id) {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::DuplicateId("AE_action", id), -7);
+                }
+                let label = match read_string(&mut caller, ptr, len, "AE_action") {
+                    Ok(label) if !label.is_empty() => label,
+                    Ok(_) => {
+                        return caller.data_mut().reject(
+                            PendingError::InvalidFrame("action label must not be empty"),
+                            -8,
+                        );
+                    }
+                    Err(error) => return caller.data_mut().reject(error, -3),
+                };
+                caller
+                    .data_mut()
+                    .metadata
+                    .actions
+                    .push(DeclaredAction { id, label });
+                0
+            },
+        )
+        .map_err(runtime_error)?;
+    linker
+        .func_wrap(
+            WAT_IMPORT_MODULE,
             "AE_menu_item",
             |mut caller: Caller<'_, HostState>,
              id: i32,
@@ -3903,14 +3969,25 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
                         .push(MenuItem::separator());
                     return 0;
                 }
+                if caller.data().metadata.actions.len() >= caller.data().limits.max_actions {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::Budget("menu_item", "action"), -2);
+                }
                 let id = id as u32;
-                if !caller.data_mut().menu_ids.insert(id) {
+                if !caller.data_mut().action_ids.insert(id) {
                     return caller
                         .data_mut()
                         .reject(PendingError::DuplicateId("menu_item", id), -7);
                 }
                 let label = match read_string(&mut caller, ptr, len, "menu_item") {
-                    Ok(label) => label,
+                    Ok(label) if !label.is_empty() => label,
+                    Ok(_) => {
+                        return caller.data_mut().reject(
+                            PendingError::InvalidFrame("action label must not be empty"),
+                            -8,
+                        );
+                    }
                     Err(error) => return caller.data_mut().reject(error, -3),
                 };
                 let shortcut = match shortcut {
@@ -3920,11 +3997,16 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
                     7 => Some("F1"),
                     _ => None,
                 };
+                caller.data_mut().metadata.menu_items.push(MenuItem::action(
+                    id,
+                    label.clone(),
+                    shortcut,
+                ));
                 caller
                     .data_mut()
                     .metadata
-                    .menu_items
-                    .push(MenuItem::action(id, label, shortcut));
+                    .actions
+                    .push(DeclaredAction { id, label });
                 0
             },
         )

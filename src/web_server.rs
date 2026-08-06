@@ -1,8 +1,8 @@
 //! Small cross-platform HTTP delivery adapter for the bundled browser runtime.
 //!
 //! Runtime filenames and application paths are allowlisted, keeping `--web`
-//! from becoming an ambient file server while preserving GPUI Web's required
-//! cross-origin-isolation response headers.
+//! from becoming an ambient file server while serving the same ordinary-memory
+//! runtime used by static Web delivery.
 
 use std::{
     collections::HashMap,
@@ -28,8 +28,8 @@ const RUNTIME_FILES: &[&str] = &[
     "audio.mjs",
     "local-application.mjs",
     "startup-lock.mjs",
+    "service-worker-retirement.mjs",
     "launcher-i18n.mjs",
-    "coi-serviceworker.js",
     "manifest.webmanifest",
     "icon.png",
     "aedicule_web.js",
@@ -399,7 +399,7 @@ fn write_response(
 ) -> std::io::Result<()> {
     write!(
         connection,
-        "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nCross-Origin-Opener-Policy: same-origin\r\nCross-Origin-Embedder-Policy: require-corp\r\nCache-Control: {cache_control}\r\nConnection: close\r\n\r\n",
+        "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nCache-Control: {cache_control}\r\nConnection: close\r\n\r\n",
         body.len(),
     )?;
     if !head_only {

@@ -1,14 +1,14 @@
 use aedicule::{
-    DEVICE_FLAG_COARSE_POINTER,
-    ButtonPlacement, ControlLabelPlacement, ControlPanel, ControlPhase, DrawCommand, Event,
-    Frontplane, Key, Limits, PathSegment, Point, Rect, SliderControl, SliderPlacement, UiSnapshot,
-    sin_cos_turn_q30,
+    ButtonPlacement, ControlLabelPlacement, ControlPanel, ControlPhase, DEVICE_FLAG_COARSE_POINTER,
+    DeclaredAction, DrawCommand, Event, Frontplane, Key, Limits, PathSegment, Point, Rect,
+    SliderControl, SliderPlacement, UiSnapshot, sin_cos_turn_q30,
 };
 
 const INTEGER_LIFECYCLE_WAT: &str = r#"(module
 	(import "aedicule.v0" "AE_frame_begin_rgba" (func $frame_begin_rgba (param i32) (result i32)))
 	(import "aedicule.v0" "AE_frame_end" (func $frame_end (result i32)))
 	(import "aedicule.v0" "AE_menu_item" (func $menu_item (param i32 i32 i32 i32 i32) (result i32)))
+	(import "aedicule.v0" "AE_action" (func $action (param i32 i32 i32 i32) (result i32)))
 	(import "aedicule.v0" "AE_slider_i32" (func $slider_i32 (param i32 i32 i32 i32 i32 i32 i32) (result i32)))
 	(import "aedicule.v0" "AE_ui_begin" (func $ui_begin (param i32) (result i32)))
 	(import "aedicule.v0" "AE_ui_end" (func $ui_end (result i32)))
@@ -27,7 +27,7 @@ const INTEGER_LIFECYCLE_WAT: &str = r#"(module
 	(global $sent_ui_revision (mut i32) (i32.const 0))
 	(global $invalid_ui (mut i32) (i32.const 0))
 	(func (export "AE_abi_major") (result i32) i32.const 0)
-	(func (export "AE_abi_minor") (result i32) i32.const 6)
+	(func (export "AE_abi_minor") (result i32) i32.const 8)
 	(func (export "AE_configure") (result i32)
 		i32.const 7
 		i32.const 0
@@ -42,8 +42,7 @@ const INTEGER_LIFECYCLE_WAT: &str = r#"(module
 		i32.const 16
 		i32.const 10
 		i32.const 0
-		i32.const 0
-		call $menu_item)
+		call $action)
 	(func (export "AE_init_i32") (param i32 i32) (param $width i32) (param $height i32) (result i32)
 		i32.const 64 local.get $width i32.store
 		i32.const 68 local.get $height i32.store
@@ -200,6 +199,17 @@ fn integer_lifecycle_omits_legacy_float_exports_and_receives_q16_viewports() {
             initial: 1050,
         }]
     );
+    assert_eq!(
+        frontplane.metadata().actions,
+        vec![DeclaredAction {
+            id: 42,
+            label: "Play/Pause".to_owned(),
+        }]
+    );
+    assert!(
+        frontplane.metadata().menu_items.is_empty(),
+        "a standalone button action must not create an application-menu item"
+    );
     frontplane.init(7, 320.5, 240.25).unwrap();
     assert_eq!(snapshot_viewport(&mut frontplane), (21_004_288, 15_745_024));
 
@@ -288,6 +298,62 @@ fn integer_lifecycle_omits_legacy_float_exports_and_receives_q16_viewports() {
         }]
     );
     assert_eq!(snapshot_trig(&mut frontplane), (1 << 30, 0));
+}
+
+#[test]
+fn standalone_and_menu_actions_share_one_collision_checked_namespace() {
+    let duplicate = INTEGER_LIFECYCLE_WAT.replace(
+        "\t\tcall $action)",
+        "\t\tcall $action\n\t\tdrop\n\t\ti32.const 42 i32.const 16 i32.const 10 i32.const 0 i32.const 0 call $menu_item)",
+    );
+    let mut frontplane = Frontplane::from_wat(&duplicate, Limits::default()).unwrap();
+
+    assert!(frontplane.configure().is_err());
+}
+
+#[test]
+fn legacy_menu_actions_still_supply_button_labels_without_duplication() {
+    let legacy = INTEGER_LIFECYCLE_WAT.replace(
+        "\t\ti32.const 0\n\t\tcall $action)",
+        "\t\ti32.const 0\n\t\ti32.const 0\n\t\tcall $menu_item)",
+    );
+    let mut frontplane = Frontplane::from_wat(&legacy, Limits::default()).unwrap();
+    frontplane.configure().unwrap();
+
+    assert_eq!(frontplane.metadata().actions.len(), 1);
+    assert_eq!(frontplane.metadata().actions[0].label, "Play/Pause");
+    assert_eq!(frontplane.metadata().menu_items.len(), 1);
+    assert_eq!(frontplane.metadata().menu_items[0].id, Some(42));
+}
+
+#[test]
+fn legacy_menu_action_cannot_create_an_unlabeled_button_action() {
+    let empty_legacy = INTEGER_LIFECYCLE_WAT.replace(
+        "\t\ti32.const 42\n\t\ti32.const 16\n\t\ti32.const 10\n\t\ti32.const 0\n\t\tcall $action)",
+        "\t\ti32.const 42\n\t\ti32.const 16\n\t\ti32.const 0\n\t\ti32.const 0\n\t\ti32.const 0\n\t\tcall $menu_item)",
+    );
+    let mut frontplane = Frontplane::from_wat(&empty_legacy, Limits::default()).unwrap();
+
+    assert!(frontplane.configure().is_err());
+}
+
+#[test]
+fn standalone_action_rejects_reserved_flags_and_empty_labels() {
+    let invalid_flags = INTEGER_LIFECYCLE_WAT.replacen(
+        "\t\ti32.const 0\n\t\tcall $action)",
+        "\t\ti32.const 1\n\t\tcall $action)",
+        1,
+    );
+    let empty_label = INTEGER_LIFECYCLE_WAT.replacen(
+        "\t\ti32.const 16\n\t\ti32.const 10\n\t\ti32.const 0\n\t\tcall $action)",
+        "\t\ti32.const 16\n\t\ti32.const 0\n\t\ti32.const 0\n\t\tcall $action)",
+        1,
+    );
+
+    for invalid in [invalid_flags, empty_label] {
+        let mut frontplane = Frontplane::from_wat(&invalid, Limits::default()).unwrap();
+        assert!(frontplane.configure().is_err());
+    }
 }
 
 #[test]

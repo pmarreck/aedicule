@@ -58,6 +58,9 @@ require_text "$browser_suite" \
 	'./tests/integration/web_packaged_audio' \
 	'optional browser integration suite'
 require_text "$browser_suite" \
+	'./tests/integration/web_standalone_action' \
+	'optional browser integration suite'
+require_text "$browser_suite" \
 	'develop=(nix develop .#browser --ignore-environment --keep HOME)' \
 	'optional browser integration suite'
 require_text "$browser_suite" \

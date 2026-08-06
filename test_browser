@@ -111,6 +111,14 @@ run_external_link_browser() {
 		"$binary" "$runtime" demos/ulam-flower.wat
 }
 
+run_standalone_action_browser() {
+	local runtime binary
+	runtime=$(<"$browser_runtime_file")
+	binary="${CARGO_TARGET_DIR:-target}/debug/aedicule"
+	./tests/integration/web_standalone_action \
+		"$binary" "$runtime" tests/fixtures/standalone_action.wat
+}
+
 run_text_entry_browser() {
 	local runtime binary
 	runtime=$(<"$browser_runtime_file")
@@ -158,6 +166,7 @@ run_packaged_audio_browser || exit $?
 run_gallery_local_application || exit $?
 run_spring_sim_browser || exit $?
 run_external_link_browser || exit $?
+run_standalone_action_browser || exit $?
 run_text_entry_browser || exit $?
 run_touch_activation_browser || exit $?
 run_compressed_package_browser || exit $?

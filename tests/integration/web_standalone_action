@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+
+# Serves a guest whose exact standalone action is visible only through a real
+# gpui-component button. A click must reach kind 7 / ID 42 without a menu item.
+
+set -u
+
+if (( $# != 3 )); then
+	printf 'usage: web_standalone_action AEDICULE WEB_RUNTIME APPLICATION.wat\n' >&2
+	exit 2
+fi
+
+frontplane=$1
+runtime=$2
+application=$3
+root=$(cd "$(dirname "$0")/../.." && pwd -P)
+temporary=$(mktemp -d "${TMPDIR:-/tmp}/aedicule-web-standalone-action.XXXXXX")
+server_pid=
+
+cleanup() {
+	if [[ -n $server_pid ]]; then
+		kill "$server_pid" 2>/dev/null || true
+		wait "$server_pid" 2>/dev/null || true
+	fi
+	rm -rf "$temporary"
+}
+trap cleanup EXIT
+
+fail() {
+	printf 'browser standalone-action probe failed: %s\n' "$1" >&2
+	for diagnostic in "$temporary/server.err" "$temporary/browser.out" \
+		"$temporary/browser.err"; do
+		if [[ -s $diagnostic ]]; then
+			printf '\n%s:\n' "$diagnostic" >&2
+			cat "$diagnostic" >&2
+		fi
+	done
+	exit 1
+}
+
+url_pipe="$temporary/server-url"
+mkfifo "$url_pipe"
+env MUTE_DEBUG_STATUS=1 AEDICULE_WEB_RUNTIME="$runtime" \
+	"$frontplane" --web --port 0 "$application" \
+	>"$url_pipe" 2>"$temporary/server.err" 3>&- 4>&- &
+server_pid=$!
+url=
+IFS= read -r -t 10 url <"$url_pipe"
+(( $? == 0 )) || fail 'server did not emit its URL'
+[[ $url == http://127.0.0.1:*\/ ]] || fail 'server emitted an invalid loopback URL'
+
+"$root/tests/integration/web_browser_startup" --timeout-ms 60000 \
+	--require-action 42 "$url" \
+	>"$temporary/browser.out" 2>"$temporary/browser.err"
+(( $? == 0 )) || fail 'headless browser rejected standalone action activation'
+[[ ! -s $temporary/browser.err ]] || fail 'headless browser emitted diagnostics'
+[[ ! -s $temporary/server.err ]] || fail 'application server emitted diagnostics'

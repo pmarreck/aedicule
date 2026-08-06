@@ -159,6 +159,13 @@ fn publish_browser_delivered_events(counts: BrowserDeliveredEventCounts) {
     ] {
         set_js_property(&diagnostic, name, &JsValue::from_f64(value as f64));
     }
+    set_js_property(
+        &diagnostic,
+        "lastMenuActionId",
+        &counts
+            .last_menu_action_id
+            .map_or(JsValue::NULL, |id| JsValue::from_f64(f64::from(id))),
+    );
     js_sys::Reflect::set(
         &js_sys::global(),
         &JsValue::from_str("__AEDICULE_DELIVERED_EVENT_COUNTS"),
@@ -225,6 +232,14 @@ fn publish_browser_ui_snapshot(ui: &UiSnapshot) {
             &JsValue::from_f64(f64::from(bounds.height)),
         );
         output.push(&placement);
+    }
+    for (index, button) in ui.buttons.iter().enumerate() {
+        let placement = buttons.get(index as u32).unchecked_into::<js_sys::Object>();
+        set_js_property(
+            &placement,
+            "actionId",
+            &JsValue::from_f64(f64::from(button.action_id)),
+        );
     }
     set_js_property(&diagnostic, "panels", &panels);
     set_js_property(&diagnostic, "sliders", &sliders);
@@ -942,14 +957,7 @@ impl Render for WebFrontplane {
             .flat_map(|snapshot| snapshot.buttons.iter())
             .filter_map(|placement| {
                 let action_id = placement.action_id;
-                let label = self
-                    .runtime
-                    .metadata()
-                    .menu_items
-                    .iter()
-                    .find(|item| item.id == Some(action_id))?
-                    .label
-                    .clone();
+                let label = self.runtime.metadata().action_label(action_id)?.to_owned();
                 let button = Button::new(("native-button-control", placement.id as usize))
                     .label(label)
                     .selected(placement.selected)

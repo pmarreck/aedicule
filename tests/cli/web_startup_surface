@@ -47,6 +47,12 @@ reject_text "$root/flake.nix" 'wasm-opt --enable-threads' \
 	'browser Wasm optimizer still requires the threads proposal'
 reject_text "$root/flake.nix" 'web/coi-serviceworker.js' \
 	'browser delivery still installs the cross-origin-isolation service worker'
+reject_text "$root/src/web_server.rs" '"coi-serviceworker.js"' \
+	'native --web still requires the removed isolation service worker'
+reject_text "$root/src/web_server.rs" 'Cross-Origin-Embedder-Policy' \
+	'native --web still forces cross-origin embedding isolation'
+reject_text "$root/src/web_server.rs" 'Cross-Origin-Opener-Policy' \
+	'native --web still forces a separate browsing-context group'
 reject_text "$root/web/index.html" './coi-serviceworker.js' \
 	'direct browser app still starts through an isolation service worker reload'
 reject_text "$root/packaging/web/index.html" './coi-serviceworker.js' \
@@ -61,6 +67,8 @@ reject_text "$root/web/bootstrap.js" 'atomicsWaitAsync' \
 	'browser bootstrap still treats Wasm atomics as a capability'
 expect_text "$root/web/bootstrap.js" 'retireLegacyIsolationServiceWorkers' \
 	'direct browser app does not retire a previously registered isolation worker'
+expect_text "$root/src/web_server.rs" '"service-worker-retirement.mjs"' \
+	'native --web omits the non-blocking legacy-worker retirement module'
 expect_text "$root/packaging/web/launcher.mjs" 'retireLegacyIsolationServiceWorkers' \
 	'browser gallery does not retire a previously registered isolation worker'
 expect_text "$root/web/bootstrap.js" 'void retireLegacyIsolationServiceWorkers' \
@@ -214,6 +222,10 @@ expect_text "$root/tests/integration/web_browser_startup" '--require-key-deliver
 	'headless browser probe cannot distinguish DOM dispatch from WAT keyboard delivery'
 expect_text "$root/tests/integration/web_browser_startup" '--require-controls' \
 	'headless browser probe cannot require rendered and guest-delivered AVP controls'
+expect_text "$root/tests/integration/web_browser_startup" '--require-action' \
+	'headless browser probe cannot require an exact guest action identity'
+expect_text "$root/tests/integration/web_browser_startup" 'lastMenuActionId' \
+	'headless browser probe lacks an exact guest action identity oracle'
 expect_text "$root/tests/integration/web_browser_startup" '--require-external-link' \
 	'headless browser probe cannot require trusted AVP external-link activation'
 expect_text "$root/tests/integration/web_browser_startup" '"noopener"' \

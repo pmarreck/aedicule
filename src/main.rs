@@ -213,17 +213,13 @@ fn standard_menu_entries(metadata: &Metadata) -> Vec<StandardMenuEntry> {
 
 /// Resolves a generic guest action to its configure-time accessible label so
 /// native widgets never invent or duplicate application text.
-fn menu_action_label(metadata: &Metadata, action_id: u32) -> Option<&str> {
-    metadata
-        .menu_items
-        .iter()
-        .find(|item| item.id == Some(action_id))
-        .map(|item| item.label.as_str())
+fn guest_action_label(metadata: &Metadata, action_id: u32) -> Option<&str> {
+    metadata.action_label(action_id)
 }
 
 /// Maps a native guest-authored button click onto the same ordered action
 /// event used by menus, preserving one application-independent input path.
-fn menu_action_event(action_id: u32) -> Event {
+fn guest_action_event(action_id: u32) -> Event {
     Event::MenuAction(action_id)
 }
 
@@ -1501,7 +1497,7 @@ impl Render for FrontplaneView {
             .flat_map(|snapshot| snapshot.buttons.iter())
             .map(|placement| {
                 let action_id = placement.action_id;
-                let label = menu_action_label(self.frontplane.metadata(), action_id)
+                let label = guest_action_label(self.frontplane.metadata(), action_id)
                     .expect("validated button action remains declared")
                     .to_owned();
                 let button = Button::new(("native-button-control", placement.id as usize))
@@ -1510,7 +1506,7 @@ impl Render for FrontplaneView {
                     .w_full()
                     .h_full()
                     .on_click(cx.listener(move |this, _, _, cx| {
-                        this.queue_native_event(menu_action_event(action_id), cx)
+                        this.queue_native_event(guest_action_event(action_id), cx)
                     }));
                 guest_positioned_control_layer(placement.bounds)
                     .id(("native-button", placement.id as usize))
@@ -2403,16 +2399,18 @@ mod tests {
     fn arbitrary_declared_actions_supply_native_button_labels_and_events() {
         let metadata = Metadata {
             motion_interests: Vec::new(),
-            menu_items: vec![
-                PluginMenuItem::separator(),
-                PluginMenuItem::action(42, "Play/Pause", None),
-            ],
+            actions: vec![DeclaredAction {
+                id: 42,
+                label: "Play/Pause".into(),
+            }],
+            menu_items: vec![PluginMenuItem::separator()],
             ..Metadata::default()
         };
 
-        assert_eq!(menu_action_label(&metadata, 42), Some("Play/Pause"));
-        assert_eq!(menu_action_label(&metadata, 99), None);
-        assert_eq!(menu_action_event(42), Event::MenuAction(42));
+        assert_eq!(guest_action_label(&metadata, 42), Some("Play/Pause"));
+        assert_eq!(guest_action_label(&metadata, 99), None);
+        assert_eq!(guest_action_event(42), Event::MenuAction(42));
+        assert!(metadata.menu_items.iter().all(|item| item.id != Some(42)));
     }
 
     #[test]
@@ -2447,6 +2445,7 @@ mod tests {
         let metadata = Metadata {
             title: "Example".into(),
             motion_interests: Vec::new(),
+            actions: Vec::new(),
             menu_items: vec![
                 PluginMenuItem::action(1, "Begin", Some("Ctrl+N")),
                 PluginMenuItem::separator(),

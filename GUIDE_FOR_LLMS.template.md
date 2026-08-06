@@ -114,7 +114,8 @@ The implemented Aedicule View Protocol (AVP) kernel is a retained, declarative, 
 During `AE_configure`, declare:
 
 - exact integer sliders with stable ID, label, inclusive range, step, and initial value; and
-- action/menu items whose action IDs and labels may also back native buttons; and
+- standalone actions for native buttons, plus explicit menu items when the
+  action should also appear in a menu; and
 - external links with a stable ID, nonempty visible/accessibility label, and absolute HTTPS URL.
 
 When desired UI changes, submit a complete snapshot during `AE_render`:

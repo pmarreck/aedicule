@@ -154,8 +154,11 @@ fn native_cli_serves_an_aed_through_the_bundled_web_runtime() {
             b"export const localApplication = {}".as_slice(),
         ),
         ("startup-lock.mjs", b"export const lock = {}".as_slice()),
+        (
+            "service-worker-retirement.mjs",
+            b"export const retire = () => {}".as_slice(),
+        ),
         ("launcher-i18n.mjs", b"export const english = {}".as_slice()),
-        ("coi-serviceworker.js", b"// service worker".as_slice()),
         ("manifest.webmanifest", b"{}".as_slice()),
         ("icon.png", b"PNG".as_slice()),
         (
@@ -194,8 +197,8 @@ fn native_cli_serves_an_aed_through_the_bundled_web_runtime() {
     let mut response = String::new();
     connection.read_to_string(&mut response).unwrap();
     assert!(response.starts_with("HTTP/1.1 200 OK\r\n"), "{response}");
-    assert!(response.contains("Cross-Origin-Opener-Policy: same-origin\r\n"));
-    assert!(response.contains("Cross-Origin-Embedder-Policy: require-corp\r\n"));
+    assert!(!response.contains("Cross-Origin-Opener-Policy:"));
+    assert!(!response.contains("Cross-Origin-Embedder-Policy:"));
     assert!(response.contains("Cache-Control: no-store\r\n"));
     assert!(response.ends_with("(module $served)"), "{response}");
 
@@ -229,6 +232,17 @@ fn native_cli_serves_an_aed_through_the_bundled_web_runtime() {
         response.ends_with("export const localApplication = {}"),
         "{response}"
     );
+
+    let mut connection = TcpStream::connect(address).unwrap();
+    connection
+        .write_all(
+            b"GET /service-worker-retirement.mjs HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        )
+        .unwrap();
+    let mut response = String::new();
+    connection.read_to_string(&mut response).unwrap();
+    assert!(response.starts_with("HTTP/1.1 200 OK\r\n"), "{response}");
+    assert!(response.ends_with("export const retire = () => {}"), "{response}");
 
     let mut connection = TcpStream::connect(address).unwrap();
     connection

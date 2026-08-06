@@ -37,6 +37,7 @@ pub struct BrowserDeliveredEventCounts {
     pub total: u64,
     pub controls: u64,
     pub menu_actions: u64,
+    pub last_menu_action_id: Option<u32>,
     pub pointer: u64,
 }
 
@@ -223,9 +224,10 @@ impl BrowserRuntime {
             Event::Control { .. } => {
                 self.delivered_events.controls = self.delivered_events.controls.saturating_add(1);
             }
-            Event::MenuAction(_) => {
+            Event::MenuAction(action_id) => {
                 self.delivered_events.menu_actions =
                     self.delivered_events.menu_actions.saturating_add(1);
+                self.delivered_events.last_menu_action_id = Some(*action_id);
             }
             Event::PointerMove { .. }
             | Event::PointerDown { .. }
@@ -614,6 +616,26 @@ mod tests {
     }
 
     #[test]
+    fn records_the_exact_standalone_action_identity_delivered_by_the_browser() {
+        let mut runtime = BrowserRuntime::new(
+            include_str!("../tests/fixtures/standalone_action.wat"),
+            PluginInit::new(7, 1024.0, 768.0),
+            Duration::ZERO,
+        )
+        .unwrap();
+        runtime.queue_event(Duration::from_millis(5), Event::MenuAction(42));
+
+        assert!(runtime.advance_to(Duration::from_millis(17)).unwrap());
+        assert_eq!(runtime.delivered_event_counts().menu_actions, 1);
+        assert_eq!(
+            runtime.delivered_event_counts().last_menu_action_id,
+            Some(42)
+        );
+        assert_eq!(runtime.frame().background, 0x00ff00ff);
+        assert!(runtime.metadata().menu_items.is_empty());
+    }
+
+    #[test]
     fn synthesizes_keyboard_edges_before_their_following_game_update() {
         let mut runtime = BrowserRuntime::new(
             INPUT_AND_TICK_WAT,
@@ -846,8 +868,16 @@ mod package_expansion_tests {
     fn a_compressed_package_expands_to_wat_and_assets_only() {
         let bytes = archive(&[
             ("code.wat", b"(module)".as_slice(), Compression::Zstd),
-            ("assets/audio/boom.flac", b"fLaC----".as_slice(), Compression::Zstd),
-            ("tests/main.wast", b"(module)\n".as_slice(), Compression::Zstd),
+            (
+                "assets/audio/boom.flac",
+                b"fLaC----".as_slice(),
+                Compression::Zstd,
+            ),
+            (
+                "tests/main.wast",
+                b"(module)\n".as_slice(),
+                Compression::Zstd,
+            ),
             ("README.md", b"# hi\n".as_slice(), Compression::Zstd),
         ]);
         let (wat, assets) = browser_application_from_package(bytes).unwrap();

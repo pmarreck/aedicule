@@ -27,6 +27,11 @@
     or application startup and preserves unrelated origin workers. This is
     required because a prior Safari registration may outlive removal of the
     worker script. (2026-08-05 19:46 EDT)
+  - [x] Bring native `aedicule --web` onto the same ordinary-memory delivery:
+    stop requiring the deleted COI worker and COOP/COEP response headers, and
+    serve the non-blocking retirement module. The HTTP integration test and a
+    real Chromium/WebGPU launch both reproduce the old failure and pass the
+    corrected path. (2026-08-05 20:28 EDT)
   - [ ] Deploy the non-shared exact delivery to Tailscale staging and have
     Peter test it from a fresh iPhone tab after closing every old shared-memory
     Aedicule tab.
@@ -1025,14 +1030,17 @@
     IDs, use exact Q16.16 bounds, expose a selected state, and deliver the
     existing ordered kind-7 event without embedding playback semantics.
     (2026-07-21 22:31 EDT)
-  - [ ] Add a configure-time standalone `AE_action` declaration so a real AVP
+  - [x] Add a configure-time standalone `AE_action` declaration so a real AVP
     button can own bounded visible/accessibility text without publishing an
     always-present application-menu item. Share collision checking with menu
     actions, preserve legacy menu-backed buttons, and prove exact activation
     identity plus absence from native/browser menus in native, browser, and
     headless adapters. Peter explicitly authorized the real GPUI Component
     button surface on every adapter; no canvas or ad hoc substitute. Requested
-    by vibesteroids_wat on 2026-08-05; send an immutable green pin when shipped.
+    by vibesteroids_wat on 2026-08-05. Native, headless, and real
+    Chromium/WebGPU tests pass; ABI docs are generated as v0.8 and the full
+    canonical suite is green. (2026-08-05 20:32 EDT.) Send the immutable pin
+    after committing this savepoint.
     Curiosity poke: a standalone action and a menu declaration must never be
     able to disagree about the label for one ID, regardless of declaration
     order.
