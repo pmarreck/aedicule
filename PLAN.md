@@ -94,13 +94,19 @@
   mode override, and the real foreign-source invocation crossed runtime
   discovery before failing at the intentionally missing WAT. Focused test
   green. (2026-08-13 17:37 EDT.)
-- [ ] Advance Spring Simulator to its layout-v3 and damping-fix release:
+- [x] Advance Spring Simulator to its layout-v3 and damping-fix release:
   source commit `6e89c4a0d9993540c0f0577b16565c73dccf5438`, 41,009-byte
   `spring_sim.aed`, SHA-256
   `ce2b757e108737ca45fbc2a809d9444ea32327591c462511634fcbd502291ae3`.
   Independently verify the immutable bytes, packaged WAST, headless viewport
   renders, and real Chromium semantic controls before updating every gallery,
-  manifest, delivery, and release copy. (Queued 2026-08-10 16:40 EDT.)
+  manifest, delivery, and release copy. The immutable artifact matched all
+  three pins; its packaged WAST passed; 1024x768, 390x844, and 780x437
+  headless renders were clean; and real Chromium/WebGPU at 780x437 settled in
+  2.386 seconds with all 7 sliders and 5 buttons visible, delivering semantic
+  events without pointer leakage. The manifest and package snapshot now drive
+  every generated delivery/release copy. (Queued 2026-08-10 16:40 EDT;
+  completed 2026-08-13 17:42 EDT.)
 - [x] Add RandomZ-compatible deterministic randomization to the WAT/AED ABI
   after agreeing on the guest contract. Prefer `../random`'s new pure
   `randomr` Rust crate as Aedicule's implementation if it passes an explicit
