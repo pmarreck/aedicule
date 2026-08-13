@@ -2443,10 +2443,11 @@ mod tests {
 
     #[test]
     fn plugin_metadata_drives_only_recognized_standard_native_actions() {
-        let metadata = Metadata {
-            title: "Example".into(),
-            motion_interests: Vec::new(),
-            actions: Vec::new(),
+		let metadata = Metadata {
+			title: "Example".into(),
+			motion_interests: Vec::new(),
+			touch_max_contacts: None,
+			actions: Vec::new(),
             menu_items: vec![
                 PluginMenuItem::action(1, "Begin", Some("Ctrl+N")),
                 PluginMenuItem::separator(),

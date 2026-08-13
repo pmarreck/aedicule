@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+# Requires three opaque touch identities, every raw-contact phase, exact guest
+# delivery, and no touch-to-primary compatibility leak through the canvas.
+
+set -u
+
+if (( $# != 2 )); then
+	printf 'usage: web_touch_contacts WEB_RUNTIME APPLICATION.wat\n' >&2
+	exit 2
+fi
+
+runtime=$1
+application=$2
+root=$(cd "$(dirname "$0")/../.." && pwd -P)
+temporary=$(mktemp -d "${TMPDIR:-/tmp}/aedicule-web-touch-contacts.XXXXXX")
+
+cleanup() {
+	chmod -R u+w "$temporary" 2>/dev/null || true
+	rm -rf "$temporary"
+}
+trap cleanup EXIT
+
+cp -R "$runtime/." "$temporary/"
+cp "$application" "$temporary/code.wat"
+
+"$root/tests/integration/web_browser_startup" --timeout-ms 60000 \
+	--require-touch-contacts --static-root "$temporary"

@@ -28,8 +28,8 @@ const EXPECTED_STAGES = [
 	"settled",
 ];
 
-const HELP = `usage: web_browser_startup [--chrome PATH] [--timeout-ms N] [--require-audio-playback] [--require-key-delivery] [--require-controls] [--require-action ID] [--require-external-link] [--require-text-entry] [--require-touch-activation] URL
-       web_browser_startup [--chrome PATH] [--timeout-ms N] [--require-audio-playback] [--require-key-delivery] [--require-controls] [--require-action ID] [--require-external-link] [--require-text-entry] [--require-touch-activation] [--local-application PATH] --static-root PATH
+const HELP = `usage: web_browser_startup [--chrome PATH] [--timeout-ms N] [--require-audio-playback] [--require-key-delivery] [--require-controls] [--require-action ID] [--require-external-link] [--require-text-entry] [--require-touch-activation] [--require-touch-contacts] URL
+       web_browser_startup [--chrome PATH] [--timeout-ms N] [--require-audio-playback] [--require-key-delivery] [--require-controls] [--require-action ID] [--require-external-link] [--require-text-entry] [--require-touch-activation] [--require-touch-contacts] [--local-application PATH] --static-root PATH
 
 Launch a headless Chromium browser, stream Aedicule's structured startup
 timeline, and reject browser exceptions or a missing/1x1 GPUI canvas.
@@ -50,6 +50,8 @@ Unicode scalars reach the guest in order.
 --require-touch-activation emulates a coarse pointer and requires that a touch
 released just past a control edge still activates it, while one released far
 outside does not.
+--require-touch-contacts requires three opaque raw contacts, every terminal
+phase, guest-visible delivery, and no compatibility-pointer leakage.
 --local-application selects a .wat or .aed through the gallery and requires the
 generic origin-local runner to reach the same settled application state.
 
@@ -68,6 +70,7 @@ function parseArguments(arguments_) {
 	let requireTextEntry = false;
 	let requireKeyDelivery = false;
 	let requireTouchActivation = false;
+	let requireTouchContacts = false;
 	let localApplication;
 	let staticRoot;
 	let url;
@@ -125,6 +128,10 @@ function parseArguments(arguments_) {
 			requireTouchActivation = true;
 			continue;
 		}
+		if (argument === "--require-touch-contacts") {
+			requireTouchContacts = true;
+			continue;
+		}
 		if (argument.startsWith("-")) {
 			throw new Error(`unknown option: ${argument}`);
 		}
@@ -167,6 +174,7 @@ function parseArguments(arguments_) {
 		requireKeyDelivery,
 		requireTextEntry,
 		requireTouchActivation,
+		requireTouchContacts,
 		staticRoot,
 		timeoutMs,
 		url: url === undefined ? undefined : new URL(url).href,
@@ -567,7 +575,7 @@ async function pageSnapshot(protocol) {
 			audioDiagnostic: globalThis.__AEDICULE_AUDIO_DIAGNOSTIC ?? null,
 			deliveredEventCount: globalThis.__AEDICULE_DELIVERED_EVENT_COUNT ?? 0,
 			deliveredEventCounts: globalThis.__AEDICULE_DELIVERED_EVENT_COUNTS
-				?? { total: 0, controls: 0, menuActions: 0, pointer: 0 },
+				?? { total: 0, controls: 0, menuActions: 0, pointer: 0, touch: 0 },
 			frameBackground: globalThis.__AEDICULE_FRAME_BACKGROUND ?? null,
 			runtime: globalThis.__AEDICULE_RUNTIME_DIAGNOSTIC ?? null,
 			ui: globalThis.__AEDICULE_UI_SNAPSHOT ?? null,
@@ -665,7 +673,7 @@ export async function waitForSemanticInputQuiescence(
 	return false;
 }
 
-async function synthesizeInput(protocol, snapshot, verboseEvents) {
+async function synthesizeInput(protocol, snapshot, verboseEvents, requireTouchContacts) {
 	const canvas = snapshot.canvases[0];
 	if (canvas === undefined) {
 		return { dispatched: 0, observed: {}, visualChanged: false };
@@ -773,6 +781,8 @@ async function synthesizeInput(protocol, snapshot, verboseEvents) {
 		expression: "globalThis.__AEDICULE_INPUT_PROBE?.hiddenInputFocusRequests ?? 0",
 		returnByValue: true,
 	})).result.value ?? 0;
+	await waitForSemanticInputQuiescence(protocol);
+	const deliveredBeforeTouch = (await pageSnapshot(protocol)).deliveredEventCounts;
 	await protocol.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 3 });
 	for (const [name, method, params] of touchEvents) {
 		if (verboseEvents) {
@@ -780,6 +790,11 @@ async function synthesizeInput(protocol, snapshot, verboseEvents) {
 		}
 		await protocol.send(method, params);
 	}
+	const touchDelivered = !requireTouchContacts || await waitForSemanticCount(
+		protocol,
+		"touch",
+		(deliveredBeforeTouch.touch ?? 0) + 8,
+	);
 	const focusRequestsAfterTouch = (await protocol.send("Runtime.evaluate", {
 		expression: "globalThis.__AEDICULE_INPUT_PROBE?.hiddenInputFocusRequests ?? 0",
 		returnByValue: true,
@@ -798,6 +813,10 @@ async function synthesizeInput(protocol, snapshot, verboseEvents) {
 	const inputQuiesced = await waitForSemanticInputQuiescence(protocol);
 	const after = await screenshotDigest(protocol);
 	const afterKey = await pageSnapshot(protocol);
+	const touchPointerDelta = afterKey.deliveredEventCounts.pointer
+		- deliveredBeforeTouch.pointer;
+	const touchDeliveryDelta = (afterKey.deliveredEventCounts.touch ?? 0)
+		- (deliveredBeforeTouch.touch ?? 0);
 	const probe = await protocol.send("Runtime.evaluate", {
 		expression: "globalThis.__AEDICULE_INPUT_PROBE",
 		returnByValue: true,
@@ -835,7 +854,10 @@ async function synthesizeInput(protocol, snapshot, verboseEvents) {
 		hiddenInputFocusRequestsAfterTouch: focusRequestsAfterTouch,
 		hiddenInputFocusRequestsAfterInput: focusRequestsAfterInput,
 		touchContacts,
+		touchDelivered,
+		touchDeliveryDelta,
 		touchPhases,
+		touchPointerDelta,
 		visualChanged: before !== after,
 	};
 }
@@ -1378,7 +1400,12 @@ async function inspect(options) {
 		await withTimeout(settled, options.timeoutMs, "Aedicule's settled startup stage");
 		const snapshot = await pageSnapshot(protocol);
 		process.stdout.write(`${JSON.stringify({ type: "snapshot", ...snapshot })}\n`);
-		const inputSummary = await synthesizeInput(protocol, snapshot, verboseEvents);
+		const inputSummary = await synthesizeInput(
+			protocol,
+			snapshot,
+			verboseEvents,
+			options.requireTouchContacts,
+		);
 		process.stdout.write(`${JSON.stringify({
 			type: "input-summary",
 			...inputSummary,
@@ -1573,6 +1600,16 @@ async function inspect(options) {
 		}
 		if (missingTouch.length > 0 || inputSummary.touchContacts?.length !== 3) {
 			failures.push("synthetic multi-touch identity/phases were not preserved at the DOM");
+		}
+		if (options.requireTouchContacts && (
+			!inputSummary.touchDelivered
+			|| inputSummary.touchDeliveryDelta !== 8
+			|| inputSummary.touchPointerDelta !== 0
+			|| finalSnapshot.frameBackground !== 0x00ff00ff
+		)) {
+			failures.push(
+				`raw touch contacts were lost, duplicated, leaked through pointer compatibility, or not observed by the guest: ${JSON.stringify(inputSummary)}`,
+			);
 		}
 		if (failures.length > 0) throw new Error(failures.join("; "));
 	} catch (error) {

@@ -34,11 +34,12 @@ pub struct BrowserSamplePlayback {
 /// prove controls neither vanish nor leak their gestures through the canvas.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct BrowserDeliveredEventCounts {
-    pub total: u64,
-    pub controls: u64,
-    pub menu_actions: u64,
-    pub last_menu_action_id: Option<u32>,
-    pub pointer: u64,
+	pub total: u64,
+	pub controls: u64,
+	pub menu_actions: u64,
+	pub last_menu_action_id: Option<u32>,
+	pub pointer: u64,
+	pub touch: u64,
 }
 
 /// Reports whether one browser edge entered the fixed-step queue, was consumed,
@@ -229,12 +230,18 @@ impl BrowserRuntime {
                     self.delivered_events.menu_actions.saturating_add(1);
                 self.delivered_events.last_menu_action_id = Some(*action_id);
             }
-            Event::PointerMove { .. }
-            | Event::PointerDown { .. }
-            | Event::PointerUp { .. }
-            | Event::PointerScroll { .. } => {
-                self.delivered_events.pointer = self.delivered_events.pointer.saturating_add(1);
-            }
+			Event::PointerMove { .. }
+			| Event::PointerDown { .. }
+			| Event::PointerUp { .. }
+			| Event::PointerScroll { .. } => {
+				self.delivered_events.pointer = self.delivered_events.pointer.saturating_add(1);
+			}
+			Event::TouchStart { .. }
+			| Event::TouchMove { .. }
+			| Event::TouchEnd { .. }
+			| Event::TouchCancel { .. } => {
+				self.delivered_events.touch = self.delivered_events.touch.saturating_add(1);
+			}
             _ => {}
         }
         self.frontplane.event(event)?;
@@ -398,7 +405,7 @@ mod tests {
             (func (export "AE_state_schema") (result i32) i32.const 1))
     "#;
 
-    const INPUT_AND_TICK_WAT: &str = r#"
+	const INPUT_AND_TICK_WAT: &str = r#"
         (module
             (import "aedicule.v0" "AE_frame_begin" (func $frame_begin (param f32 f32 f32 f32) (result i32)))
             (import "aedicule.v0" "AE_circle" (func $circle (param i32 f32 f32 f32 f32 i32 i32) (result i32)))
@@ -432,6 +439,30 @@ mod tests {
             (func (export "AE_state_ptr") (result i32) i32.const 0)
             (func (export "AE_state_len") (result i32) i32.const 0)
             (func (export "AE_state_schema") (result i32) i32.const 1))
+	"#;
+
+	const TOUCH_WAT: &str = r#"
+		(module
+			(import "aedicule.v0" "AE_touch_interest"
+				(func $touch_interest (param i32 i32) (result i32)))
+			(import "aedicule.v0" "AE_frame_begin_rgba"
+				(func $frame_begin (param i32) (result i32)))
+			(import "aedicule.v0" "AE_frame_end" (func $frame_end (result i32)))
+			(memory (export "memory") 1)
+			(func (export "AE_abi_major") (result i32) i32.const 0)
+			(func (export "AE_abi_minor") (result i32) i32.const 10)
+			(func (export "AE_configure") (result i32)
+				i32.const 2 i32.const 0 call $touch_interest)
+			(func (export "AE_init") (param i32 i32 f32 f32) (result i32) i32.const 0)
+			(func (export "AE_event") (param i32 i32 f32 f32) (result i32) i32.const 0)
+			(func (export "AE_tick") (param i32) (result i32) i32.const 0)
+			(func (export "AE_tick_rate") (param i32 i32) (result i32 i32)
+				i32.const 60 i32.const 1)
+			(func (export "AE_render") (result i32)
+				i32.const 255 call $frame_begin drop call $frame_end drop i32.const 0)
+			(func (export "AE_state_ptr") (result i32) i32.const 0)
+			(func (export "AE_state_len") (result i32) i32.const 0)
+			(func (export "AE_state_schema") (result i32) i32.const 1))
 	"#;
 
     const PAUSE_WAT: &str = r#"
@@ -592,7 +623,7 @@ mod tests {
     }
 
     #[test]
-    fn delivers_pointer_input_at_the_next_exact_browser_tick_boundary() {
+	fn delivers_pointer_input_at_the_next_exact_browser_tick_boundary() {
         let mut runtime = BrowserRuntime::new(
             POINTER_WAT,
             PluginInit::new(7, 1024.0, 768.0),
@@ -613,7 +644,29 @@ mod tests {
             panic!("expected a pointer-controlled circle");
         };
         assert_eq!(*x, 500.0);
-    }
+	}
+
+	#[test]
+	fn counts_raw_touch_separately_from_compatibility_pointer_input() {
+		let mut runtime = BrowserRuntime::new(
+			TOUCH_WAT,
+			PluginInit::new(7, 1024.0, 768.0),
+			Duration::ZERO,
+		)
+		.unwrap();
+		runtime.queue_event(
+			Duration::from_millis(5),
+			Event::TouchStart {
+				id: 41,
+				x: 250.0,
+				y: 384.0,
+			},
+		);
+
+		assert!(runtime.advance_to(Duration::from_millis(17)).unwrap());
+		assert_eq!(runtime.delivered_event_counts().touch, 1);
+		assert_eq!(runtime.delivered_event_counts().pointer, 0);
+	}
 
     #[test]
     fn records_the_exact_standalone_action_identity_delivered_by_the_browser() {

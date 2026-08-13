@@ -135,6 +135,10 @@ expect_text "$root/web/bootstrap.js" 'stackExcerpt' \
 # attempt always precedes the activation it needs.
 expect_text "$root/web/bootstrap.js" '["pointerdown", "keydown", "touchstart", "pointerup", "touchend", "click"]' \
 	'browser audio unlock listens only at gesture start, before iOS grants activation'
+expect_text "$root/web/bootstrap.js" 'createTouchBridge();' \
+	'browser bootstrap does not install the raw touch-contact bridge'
+expect_text "$root/flake.nix" 'install -Dm644 ${./web/touch-input.mjs} $out/touch-input.mjs' \
+	'Web runtime does not deliver the touch-contact bridge module'
 expect_text "$root/web/bootstrap.js" 'fetch("./application-assets.json"' \
 	'browser bootstrap does not fetch the package asset catalog'
 expect_text "$root/web/bootstrap.js" 'globalThis.__AEDICULE_ASSETS' \
@@ -212,6 +216,8 @@ expect_text "$root/tests/integration/web_browser_startup" 'Input.dispatchTouchEv
 	'headless browser probe does not synthesize multi-touch input through Chrome'
 expect_text "$root/tests/integration/web_browser_startup" 'touchCancel' \
 	'headless browser probe does not exercise touch cancellation'
+expect_text "$root/tests/integration/web_browser_startup" '--require-touch-contacts' \
+	'headless browser probe cannot require raw guest touch-contact delivery'
 expect_text "$root/tests/integration/web_browser_startup" 'dispatchGhostMousePair' \
 	'headless browser probe does not replay iOS Safari compatibility mouse echoes'
 expect_text "$root/tests/integration/web_browser_startup" 'ghostActivated' \

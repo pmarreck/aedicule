@@ -742,6 +742,7 @@
 							install -Dm644 ${./web/index.html} $out/index.html
 							install -Dm644 ${./web/bootstrap.js} $out/bootstrap.js
 							install -Dm644 ${./web/audio.mjs} $out/audio.mjs
+							install -Dm644 ${./web/touch-input.mjs} $out/touch-input.mjs
 							install -Dm644 ${./web/startup-lock.mjs} $out/startup-lock.mjs
 							install -Dm644 ${./packaging/web/service-worker-retirement.mjs} $out/service-worker-retirement.mjs
 							install -Dm644 ${./packaging/web/launcher-i18n.mjs} $out/launcher-i18n.mjs

@@ -9,6 +9,7 @@ import { schedulePcmPlayback } from "./audio.mjs";
 import { loadLocalApplication } from "./local-application.mjs";
 import { retireLegacyIsolationServiceWorkers } from "./service-worker-retirement.mjs";
 import { failedStartupStage, withExclusiveStartupLock } from "./startup-lock.mjs";
+import { createTouchBridge } from "./touch-input.mjs";
 
 const status = document.getElementById("aedicule-startup-status");
 const catalog = loadCatalog(navigator.languages);
@@ -42,6 +43,7 @@ let audioContext;
 let guestAudioPaused = false;
 let startupStatusMessage = status.textContent;
 globalThis.__AEDICULE_AUDIO_REQUEST_COUNT = 0;
+createTouchBridge();
 
 function reportStartupDiagnostic(stage, detail = {}) {
 	detail = {

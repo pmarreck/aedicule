@@ -1045,6 +1045,7 @@ pub struct Metadata {
     pub menu_items: Vec<MenuItem>,
     pub pause_triggers: Vec<PauseTrigger>,
     pub motion_interests: Vec<MotionInterest>,
+    pub touch_max_contacts: Option<u32>,
     pub controls: Vec<SliderControl>,
     pub external_links: Vec<ExternalLink>,
     pub text_fields: Vec<TextField>,
@@ -1060,6 +1061,7 @@ impl Default for Metadata {
             menu_items: Vec::new(),
             pause_triggers: Vec::new(),
             motion_interests: Vec::new(),
+            touch_max_contacts: None,
             controls: Vec::new(),
             external_links: Vec::new(),
             text_fields: Vec::new(),
@@ -1781,6 +1783,9 @@ pub enum HostEffect {
 /// mirroring the CSS `(pointer: coarse)` interaction media query. All other
 /// bits are reserved and sent as zero; guests mask only the bits they know.
 pub const DEVICE_FLAG_COARSE_POINTER: u32 = 1;
+/// Hard host ceiling for simultaneously admitted raw touch contacts. Each
+/// guest chooses an equal or smaller bound during `AE_configure`.
+pub const MAX_TOUCH_CONTACTS: u32 = 16;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Event {
@@ -1805,6 +1810,10 @@ pub enum Event {
         delta_x: f32,
         delta_y: f32,
     },
+    TouchStart { id: u32, x: f32, y: f32 },
+    TouchMove { id: u32, x: f32, y: f32 },
+    TouchEnd { id: u32, x: f32, y: f32 },
+    TouchCancel { id: u32, x: f32, y: f32 },
     /// Viewport dimensions plus device-class flags — WAT ABI event kind 6,
     /// the "device-change event". Delivered at least once at start and on
     /// any change to either the dimensions or the flags.
@@ -1835,7 +1844,7 @@ pub enum Event {
     /// slot and the bounded denominator in `a` for WAT ABI event kind 9.
     DisplayRefresh(TickRate),
     /// Host-owned scheduling lifecycle emitted instead of a declared trigger's
-    /// raw physical edge. ABI event kind 15 reserves kinds 11-14 for touch.
+    /// raw physical edge.
     Pause(PausePhase),
     /// One Unicode scalar of a text field's current value, at its exact
     /// position. Delivered through `AE_text_event`, never through `AE_event`.
@@ -1852,6 +1861,122 @@ pub enum Event {
         scalars: u32,
         phase: TextPhase,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TouchContactPhase {
+    Start,
+    Move,
+    End,
+    Cancel,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ActiveTouchContact {
+    id: u32,
+    x: f32,
+    y: f32,
+}
+
+/// Converts an adapter's raw touch edges into one bounded, identity-safe guest
+/// stream. Suppressed contacts remain remembered until their terminal edge so
+/// freeing another slot cannot admit a move halfway through a gesture.
+#[derive(Debug)]
+pub struct TouchContactTracker {
+    max_contacts: usize,
+    active: Vec<ActiveTouchContact>,
+    suppressed: Vec<u32>,
+}
+
+impl TouchContactTracker {
+    pub fn new(max_contacts: u32) -> Option<Self> {
+        (1..=MAX_TOUCH_CONTACTS)
+            .contains(&max_contacts)
+            .then(|| Self {
+                max_contacts: max_contacts as usize,
+                active: Vec::with_capacity(max_contacts as usize),
+                suppressed: Vec::with_capacity((MAX_TOUCH_CONTACTS - max_contacts) as usize),
+            })
+    }
+
+    /// Admits starts, updates known moves, and terminates only matching IDs.
+    /// End/cancel carry the last admitted position, never an unvalidated lift.
+    pub fn observe(
+        &mut self,
+        phase: TouchContactPhase,
+        id: u32,
+        x: f32,
+        y: f32,
+    ) -> Option<Event> {
+        match phase {
+            TouchContactPhase::Start => {
+                if self.active.iter().any(|contact| contact.id == id)
+                    || self.suppressed.contains(&id)
+                    || !x.is_finite()
+                    || !y.is_finite()
+                {
+                    return None;
+                }
+                if self.active.len() >= self.max_contacts {
+                    if self.active.len() + self.suppressed.len() < MAX_TOUCH_CONTACTS as usize {
+                        self.suppressed.push(id);
+                    }
+                    return None;
+                }
+                self.active.push(ActiveTouchContact { id, x, y });
+                Some(Event::TouchStart { id, x, y })
+            }
+            TouchContactPhase::Move => {
+                let contact = self.active.iter_mut().find(|contact| contact.id == id)?;
+                if !x.is_finite() || !y.is_finite() {
+                    return None;
+                }
+                contact.x = x;
+                contact.y = y;
+                Some(Event::TouchMove { id, x, y })
+            }
+            TouchContactPhase::End | TouchContactPhase::Cancel => {
+                if let Some(index) = self.active.iter().position(|contact| contact.id == id) {
+                    let contact = self.active.remove(index);
+                    return Some(match phase {
+                        TouchContactPhase::End => Event::TouchEnd {
+                            id,
+                            x: contact.x,
+                            y: contact.y,
+                        },
+                        TouchContactPhase::Cancel => Event::TouchCancel {
+                            id,
+                            x: contact.x,
+                            y: contact.y,
+                        },
+                        _ => unreachable!(),
+                    });
+                }
+                if let Some(index) = self
+                    .suppressed
+                    .iter()
+                    .position(|suppressed| *suppressed == id)
+                {
+                    self.suppressed.remove(index);
+                }
+                None
+            }
+        }
+    }
+
+    /// Produces deterministic cancellation in contact-start order for focus
+    /// loss, lost capture, adapter teardown, or transactional guest replacement.
+    pub fn cancel_all(&mut self) -> Vec<Event> {
+        self.suppressed.clear();
+        self.active
+            .drain(..)
+            .map(|contact| Event::TouchCancel {
+                id: contact.id,
+                x: contact.x,
+                y: contact.y,
+            })
+            .collect()
+    }
 }
 
 /// Coalesces device-change emissions for host adapters: dedupes on the exact
@@ -2955,6 +3080,18 @@ impl Frontplane {
     /// Converts portable typed input into the stable numeric ABI, keeping GPUI
     /// and platform key representations outside the guest boundary.
     pub fn event(&mut self, event: Event) -> Result<(), FrontplaneError> {
+        if matches!(
+            event,
+            Event::TouchStart { .. }
+                | Event::TouchMove { .. }
+                | Event::TouchEnd { .. }
+                | Event::TouchCancel { .. }
+        ) && self.store.data().metadata.touch_max_contacts.is_none()
+        {
+            return Err(FrontplaneError::UnsupportedCapability {
+                operation: "raw touch contact",
+            });
+        }
         if let Event::TextScalar { id, .. } | Event::TextValue { id, .. } = event {
             let Some(field) = self
                 .store
@@ -3473,6 +3610,10 @@ fn legacy_event_parameters(event: Event) -> (i32, i32, f32, f32) {
             delta_x,
             delta_y,
         } => (10, unit as i32, delta_x, delta_y),
+        Event::TouchStart { id, x, y } => (11, id as i32, x, y),
+        Event::TouchMove { id, x, y } => (12, id as i32, x, y),
+        Event::TouchEnd { id, x, y } => (13, id as i32, x, y),
+        Event::TouchCancel { id, x, y } => (14, id as i32, x, y),
         Event::Pause(phase) => (15, phase as i32, 0.0, 0.0),
     }
 }
@@ -3533,6 +3674,22 @@ fn integer_event_parameters(
         } => {
             let (delta_x, delta_y) = coordinates(delta_x, delta_y)?;
             (10, unit as i32, delta_x, delta_y)
+        }
+        Event::TouchStart { id, x, y } => {
+            let (x, y) = coordinates(x, y)?;
+            (11, id as i32, x, y)
+        }
+        Event::TouchMove { id, x, y } => {
+            let (x, y) = coordinates(x, y)?;
+            (12, id as i32, x, y)
+        }
+        Event::TouchEnd { id, x, y } => {
+            let (x, y) = coordinates(x, y)?;
+            (13, id as i32, x, y)
+        }
+        Event::TouchCancel { id, x, y } => {
+            let (x, y) = coordinates(x, y)?;
+            (14, id as i32, x, y)
         }
         Event::Pause(phase) => (15, phase as i32, 0, 0),
     };
@@ -3672,6 +3829,38 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
                     .metadata
                     .motion_interests
                     .push(MotionInterest { kind, rate_hz });
+                0
+            },
+        )
+        .map_err(runtime_error)?;
+    linker
+        .func_wrap(
+            WAT_IMPORT_MODULE,
+            "AE_touch_interest",
+            |mut caller: Caller<'_, HostState>, max_contacts: i32, flags: i32| {
+                if caller.data().active_operation != Some("AE_configure") {
+                    return caller.data_mut().reject(
+                        PendingError::InvalidFrame("AE_touch_interest is configure-only"),
+                        -8,
+                    );
+                }
+                if flags != 0 {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::Unsupported("AE_touch_interest"), -4);
+                }
+                if !(1..=MAX_TOUCH_CONTACTS as i32).contains(&max_contacts) {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::InvalidNumber("AE_touch_interest"), -5);
+                }
+                if caller.data().metadata.touch_max_contacts.is_some() {
+                    return caller.data_mut().reject(
+                        PendingError::DuplicateId("AE_touch_interest", 0),
+                        -7,
+                    );
+                }
+                caller.data_mut().metadata.touch_max_contacts = Some(max_contacts as u32);
                 0
             },
         )

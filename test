@@ -78,6 +78,7 @@ run_remaining_checks() {
 	run_check node ./tests/integration/web_local_application.mjs
 	run_check node ./tests/integration/web_startup_lock.mjs "$PWD"
 	run_check node ./tests/integration/web_service_worker_retirement.mjs "$PWD"
+	run_check node ./tests/integration/web_touch_bridge.mjs
 	run_check cargo test --no-default-features --features native-runtime
 	run_check cargo test --no-default-features --features portable-runtime
 	run_check cargo test --lib --no-default-features --features web web::tests

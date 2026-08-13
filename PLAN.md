@@ -1231,20 +1231,24 @@
   - [ ] Preserve identity-bearing multi-touch from browser Pointer Events to
     WAT clients: event kinds 11/12/13/14 are start/move/end/cancel,
     `code = pointerId`, and `a,b = logical x,y`.
-    - [ ] Make delivery configure-time opt-in so legacy guests keep the
+    - [x] Make delivery configure-time opt-in so legacy guests keep the
       touch-to-primary-pointer compatibility path. The opt-in admits an
       ordered, bounded active-contact stream, suppresses only compatibility
       mouse echoes from those contacts, and retains concurrent real mouse,
       trackpad, keyboard, wheel, hover, and motion input.
-    - [ ] Enforce active-ID uniqueness and deterministic terminal semantics:
+      (2026-08-13 18:41 EDT: `AE_touch_interest(max_contacts, flags)` added in
+      ABI v0.10; legacy guests retain the prior path.)
+    - [x] Enforce active-ID uniqueness and deterministic terminal semantics:
       IDs may be reused only after end/cancel; unknown moves/terminals and
       duplicate starts cannot mutate another contact; focus loss, lost capture,
       pointer cancellation, and teardown cannot strand a held contact.
       Terminal edges carry the last admitted logical coordinate, and resize
       ordering follows the existing device-change barrier.
-    - [ ] Define and enforce the host active-contact limit, retain ordered
+      (2026-08-13 18:41 EDT)
+    - [x] Define and enforce the host active-contact limit, retain ordered
       delivery before fixed ticks, and make retained AVP controls occlude
       contact starts exactly as they occlude gameplay pointer starts.
+      (2026-08-13 18:41 EDT: hard host ceiling 16; guest selects 1..=16.)
     - [ ] Add a versioned semantic input-capabilities event before the first
       render and whenever the set changes: keyboard, fine pointer, hover,
       wheel, touch, multi-touch, motion, and later gamepad—not OS/browser names
@@ -1253,17 +1257,23 @@
     - [x] Prove at the live Chrome/DOM layer that two contacts move
       independently, end separately, and a third contact cancels while three
       opaque IDs remain distinct. (2026-07-20 21:18 EDT)
-    - [ ] Prove those same phases and identities reach `AE_event` through core
+    - [x] Prove those same phases and identities reach `AE_event` through core
       WAT tests and the rebuilt browser runtime.
+      (2026-08-13 18:41 EDT: real Chromium delivered 3 starts, 2 moves, 2
+      ends, and 1 cancel across three opaque IDs.)
     - [ ] Add repeatable actual-binary touch-sequence arguments to
       `aedicule-render` so downstream `.aed` projects can test simultaneous
       IDs, interleaved movement, independent terminal edges, cancellation,
       and ID reuse against an immutable Aedicule package.
-    - [ ] Prevent GPUI Web's current mouse-compatibility conversion from
+    - [x] Prevent GPUI Web's current mouse-compatibility conversion from
       duplicating each touch as primary-button input.
-    - [ ] Hand the raw-contact contract to Vibesteroids so that guest—not
+      (2026-08-13 18:41 EDT: phase-and-coordinate markers survive GPUI's queue
+      hop; the browser gate measured zero compatibility pointer deliveries.)
+    - [x] Hand the raw-contact contract to Vibesteroids so that guest—not
       Aedicule—maps upward travel on the left half or downward travel on the
       right half to proportional ship rotation on fullscreen mobile.
+      (2026-08-13 18:41 EDT: exact opt-in correction sent in
+      `../vibesteroids_wat/inbox/2026-08-13-from-aedicule-enable-current-touch-opt-in.md`.)
     - [ ] Make the mobile demo fill the available viewport immediately and
       provide a user-activated fullscreen entry surface where browser policy
       forbids automatic fullscreen; preserve the browser-owned exit path.

@@ -161,6 +161,13 @@ run_touch_activation_browser() {
 		"$binary" "$runtime" demos/ulam-flower.wat
 }
 
+run_touch_contacts_browser() {
+	local runtime
+	runtime=$(<"$browser_runtime_file")
+	./tests/integration/web_touch_contacts \
+		"$runtime" tests/fixtures/touch_contacts.wat
+}
+
 prepare_packaged_audio_browser || exit $?
 run_packaged_audio_browser || exit $?
 run_gallery_local_application || exit $?
@@ -169,6 +176,7 @@ run_external_link_browser || exit $?
 run_standalone_action_browser || exit $?
 run_text_entry_browser || exit $?
 run_touch_activation_browser || exit $?
+run_touch_contacts_browser || exit $?
 run_compressed_package_browser || exit $?
 
 marker=$(git rev-parse --git-path aedicule-test-browser-success)

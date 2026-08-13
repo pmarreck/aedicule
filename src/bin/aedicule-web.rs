@@ -8,7 +8,7 @@ use aedicule::{
     ApplicationAssets, ControlLabelPlacement, ControlPhase, DEVICE_FLAG_COARSE_POINTER,
     DeviceChangeTracker, Event, ExternalLinkRequest, MotionInterestKind, ShakeDetector,
     GEIST_MONO_REGULAR, Key, PluginInit, PointerButton, PointerScrollUnit, Rect, SliderControl,
-    TextField, TextPhase, UiSnapshot,
+    TextField, TextPhase, TouchContactPhase, TouchContactTracker, UiSnapshot,
     gpui_canvas::paint_frame,
     text_value_events,
     web::{
@@ -154,9 +154,10 @@ fn publish_browser_delivered_events(counts: BrowserDeliveredEventCounts) {
     for (name, value) in [
         ("total", counts.total),
         ("controls", counts.controls),
-        ("menuActions", counts.menu_actions),
-        ("pointer", counts.pointer),
-    ] {
+		("menuActions", counts.menu_actions),
+		("pointer", counts.pointer),
+		("touch", counts.touch),
+	] {
         set_js_property(&diagnostic, name, &JsValue::from_f64(value as f64));
     }
     set_js_property(
@@ -330,6 +331,7 @@ struct WebFrontplane {
     shake_detector: ShakeDetector,
     last_motion_sample_ms: f64,
     armed_control: Option<ArmedControl>,
+    touch_contacts: Option<TouchContactTracker>,
     sliders: Vec<WebSlider>,
     text_fields: Vec<WebTextField>,
     _slider_subscriptions: Vec<Subscription>,
@@ -515,6 +517,13 @@ impl WebFrontplane {
         if shake_interest || motion_sample_interval_ms.is_some() {
             Self::publish_motion_interest();
         }
+        let touch_contacts = runtime
+            .metadata()
+            .touch_max_contacts
+            .and_then(TouchContactTracker::new);
+        if let Some(max_contacts) = runtime.metadata().touch_max_contacts {
+            Self::publish_touch_interest(max_contacts);
+        }
         let (sliders, slider_subscriptions) = Self::build_sliders(&runtime.metadata().controls, cx);
         let (text_fields, text_field_subscriptions) =
             Self::build_text_fields(&runtime.metadata().text_fields, window, cx);
@@ -527,10 +536,11 @@ impl WebFrontplane {
                 }
             }),
             cx.on_focus_out(&focus_handle, window, |this, _, _, cx| {
+                this.cancel_touch_contacts();
                 if this.runtime.pause_is_enabled() {
                     this.queue_event(Event::Focus(false));
-                    cx.notify();
                 }
+                cx.notify();
             }),
         ];
         Self {
@@ -547,6 +557,7 @@ impl WebFrontplane {
             shake_detector: ShakeDetector::default(),
             last_motion_sample_ms: -f64::INFINITY,
             armed_control: None,
+            touch_contacts,
             sliders,
             text_fields,
             _slider_subscriptions: slider_subscriptions,
@@ -569,6 +580,99 @@ impl WebFrontplane {
 
     #[cfg(not(target_family = "wasm"))]
     fn publish_motion_interest() {}
+
+    #[cfg(target_family = "wasm")]
+    fn publish_touch_interest(max_contacts: u32) {
+        let _ = js_sys::Reflect::set(
+            &js_sys::global(),
+            &JsValue::from_str("__AEDICULE_TOUCH_MAX_CONTACTS"),
+            &JsValue::from_f64(f64::from(max_contacts)),
+        );
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn publish_touch_interest(_: u32) {}
+
+    fn cancel_touch_contacts(&mut self) {
+        let events = self
+            .touch_contacts
+            .as_mut()
+            .map(TouchContactTracker::cancel_all)
+            .unwrap_or_default();
+        for event in events {
+            self.queue_event(event);
+        }
+    }
+
+    /// Drains the bounded page bridge before the scheduler advances. The pure
+    /// tracker validates identity and preserves last-admitted terminal points.
+    #[cfg(target_family = "wasm")]
+    fn drain_touch_contacts(&mut self) {
+        if self.touch_contacts.is_none() {
+            return;
+        }
+        let global = js_sys::global();
+        let Ok(queue) =
+            js_sys::Reflect::get(&global, &JsValue::from_str("__AEDICULE_TOUCH_EVENTS"))
+        else {
+            return;
+        };
+        let Ok(queue) = queue.dyn_into::<js_sys::Array>() else {
+            return;
+        };
+        let field = |entry: &JsValue, name: &str| {
+            js_sys::Reflect::get(entry, &JsValue::from_str(name)).ok()
+        };
+        let mut events = Vec::new();
+        for entry in queue.splice(0, queue.length(), &JsValue::UNDEFINED).iter() {
+            let phase = field(&entry, "phase")
+                .and_then(|value| value.as_string())
+                .unwrap_or_default();
+            if phase == "cancel-all" {
+                events.extend(
+                    self.touch_contacts
+                        .as_mut()
+                        .expect("touch interest was checked")
+                        .cancel_all(),
+                );
+                continue;
+            }
+            let Some(id) = field(&entry, "id")
+                .and_then(|value| value.as_f64())
+                .filter(|id| *id >= 0.0 && *id <= f64::from(u32::MAX) && id.fract() == 0.0)
+                .map(|id| id as u32)
+            else {
+                continue;
+            };
+            let Some(x) = field(&entry, "x").and_then(|value| value.as_f64()) else {
+                continue;
+            };
+            let Some(y) = field(&entry, "y").and_then(|value| value.as_f64()) else {
+                continue;
+            };
+            let phase = match phase.as_str() {
+                "start" => TouchContactPhase::Start,
+                "move" => TouchContactPhase::Move,
+                "end" => TouchContactPhase::End,
+                "cancel" => TouchContactPhase::Cancel,
+                _ => continue,
+            };
+            if let Some(event) = self
+                .touch_contacts
+                .as_mut()
+                .expect("touch interest was checked")
+                .observe(phase, id, x as f32, y as f32)
+            {
+                events.push(event);
+            }
+        }
+        for event in events {
+            self.queue_event(event);
+        }
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn drain_touch_contacts(&mut self) {}
 
     /// Drains the page-captured devicemotion ring (`__AEDICULE_MOTION_SAMPLES`)
     /// and applies the guest.s registered pacing: the unit-tested ShakeDetector
@@ -757,21 +861,25 @@ impl WebFrontplane {
     /// Gives browser button presses the same numeric ABI identity as native
     /// GPUI before the shared scheduler orders the edge before a tick.
     fn queue_pointer_down(&mut self, button: PointerButton, event: &MouseDownEvent) {
+        let x = f32::from(event.position.x);
+        let y = f32::from(event.position.y);
         let index = button as usize - 1;
         self.pressed_pointer_buttons[index] = self.pressed_pointer_buttons[index].saturating_add(1);
-        self.queue_event(button.down(f32::from(event.position.x), f32::from(event.position.y)));
+        self.queue_event(button.down(x, y));
     }
 
     /// Delivers the matching browser release edge; GPUI Web itself prevents
     /// `contextmenu` on its event element, so right-click gameplay stays in
     /// this callback rather than opening the browser menu.
     fn queue_pointer_up(&mut self, button: PointerButton, event: &MouseUpEvent) {
+        let x = f32::from(event.position.x);
+        let y = f32::from(event.position.y);
         let index = button as usize - 1;
         if self.pressed_pointer_buttons[index] == 0 {
             return;
         }
         self.pressed_pointer_buttons[index] -= 1;
-        self.queue_event(button.up(f32::from(event.position.x), f32::from(event.position.y)));
+        self.queue_event(button.up(x, y));
     }
 
     /// Preserves precise browser/trackpad pixels and discrete wheel lines as
@@ -883,6 +991,7 @@ impl Render for WebFrontplane {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         report_browser_frame_started(self.origin.elapsed().as_secs_f64() * 1000.0);
         self.observe_device_change(window);
+        self.drain_touch_contacts();
         self.drain_motion_samples();
         self.advance();
         if self.fatal_error.is_none() && !self.runtime.is_suspended() {
@@ -1039,9 +1148,11 @@ impl Render for WebFrontplane {
             .inset_0()
             .bg(rgba(frame.background))
             .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, cx| {
+                let x = f32::from(event.position.x);
+                let y = f32::from(event.position.y);
                 this.queue_event(Event::PointerMove {
-                    x: f32::from(event.position.x),
-                    y: f32::from(event.position.y),
+                    x,
+                    y,
                 });
                 cx.notify();
             }))
