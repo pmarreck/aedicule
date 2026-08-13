@@ -42,8 +42,12 @@ fn checked_in_wat_abi_reference_is_the_generated_canonical_document() {
         "generated ABI reference defines device-class flag bit 0"
     );
     assert!(
-        checked_in.contains("# Aedicule WAT ABI v0.8"),
-        "standalone actions are a new capability, so the host minor advertises v0.8"
+        checked_in.contains(&format!("# Aedicule WAT ABI v{ABI_MAJOR}.{ABI_MINOR}")),
+        "the generated reference advertises the current host minor"
+    );
+    assert!(
+        checked_in.contains("## Deterministic RandomZ v1"),
+        "ABI v0.9 documents the deterministic random capability"
     );
     assert!(
         checked_in.contains("AE_action"),

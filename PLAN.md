@@ -95,7 +95,7 @@
   Independently verify the immutable bytes, packaged WAST, headless viewport
   renders, and real Chromium semantic controls before updating every gallery,
   manifest, delivery, and release copy. (Queued 2026-08-10 16:40 EDT.)
-- [ ] Add RandomZ-compatible deterministic randomization to the WAT/AED ABI
+- [x] Add RandomZ-compatible deterministic randomization to the WAT/AED ABI
   after agreeing on the guest contract. Prefer `../random`'s new pure
   `randomr` Rust crate as Aedicule's implementation if it passes an explicit
   `wasm32-unknown-unknown` compile/runtime gate; it already passes the shared
@@ -104,7 +104,9 @@
   conformance authority rather than duplicating the algorithm again. Specify
   algorithm/profile versioning, guest-owned serializable stream state, integer
   fixed-point nonlinear distributions, bounded batch sampling, hot-reload
-  preservation, and a separate opt-in entropy capability. (Queued 2026-08-11
+  preservation, and explicitly exclude ambient entropy from this deterministic
+  profile; any future entropy capability must be separately named and opted
+  into. (Queued 2026-08-11
   08:55 EDT; revised for the completed Rust port at 15:24 EDT; architecture
   discussion first; implementation authorized 2026-08-13.)
   - [x] Prove the pure `randomr` crate compiles unchanged for Aedicule's exact
@@ -120,10 +122,17 @@
     requires `stdarch_wasm_atomic_wait`. Frozen raw/nonlinear vectors, the
     focused toolchain gate, `nix flake check --no-build`, the native Nix build,
     and the complete `./test` suite pass. (2026-08-13 16:57 EDT.)
-  - Curiosity poke: a host-owned hidden stream would split from the guest's
-    snapshot on reload, while per-sample host imports may be too expensive for
-    particle-heavy clients; test state transactionality and batch cost before
-    freezing the ABI.
+  - [x] Freeze ABI v0.9's `AE_random_v1_*` contract: 48-byte guest-owned
+    serializable streams; raw bytes, inclusive integer ranges, and every
+    RandomZ fixed-point nonlinear distribution; bounded batches; canonical
+    little-endian wire records; and transactional failure. Native Wasmtime,
+    native portable-runtime, and the portable runtime inside real
+    `wasm32-unknown-unknown` all match frozen RandomZ seed-42 output. Output and
+    source-budget failures, invalid pointers, and state/output overlap leave
+    stream state unchanged. A mutation that removed the nonlinear source
+    budget made the independent failure control fail. Generated `WAT_ABI.md`
+    and `GUIDE_FOR_LLMS.md`, `./test`, and `./build` are green.
+    (2026-08-13 17:29 EDT.)
 - [ ] Land "option C": one `.aed` implementation for every adapter.
   - [x] `browser_application_from_package(bytes)` in `src/web.rs` expands a
     package to (WAT, assets) through the same validated Rust reader native

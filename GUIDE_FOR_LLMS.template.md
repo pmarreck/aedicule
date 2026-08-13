@@ -59,7 +59,7 @@ A normal initial load is:
 
 `AE_configure` declares stable metadata and capabilities such as the title, action/menu labels, integer slider lattices, labeled external HTTPS destinations, synth programs, and sampled FLAC assets. Do not repeatedly redeclare them during updates.
 
-`AE_init*` receives a deterministic 64-bit seed as two `i32` halves and the initial logical viewport. Initialize all mutable state there. If you need randomness, implement a deterministic PRNG in guest state from that seed; do not assume an ambient source.
+`AE_init*` receives a deterministic 64-bit seed as two `i32` halves and the initial logical viewport. Initialize all mutable state there. ABI minor `9` adds the explicit `AE_random_v1_*` deterministic stream and distribution imports described below. Older hosts still require a guest-side PRNG; no host supplies ambient entropy.
 
 Events are ordered input edges. Update guest state in `AE_event*` or `AE_control_event`, then let subsequent fixed ticks consume that state. `AE_tick(ticks)` advances exactly the requested number of whole simulation steps. `AE_render` reads current state and emits an atomic visual transaction.
 
@@ -147,6 +147,16 @@ A link activates only through a real click on the host-rendered accessible contr
 `AE_sin_cos_turn` returns sine and cosine in Q1.30 using deterministic integer arithmetic. The input is a wrapping binary angle: the full unsigned 32-bit range is one turn, `0x40000000` is one quarter-turn, and so on. Use widened intermediates when combining Q1.30 and Q16.16 values.
 
 This import returns two values, not a status. It is the exception to the usual status-returning import convention.
+
+### Deterministic RandomZ v1
+
+ABI minor `9` provides cross-platform-identical RandomZ v1 bytes, inclusive integer ranges, uniform fixed values, and normal, range-scaled normal, exponential, Poisson, log-normal, and beta distributions. Import names include `v1` because their sequence and byte-consumption behavior are permanent compatibility promises.
+
+Each stream uses a 48-byte guest-owned state region. Seed it from the two `AE_init*` halves with `AE_random_v1_seed_u64`, or from exactly 32 bytes with `AE_random_v1_seed_bytes`. Keep that state inside the exported snapshot region if hot reload must continue the same stream. Multiple independent streams need distinct non-overlapping 48-byte regions.
+
+Batch integer output is packed little-endian `i64`. Batch fixed output uses 12-byte little-endian records containing a canonical signed `i64` mantissa and `i32` binary exponent. Check every import status before reading output. A rejected pointer, parameter, batch, source-consumption limit, or invalid stream leaves output and serialized stream state unchanged. Use bounded batches rather than one host call per particle or sample.
+
+This profile is deterministic. It has no system-entropy capability, and a seed is replay material rather than a password. Do not use it for secrets or security tokens.
 
 ### Audio
 
@@ -284,7 +294,7 @@ For nontrivial code, use named helper functions and locals even when inlining wo
 ### Reload, determinism, and containment mistakes
 
 - Changing state layout while retaining its schema number.
-- Reading ambient time, randomness, filesystem, or network through an undeclared import. Aedicule deliberately provides none.
+- Reading ambient time, entropy, filesystem, or network through an undeclared import. Aedicule provides only explicit bounded capabilities; RandomZ v1 is deterministic and replayable.
 - Using nondeterministic iteration/order in golden outputs.
 - Performing unbounded work in one lifecycle call. Aedicule meters calls and bounds command/resource counts.
 - “Fixing” a failing test by weakening or deleting it. First reproduce the exact failure, then make the smallest guest change.

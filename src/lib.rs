@@ -11,8 +11,13 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use randomr::{
+    ByteSource, Drbg, Error as RandomError, Fixed, beta, exponential, log_normal, normal,
+    normal_int, poisson, range, uniform,
+};
 use thiserror::Error;
 use url::Url;
+use zeroize::Zeroizing;
 
 #[cfg(all(feature = "native-runtime", feature = "portable-runtime"))]
 compile_error!("select exactly one Aedicule guest runtime");
@@ -40,9 +45,8 @@ mod web_server;
 pub use application_test::{ApplicationTestReport, run_application_tests};
 pub use flac::{FlacError, decode_flac};
 pub use package::{
-    AED_MIME_TYPE, depackage_application, package_application, read_application_assets,
-    read_application_file,
-    read_application_archive,
+    AED_MIME_TYPE, depackage_application, package_application, read_application_archive,
+    read_application_assets, read_application_file,
 };
 #[cfg(feature = "native-runtime")]
 pub use web_server::{WebServer, discover_web_runtime};
@@ -91,6 +95,9 @@ const Q16_SCALE: f64 = 65_536.0;
 const WAT_IMPORT_MODULE: &str = wat_abi::IMPORT_MODULE;
 const Q30_ONE: i64 = 1 << 30;
 const MAX_PAUSE_TRIGGERS: usize = 16;
+const RANDOM_V1_STATE_BYTES: usize = 48;
+const RANDOM_V1_STATE_HEADER: [u8; 8] = *b"AER\x01\0\0\0\0";
+const RANDOM_FIXED_BYTES: usize = 12;
 /// Upper bound on a single text field's declared capacity. Committed text is
 /// forwarded one scalar per control event, so this also caps the event burst a
 /// single commit can produce.
@@ -996,6 +1003,8 @@ pub struct Limits {
     pub max_path_segments: usize,
     pub max_snapshot_bytes: usize,
     pub max_ticks_per_call: u32,
+    pub max_random_output_bytes: usize,
+    pub max_random_source_bytes: usize,
 }
 
 impl Default for Limits {
@@ -1022,6 +1031,8 @@ impl Default for Limits {
             max_path_segments: 8_192,
             max_snapshot_bytes: 1024 * 1024,
             max_ticks_per_call: 240,
+            max_random_output_bytes: 64 * 1024,
+            max_random_source_bytes: 64 * 1024,
         }
     }
 }
@@ -1827,7 +1838,11 @@ pub enum Event {
     Pause(PausePhase),
     /// One Unicode scalar of a text field's current value, at its exact
     /// position. Delivered through `AE_text_event`, never through `AE_event`.
-    TextScalar { id: u32, index: u32, scalar: u32 },
+    TextScalar {
+        id: u32,
+        index: u32,
+        scalar: u32,
+    },
     /// Terminates one complete text value with its authoritative scalar count,
     /// letting a guest swap its buffer atomically instead of guessing where the
     /// value ended.
@@ -2694,7 +2709,10 @@ impl Frontplane {
                 .get_typed_func::<(i32, i32, i32, i32), i32>(&mut store, "AE_text_event")
                 .ok(),
             motion_event: instance
-                .get_typed_func::<(i32, i32, i32, i32, i32, i32), i32>(&mut store, "AE_motion_event")
+                .get_typed_func::<(i32, i32, i32, i32, i32, i32), i32>(
+                    &mut store,
+                    "AE_motion_event",
+                )
                 .ok(),
             tick: required_func(&instance, &mut store, "AE_tick")?,
             render: required_func(&instance, &mut store, "AE_render")?,
@@ -2970,18 +2988,14 @@ impl Frontplane {
                 }
                 _ => unreachable!("the outer pattern admits only text events"),
             };
-            let function = self
-                .exports
-                .text_event
-                .clone()
-                .ok_or(FrontplaneError::MissingExport {
-                    name: "AE_text_event",
-                })?;
-            return self.call_status(
-                "AE_text_event",
-                function,
-                (id as i32, index, scalar, phase),
-            );
+            let function =
+                self.exports
+                    .text_event
+                    .clone()
+                    .ok_or(FrontplaneError::MissingExport {
+                        name: "AE_text_event",
+                    })?;
+            return self.call_status("AE_text_event", function, (id as i32, index, scalar, phase));
         }
         if let Event::MotionGesture { .. } = event {
             if !self.motion_interest_registered(MotionInterestKind::ShakeGesture) {
@@ -3439,7 +3453,11 @@ fn legacy_event_parameters(event: Event) -> (i32, i32, f32, f32) {
         Event::PointerMove { x, y } => (3, 0, x, y),
         Event::PointerDown { button, x, y } => (4, button as i32, x, y),
         Event::PointerUp { button, x, y } => (5, button as i32, x, y),
-        Event::DeviceChange { width, height, flags } => (6, flags as i32, width, height),
+        Event::DeviceChange {
+            width,
+            height,
+            flags,
+        } => (6, flags as i32, width, height),
         Event::MotionGesture { magnitude } => (16, 1, magnitude, 0.0),
         Event::MotionSample { .. } => unreachable!("motion samples use AE_motion_event"),
         Event::MenuAction(id) => (7, id as i32, 0.0, 0.0),
@@ -3485,7 +3503,11 @@ fn integer_event_parameters(
             let (x, y) = coordinates(x, y)?;
             (5, button as i32, x, y)
         }
-        Event::DeviceChange { width, height, flags } => {
+        Event::DeviceChange {
+            width,
+            height,
+            flags,
+        } => {
             let (width, height) = coordinates(width, height)?;
             (6, flags as i32, width, height)
         }
@@ -4197,6 +4219,211 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
         .func_wrap(WAT_IMPORT_MODULE, "AE_sin_cos_turn", |angle: i32| {
             sin_cos_turn_q30(angle)
         })
+        .map_err(runtime_error)?;
+    linker
+        .func_wrap(
+            WAT_IMPORT_MODULE,
+            "AE_random_v1_seed_u64",
+            |mut caller: Caller<'_, HostState>, state: i32, seed_low: i32, seed_high: i32| {
+                let result = random_seed_u64(&mut caller, state, seed_low, seed_high);
+                random_import_status(&mut caller, result)
+            },
+        )
+        .map_err(runtime_error)?;
+    linker
+        .func_wrap(
+            WAT_IMPORT_MODULE,
+            "AE_random_v1_seed_bytes",
+            |mut caller: Caller<'_, HostState>, state: i32, seed: i32| {
+                let result = random_seed_bytes(&mut caller, state, seed);
+                random_import_status(&mut caller, result)
+            },
+        )
+        .map_err(runtime_error)?;
+    linker
+        .func_wrap(
+            WAT_IMPORT_MODULE,
+            "AE_random_v1_fill",
+            |mut caller: Caller<'_, HostState>, state: i32, output: i32, length: i32| {
+                let result = random_fill(&mut caller, state, output, length);
+                random_import_status(&mut caller, result)
+            },
+        )
+        .map_err(runtime_error)?;
+    linker
+        .func_wrap(
+            WAT_IMPORT_MODULE,
+            "AE_random_v1_range_i64",
+            |mut caller: Caller<'_, HostState>,
+             state: i32,
+             start: i64,
+             end: i64,
+             output: i32,
+             count: i32| {
+                let result = random_i64_batch(
+                    &mut caller,
+                    state,
+                    output,
+                    count,
+                    "AE_random_v1_range_i64",
+                    |source| range(source, start, end),
+                );
+                random_import_status(&mut caller, result)
+            },
+        )
+        .map_err(runtime_error)?;
+    linker
+        .func_wrap(
+            WAT_IMPORT_MODULE,
+            "AE_random_v1_uniform",
+            |mut caller: Caller<'_, HostState>, state: i32, output: i32, count: i32| {
+                let result = random_fixed_batch(
+                    &mut caller,
+                    state,
+                    output,
+                    count,
+                    "AE_random_v1_uniform",
+                    |source| uniform(source),
+                );
+                random_import_status(&mut caller, result)
+            },
+        )
+        .map_err(runtime_error)?;
+    linker
+        .func_wrap(
+            WAT_IMPORT_MODULE,
+            "AE_random_v1_normal",
+            |mut caller: Caller<'_, HostState>,
+             state: i32,
+             mean_mantissa: i64,
+             mean_exponent: i32,
+             stddev_mantissa: i64,
+             stddev_exponent: i32,
+             output: i32,
+             count: i32| {
+                let operation = "AE_random_v1_normal";
+                let result = (|| {
+                    let mean = random_fixed(mean_mantissa, mean_exponent, operation)?;
+                    let stddev = random_fixed(stddev_mantissa, stddev_exponent, operation)?;
+                    random_fixed_batch(&mut caller, state, output, count, operation, |source| {
+                        normal(source, mean, stddev)
+                    })
+                })();
+                random_import_status(&mut caller, result)
+            },
+        )
+        .map_err(runtime_error)?;
+    linker
+        .func_wrap(
+            WAT_IMPORT_MODULE,
+            "AE_random_v1_normal_i64",
+            |mut caller: Caller<'_, HostState>,
+             state: i32,
+             start: i64,
+             end: i64,
+             output: i32,
+             count: i32| {
+                let result = random_i64_batch(
+                    &mut caller,
+                    state,
+                    output,
+                    count,
+                    "AE_random_v1_normal_i64",
+                    |source| normal_int(source, start, end),
+                );
+                random_import_status(&mut caller, result)
+            },
+        )
+        .map_err(runtime_error)?;
+    linker
+        .func_wrap(
+            WAT_IMPORT_MODULE,
+            "AE_random_v1_exponential",
+            |mut caller: Caller<'_, HostState>,
+             state: i32,
+             rate_mantissa: i64,
+             rate_exponent: i32,
+             output: i32,
+             count: i32| {
+                let operation = "AE_random_v1_exponential";
+                let result = (|| {
+                    let rate = random_fixed(rate_mantissa, rate_exponent, operation)?;
+                    random_fixed_batch(&mut caller, state, output, count, operation, |source| {
+                        exponential(source, rate)
+                    })
+                })();
+                random_import_status(&mut caller, result)
+            },
+        )
+        .map_err(runtime_error)?;
+    linker
+        .func_wrap(
+            WAT_IMPORT_MODULE,
+            "AE_random_v1_poisson",
+            |mut caller: Caller<'_, HostState>,
+             state: i32,
+             lambda_mantissa: i64,
+             lambda_exponent: i32,
+             output: i32,
+             count: i32| {
+                let operation = "AE_random_v1_poisson";
+                let result = (|| {
+                    let lambda = random_fixed(lambda_mantissa, lambda_exponent, operation)?;
+                    random_i64_batch(&mut caller, state, output, count, operation, |source| {
+                        poisson(source, lambda)
+                    })
+                })();
+                random_import_status(&mut caller, result)
+            },
+        )
+        .map_err(runtime_error)?;
+    linker
+        .func_wrap(
+            WAT_IMPORT_MODULE,
+            "AE_random_v1_log_normal",
+            |mut caller: Caller<'_, HostState>,
+             state: i32,
+             mean_mantissa: i64,
+             mean_exponent: i32,
+             stddev_mantissa: i64,
+             stddev_exponent: i32,
+             output: i32,
+             count: i32| {
+                let operation = "AE_random_v1_log_normal";
+                let result = (|| {
+                    let mean = random_fixed(mean_mantissa, mean_exponent, operation)?;
+                    let stddev = random_fixed(stddev_mantissa, stddev_exponent, operation)?;
+                    random_fixed_batch(&mut caller, state, output, count, operation, |source| {
+                        log_normal(source, mean, stddev)
+                    })
+                })();
+                random_import_status(&mut caller, result)
+            },
+        )
+        .map_err(runtime_error)?;
+    linker
+        .func_wrap(
+            WAT_IMPORT_MODULE,
+            "AE_random_v1_beta",
+            |mut caller: Caller<'_, HostState>,
+             state: i32,
+             alpha_mantissa: i64,
+             alpha_exponent: i32,
+             beta_mantissa: i64,
+             beta_exponent: i32,
+             output: i32,
+             count: i32| {
+                let operation = "AE_random_v1_beta";
+                let result = (|| {
+                    let alpha = random_fixed(alpha_mantissa, alpha_exponent, operation)?;
+                    let beta_parameter = random_fixed(beta_mantissa, beta_exponent, operation)?;
+                    random_fixed_batch(&mut caller, state, output, count, operation, |source| {
+                        beta(source, alpha, beta_parameter)
+                    })
+                })();
+                random_import_status(&mut caller, result)
+            },
+        )
         .map_err(runtime_error)?;
     linker
         .func_wrap(
@@ -5218,6 +5445,303 @@ fn read_bytes(
         .get(pointer..pointer.saturating_add(length))
         .ok_or(PendingError::InvalidPointer(operation))?;
     Ok(bytes.to_vec())
+}
+
+/// Caps random sampler consumption outside the guest instruction meter. Rejection
+/// loops may consume a variable number of bytes, so Wasm fuel alone cannot bound them.
+struct RandomSourceBudget<'a> {
+    source: &'a mut Drbg,
+    remaining: usize,
+    exhausted: bool,
+}
+
+impl ByteSource for RandomSourceBudget<'_> {
+    fn fill_exact(&mut self, output: &mut [u8]) -> Result<(), RandomError> {
+        if output.len() > self.remaining {
+            self.exhausted = true;
+            return Err(RandomError::Entropy);
+        }
+        self.source.fill(output)?;
+        self.remaining -= output.len();
+        Ok(())
+    }
+}
+
+fn random_import_status(
+    caller: &mut Caller<'_, HostState>,
+    result: Result<(), PendingError>,
+) -> i32 {
+    match result {
+        Ok(()) => 0,
+        Err(error) => {
+            let status = match &error {
+                PendingError::InvalidPointer(_) => -3,
+                PendingError::InvalidNumber(_) => -5,
+                PendingError::Budget(_, _) => -2,
+                PendingError::Unsupported(_) => -4,
+                PendingError::InvalidUtf8(_)
+                | PendingError::InvalidFrame(_)
+                | PendingError::DuplicateId(_, _) => -8,
+            };
+            caller.data_mut().reject(error, status)
+        }
+    }
+}
+
+fn validate_guest_region(
+    caller: &mut Caller<'_, HostState>,
+    pointer: i32,
+    length: usize,
+    operation: &'static str,
+) -> Result<usize, PendingError> {
+    if pointer < 0 {
+        return Err(PendingError::InvalidPointer(operation));
+    }
+    let memory = caller
+        .get_export("memory")
+        .and_then(|export| export.into_memory())
+        .ok_or(PendingError::InvalidPointer(operation))?;
+    let start = pointer as usize;
+    let end = start
+        .checked_add(length)
+        .ok_or(PendingError::InvalidPointer(operation))?;
+    if end > memory.data(&*caller).len() {
+        return Err(PendingError::InvalidPointer(operation));
+    }
+    Ok(start)
+}
+
+fn write_guest_bytes(
+    caller: &mut Caller<'_, HostState>,
+    pointer: i32,
+    bytes: &[u8],
+    operation: &'static str,
+) -> Result<(), PendingError> {
+    let start = validate_guest_region(caller, pointer, bytes.len(), operation)?;
+    let memory = caller
+        .get_export("memory")
+        .and_then(|export| export.into_memory())
+        .ok_or(PendingError::InvalidPointer(operation))?;
+    memory
+        .write(&mut *caller, start, bytes)
+        .map_err(|_| PendingError::InvalidPointer(operation))
+}
+
+fn random_state_from_guest(
+    caller: &mut Caller<'_, HostState>,
+    pointer: i32,
+    operation: &'static str,
+) -> Result<Drbg, PendingError> {
+    let bytes = Zeroizing::new(read_bytes(
+        caller,
+        pointer,
+        RANDOM_V1_STATE_BYTES as i32,
+        RANDOM_V1_STATE_BYTES,
+        operation,
+    )?);
+    if bytes[..8] != RANDOM_V1_STATE_HEADER {
+        return Err(PendingError::InvalidNumber(operation));
+    }
+    let mut key = Zeroizing::new([0_u8; 32]);
+    key.copy_from_slice(&bytes[8..40]);
+    let position = u64::from_le_bytes(bytes[40..48].try_into().unwrap());
+    Drbg::from_state(*key, position).map_err(|_| PendingError::InvalidNumber(operation))
+}
+
+fn write_random_state(
+    caller: &mut Caller<'_, HostState>,
+    pointer: i32,
+    source: &Drbg,
+    operation: &'static str,
+) -> Result<(), PendingError> {
+    let (key, position) = source.state();
+    let key = Zeroizing::new(key);
+    let mut bytes = Zeroizing::new([0_u8; RANDOM_V1_STATE_BYTES]);
+    bytes[..8].copy_from_slice(&RANDOM_V1_STATE_HEADER);
+    bytes[8..40].copy_from_slice(&*key);
+    bytes[40..48].copy_from_slice(&position.to_le_bytes());
+    write_guest_bytes(caller, pointer, &*bytes, operation)
+}
+
+fn random_seed_u64(
+    caller: &mut Caller<'_, HostState>,
+    state_pointer: i32,
+    seed_low: i32,
+    seed_high: i32,
+) -> Result<(), PendingError> {
+    let seed_value = u64::from(seed_low as u32) | (u64::from(seed_high as u32) << 32);
+    let mut seed = Zeroizing::new([0_u8; 32]);
+    seed[24..].copy_from_slice(&seed_value.to_be_bytes());
+    let source = Drbg::new(&seed);
+    write_random_state(caller, state_pointer, &source, "AE_random_v1_seed_u64")
+}
+
+fn random_seed_bytes(
+    caller: &mut Caller<'_, HostState>,
+    state_pointer: i32,
+    seed_pointer: i32,
+) -> Result<(), PendingError> {
+    let seed_bytes = Zeroizing::new(read_bytes(
+        caller,
+        seed_pointer,
+        32,
+        32,
+        "AE_random_v1_seed_bytes",
+    )?);
+    let mut seed = Zeroizing::new([0_u8; 32]);
+    seed.copy_from_slice(&seed_bytes);
+    let source = Drbg::new(&seed);
+    write_random_state(caller, state_pointer, &source, "AE_random_v1_seed_bytes")
+}
+
+fn random_output_length(
+    caller: &Caller<'_, HostState>,
+    count: i32,
+    item_bytes: usize,
+    operation: &'static str,
+) -> Result<usize, PendingError> {
+    let count = usize::try_from(count).map_err(|_| PendingError::InvalidNumber(operation))?;
+    let bytes = count
+        .checked_mul(item_bytes)
+        .ok_or(PendingError::Budget(operation, "random output"))?;
+    if bytes > caller.data().limits.max_random_output_bytes {
+        return Err(PendingError::Budget(operation, "random output"));
+    }
+    Ok(bytes)
+}
+
+fn random_regions(
+    caller: &mut Caller<'_, HostState>,
+    state_pointer: i32,
+    output_pointer: i32,
+    output_bytes: usize,
+    operation: &'static str,
+) -> Result<(), PendingError> {
+    let state_start =
+        validate_guest_region(caller, state_pointer, RANDOM_V1_STATE_BYTES, operation)?;
+    let output_start = validate_guest_region(caller, output_pointer, output_bytes, operation)?;
+    let state_end = state_start + RANDOM_V1_STATE_BYTES;
+    let output_end = output_start + output_bytes;
+    if output_bytes != 0 && state_start < output_end && output_start < state_end {
+        return Err(PendingError::InvalidPointer(operation));
+    }
+    Ok(())
+}
+
+fn random_error(error: RandomError, exhausted: bool, operation: &'static str) -> PendingError {
+    if exhausted {
+        return PendingError::Budget(operation, "random source");
+    }
+    match error {
+        RandomError::InvalidArgument | RandomError::Numeric | RandomError::PositionOverflow => {
+            PendingError::InvalidNumber(operation)
+        }
+        RandomError::Unsupported => PendingError::Unsupported(operation),
+        _ => PendingError::Unsupported(operation),
+    }
+}
+
+fn random_fill(
+    caller: &mut Caller<'_, HostState>,
+    state_pointer: i32,
+    output_pointer: i32,
+    length: i32,
+) -> Result<(), PendingError> {
+    let operation = "AE_random_v1_fill";
+    let output_bytes = random_output_length(caller, length, 1, operation)?;
+    let mut source = random_state_from_guest(caller, state_pointer, operation)?;
+    random_regions(
+        caller,
+        state_pointer,
+        output_pointer,
+        output_bytes,
+        operation,
+    )?;
+    if output_bytes > caller.data().limits.max_random_source_bytes {
+        return Err(PendingError::Budget(operation, "random source"));
+    }
+    let mut output = Zeroizing::new(vec![0_u8; output_bytes]);
+    source
+        .fill(&mut output)
+        .map_err(|error| random_error(error, false, operation))?;
+    write_guest_bytes(caller, output_pointer, &output, operation)?;
+    write_random_state(caller, state_pointer, &source, operation)
+}
+
+fn random_i64_batch(
+    caller: &mut Caller<'_, HostState>,
+    state_pointer: i32,
+    output_pointer: i32,
+    count: i32,
+    operation: &'static str,
+    mut sample: impl FnMut(&mut RandomSourceBudget<'_>) -> Result<i64, RandomError>,
+) -> Result<(), PendingError> {
+    let output_bytes = random_output_length(caller, count, 8, operation)?;
+    let mut source = random_state_from_guest(caller, state_pointer, operation)?;
+    random_regions(
+        caller,
+        state_pointer,
+        output_pointer,
+        output_bytes,
+        operation,
+    )?;
+    let source_budget = caller.data().limits.max_random_source_bytes;
+    let mut budget = RandomSourceBudget {
+        source: &mut source,
+        remaining: source_budget,
+        exhausted: false,
+    };
+    let mut output = Zeroizing::new(Vec::with_capacity(output_bytes));
+    for _ in 0..count {
+        let value = sample(&mut budget)
+            .map_err(|error| random_error(error, budget.exhausted, operation))?;
+        output.extend_from_slice(&value.to_le_bytes());
+    }
+    write_guest_bytes(caller, output_pointer, &output, operation)?;
+    write_random_state(caller, state_pointer, &source, operation)
+}
+
+fn random_fixed_batch(
+    caller: &mut Caller<'_, HostState>,
+    state_pointer: i32,
+    output_pointer: i32,
+    count: i32,
+    operation: &'static str,
+    mut sample: impl FnMut(&mut RandomSourceBudget<'_>) -> Result<Fixed, RandomError>,
+) -> Result<(), PendingError> {
+    let output_bytes = random_output_length(caller, count, RANDOM_FIXED_BYTES, operation)?;
+    let mut source = random_state_from_guest(caller, state_pointer, operation)?;
+    random_regions(
+        caller,
+        state_pointer,
+        output_pointer,
+        output_bytes,
+        operation,
+    )?;
+    let source_budget = caller.data().limits.max_random_source_bytes;
+    let mut budget = RandomSourceBudget {
+        source: &mut source,
+        remaining: source_budget,
+        exhausted: false,
+    };
+    let mut output = Zeroizing::new(Vec::with_capacity(output_bytes));
+    for _ in 0..count {
+        let (mantissa, exponent) = sample(&mut budget)
+            .map_err(|error| random_error(error, budget.exhausted, operation))?
+            .parts();
+        output.extend_from_slice(&mantissa.to_le_bytes());
+        output.extend_from_slice(&exponent.to_le_bytes());
+    }
+    write_guest_bytes(caller, output_pointer, &output, operation)?;
+    write_random_state(caller, state_pointer, &source, operation)
+}
+
+fn random_fixed(
+    mantissa: i64,
+    exponent: i32,
+    operation: &'static str,
+) -> Result<Fixed, PendingError> {
+    Fixed::from_parts(mantissa, exponent).map_err(|_| PendingError::InvalidNumber(operation))
 }
 
 /// Adds a keyed scene primitive only inside a live frame, enforcing both the

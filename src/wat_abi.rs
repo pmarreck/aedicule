@@ -5,7 +5,7 @@
 use std::fmt::Write as _;
 
 pub const ABI_MAJOR: i32 = 0;
-pub const ABI_MINOR: i32 = 8;
+pub const ABI_MINOR: i32 = 9;
 pub const IMPORT_MODULE: &str = "aedicule.v0";
 pub const LLM_GUIDE_VERSION: &str = "0.3.0";
 const LLM_GUIDE_CANONICAL_URL: &str =
@@ -100,6 +100,61 @@ pub const WAT_ABI_IMPORTS: &[WatAbiImport] = &[
         name: "AE_sin_cos_turn",
         signature: "(param angle_turn i32) (result sin_q30 i32) (result cos_q30 i32)",
         summary: "Returns deterministic Q1.30 sine and cosine for a wrapping binary angle where `2^32` units are one turn.",
+    },
+    WatAbiImport {
+        name: "AE_random_v1_seed_u64",
+        signature: "(param state_ptr i32) (param seed_low i32) (param seed_high i32) (result i32)",
+        summary: "Initializes one 48-byte guest-owned RandomZ v1 stream from the unsigned 64-bit seed supplied to `AE_init[_i32]`.",
+    },
+    WatAbiImport {
+        name: "AE_random_v1_seed_bytes",
+        signature: "(param state_ptr i32) (param seed_ptr i32) (result i32)",
+        summary: "Initializes one 48-byte guest-owned RandomZ v1 stream from exactly 32 seed bytes.",
+    },
+    WatAbiImport {
+        name: "AE_random_v1_fill",
+        signature: "(param state_ptr i32) (param output_ptr i32) (param output_len i32) (result i32)",
+        summary: "Writes deterministic raw stream bytes and advances the serialized stream only after the complete bounded output succeeds.",
+    },
+    WatAbiImport {
+        name: "AE_random_v1_range_i64",
+        signature: "(param state_ptr i32) (param start i64) (param end i64) (param output_ptr i32) (param count i32) (result i32)",
+        summary: "Writes a bounded batch of unbiased inclusive-range integers as little-endian `i64` values.",
+    },
+    WatAbiImport {
+        name: "AE_random_v1_uniform",
+        signature: "(param state_ptr i32) (param output_ptr i32) (param count i32) (result i32)",
+        summary: "Writes a bounded batch of exact uniform `[0,1)` RandomZ fixed values.",
+    },
+    WatAbiImport {
+        name: "AE_random_v1_normal",
+        signature: "(param state_ptr i32) (param mean_m i64) (param mean_e i32) (param stddev_m i64) (param stddev_e i32) (param output_ptr i32) (param count i32) (result i32)",
+        summary: "Writes a bounded batch from the integer-only RandomZ normal distribution.",
+    },
+    WatAbiImport {
+        name: "AE_random_v1_normal_i64",
+        signature: "(param state_ptr i32) (param start i64) (param end i64) (param output_ptr i32) (param count i32) (result i32)",
+        summary: "Writes a bounded batch of range-scaled normal integers as little-endian `i64` values.",
+    },
+    WatAbiImport {
+        name: "AE_random_v1_exponential",
+        signature: "(param state_ptr i32) (param rate_m i64) (param rate_e i32) (param output_ptr i32) (param count i32) (result i32)",
+        summary: "Writes a bounded batch from the integer-only RandomZ exponential distribution.",
+    },
+    WatAbiImport {
+        name: "AE_random_v1_poisson",
+        signature: "(param state_ptr i32) (param lambda_m i64) (param lambda_e i32) (param output_ptr i32) (param count i32) (result i32)",
+        summary: "Writes a bounded batch of RandomZ Poisson variates as little-endian `i64` values.",
+    },
+    WatAbiImport {
+        name: "AE_random_v1_log_normal",
+        signature: "(param state_ptr i32) (param mean_m i64) (param mean_e i32) (param stddev_m i64) (param stddev_e i32) (param output_ptr i32) (param count i32) (result i32)",
+        summary: "Writes a bounded batch from the integer-only RandomZ log-normal distribution.",
+    },
+    WatAbiImport {
+        name: "AE_random_v1_beta",
+        signature: "(param state_ptr i32) (param alpha_m i64) (param alpha_e i32) (param beta_m i64) (param beta_e i32) (param output_ptr i32) (param count i32) (result i32)",
+        summary: "Writes a bounded batch from the integer-only RandomZ beta distribution.",
     },
     WatAbiImport {
         name: "AE_synth_voice",
@@ -268,6 +323,10 @@ pub fn wat_abi_markdown() -> String {
 
     document.push_str(
         "## Integer controls and declarative native UI\n\n`AE_slider_i32` declares only a slider's stable ID, accessible label, and exact integer lattice during `AE_configure`; it does **not** create a persistent host-owned widget. A guest that declares any slider must export `(func (export \"AE_control_event\") (param id i32) (param value i32) (param phase i32) (result i32))`. Values are validated against the declared inclusive minimum, maximum, and exact step lattice before delivery. Phase `1` is a continuous change and phase `2` is the committed release edge. Native delivery is ordered through the simulation scheduler. `AE_action` declares a reusable action ID and accessible label without creating any menu item. A non-separator `AE_menu_item` remains the backward-compatible combined declaration of the same action plus an explicit menu presentation. Both imports share one collision-checked action-ID namespace. A button click delivers the ordered kind-`7` action event.\n\nNative UI implements the v0 native-controls profile of the Aedicule View Protocol (AVP). The guest is authoritative for the desired keyed view document and submits a complete snapshot during `AE_render` only when that UI changes: `AE_ui_begin(revision)`, zero or more widget declarations, then `AE_ui_end()`. The revision is an opaque 32-bit bit pattern and must differ from the last accepted revision. An unchanged UI is omitted while ordinary `AE_frame_*` canvas rendering continues. A completed snapshot is published only when the entire surrounding `AE_render` call also returns a valid canvas frame; any rejected import, trap, missing `AE_ui_end`, or incomplete frame preserves the previously accepted snapshot. A snapshot may intentionally be empty, which removes every native widget. This profile is flat and absolute-positioned; the proposed general semantic tree, layout, text-input, accessibility, and adapter-parity contract is specified separately in `VIEW_PROTOCOL.md`.\n\nInside the UI transaction, emit each `AE_control_panel_q16` before any slider, button, or external link that references it. Geometry is absolute viewport-relative signed Q16.16. Panel, slider, button, and external-link stable IDs are independently unique within one snapshot. A slider placement must name a configure-time declaration and carry a value on that declaration's exact lattice. The guest-provided value is authoritative; Aedicule may retain a GPUI entity only for focus, hover, drag, and accessibility mechanics, then reconciles it by stable ID when a new revision is accepted. Omitting an ID from the next snapshot removes it. Slider label placement `0` hides the visual label/value and `1` places it above a full-width track; slider and panel flags remain zero. A button placement must reference a declared action. Button flag bit `0` selects the platform-native highlighted state; every other bit is reserved and must be zero.\n\nAfter accepting a control or action event, a guest that wants the changed value or selected state displayed must update its model and submit a new UI revision. If it does not, Aedicule reconciles transient slider interaction back to the last accepted guest value and retains the last accepted button state. Headless `aedicule-render --control ID=VALUE` arguments are repeatable, preserve argument order, use phase `2`, and execute after initialization but before requested ticks and rendering. `--activate-action ID` is also repeatable and delivers kind `7` only when a button for that action exists in the current accepted UI snapshot.\n\n## External links\n\nABI v0.4 adds a bounded, guest-owned external-navigation control rather than ambient browser or network access. During `AE_configure`, `AE_external_link` declares a stable ID, nonempty visible/accessibility label, and absolute HTTPS URL. The host rejects non-HTTPS schemes, whitespace or controls, backslashes, missing hosts, and URL credentials; `flags` must be zero. During a changed UI snapshot, `AE_external_link_place_q16` places that ID inside an already-declared panel. Its placement ID is the declaration ID, may occur only once per snapshot, and uses the same absolute Q16.16 geometry as other controls.\n\nNative and browser adapters resolve activation against the exact currently accepted `(revision, id)` only from the platform control's real click handler. Native delegates to the platform URL service. Browser activation requires transient user activation and opens a new browsing context with `_blank` and `noopener`; popup-policy failure is an adapter diagnostic, not guest-visible state. The guest receives no navigation result and cannot synthesize activation through an import. Headless `aedicule-render --activate-link ID` never opens a browser; it validates the current placement and emits the deterministic revision, ID, and normalized URL to stderr for automation.\n\n## Text entry\n\nABI v0.5 adds the one control backed by a real editable element. During `AE_configure`, `AE_text_field` declares a stable ID, a nonempty accessible label, and an exact capacity measured in **Unicode scalar values** — not bytes and not UTF-16 code units — of at most 4096; `flags` must be zero. A guest that declares any text field must export `(func (export \"AE_text_event\") (param id i32) (param index i32) (param scalar i32) (param phase i32) (result i32))`, and configure is rejected without it. During a changed UI snapshot, `AE_text_field_place_q16` places that ID inside an already-declared panel using the same absolute Q16.16 geometry as every other control.\n\nThe guest never receives a byte buffer and the host never writes into guest memory. One complete value arrives as an ordered run of integer events: `index` is the zero-based scalar position, `scalar` is the Unicode scalar value at that position, and `phase` is `0`. A terminating call with `index = -1` carries the authoritative scalar count in `scalar` and the edit phase in `phase`: `1` for a continuous change and `2` for the committed edge. A value of length zero sends only that terminator, which is how a cleared field is expressed. The host rejects any index at or beyond the declared capacity, any count above it, and any code point that is not a Unicode scalar value — surrogates `D800`-`DFFF` and anything above `10FFFF`. Treat the terminator as the transaction boundary and swap the guest-side buffer there rather than acting on a partial run.\n\nFocusing a placed text field is the only thing in Aedicule that may raise a mobile software keyboard: the platform text widget takes focus, GPUI installs its input handler, and the browser backend then moves DOM focus to its editable element. Ordinary canvas interaction leaves no editable element focused, so a touch on non-text content presents no keyboard.\n\nIn v0.5 the platform widget owns its edit buffer. A placement carries geometry only, so a guest cannot set, clear, or restore the displayed text, and a reload discards it; a guest that needs to own the value must wait for a later revision of this profile. Headless `aedicule-render --text ID=VALUE` is repeatable, splits at the first `=` so a value may itself contain `=` or be empty, uses phase `2`, and executes after initialization but before requested ticks and rendering.\n\n",
+    );
+
+    document.push_str(
+        "## Deterministic RandomZ v1\n\nABI v0.9 exposes the RandomZ v1 deterministic byte stream and its integer-only nonlinear distributions. The `v1` import names freeze the algorithm and call-consumption behavior: a future incompatible generator must use new import names rather than changing an existing sequence. There is no ambient or system-entropy import in this profile.\n\nEvery stream occupies 48 guest-owned bytes. Bytes `0..4` are `AER\\x01`; bytes `4..8` are zero; bytes `8..40` are the derived 256-bit stream key; bytes `40..48` are the unsigned byte position in little-endian order. Initialize the region once with `AE_random_v1_seed_u64` or `AE_random_v1_seed_bytes`, keep distinct streams in non-overlapping regions, and include every live region inside `AE_state_ptr` / `AE_state_len` if it must survive transactional reload. `seed_u64` joins the two `AE_init*` seed halves as one unsigned value and places its big-endian encoding in the final eight bytes of a zero-filled 32-byte seed. `seed_bytes` consumes exactly 32 bytes as supplied.\n\nRandomZ fixed values are canonical `(mantissa i64, exponent i32)` pairs representing `(mantissa / 2^62) * 2^exponent`. Zero is exactly `(0, 0)`; a nonzero mantissa has magnitude from `2^62` through `2^63 - 1`. Fixed batch output uses a 12-byte little-endian record: mantissa first, exponent second. Integer batch output is packed little-endian `i64`. `range_i64` is inclusive and requires an ordered range whose cardinality is at most `2^53`; normal standard deviation, exponential rate, Poisson lambda, and both beta parameters must be positive canonical fixed values. Other distribution-specific numeric-domain limits fail closed.\n\n`count = 0` and zero-length raw fills are valid no-ops. A normal host admits at most 65,536 output bytes and 65,536 source bytes per import; callers should split larger work and check every status. State and output regions may not overlap. The host computes into private buffers and commits output plus the advanced state only after the full batch succeeds. Invalid pointers, state headers, parameters, output budgets, source-consumption budgets, or position overflow leave both regions unchanged.\n\n",
     );
 
     for import in WAT_ABI_IMPORTS {

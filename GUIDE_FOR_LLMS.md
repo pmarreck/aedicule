@@ -4,7 +4,7 @@
 
 Guide version: `0.3.0`
 
-Current Aedicule WAT ABI: `0.8`
+Current Aedicule WAT ABI: `0.9`
 
 Canonical guide: https://github.com/pmarreck/aedicule/blob/yolo/GUIDE_FOR_LLMS.md
 
@@ -15,7 +15,7 @@ An Aedicule **guest** is a WebAssembly Text (`.wat`) application. Aedicule is th
 ## Ground rules
 
 1. Treat the exact generated appendix as the authority for names and signatures. Import only from `aedicule.v0`, use only `AE_*` names, and declare the ABI version exports.
-2. Everything under **Available now** is implemented in ABI `0.8`. Everything under **Proposed—not callable yet** is design direction, not an import or export you may emit.
+2. Everything under **Available now** is implemented in ABI `0.9`. Everything under **Proposed—not callable yet** is design direction, not an import or export you may emit.
 3. Check every status-returning host import. `0` means success. A nonzero result rejects the guest transaction that contains it; ignoring the result does not make invalid output valid.
 4. Keep application state in guest memory. Treat `AE_render` as a projection of that state, not as the place to advance simulation or fire one-shot effects.
 5. Comment intent, units, invariants, and state layout. WAT is compact enough that an uncommented correct program can still be unmaintainable.
@@ -59,7 +59,7 @@ A normal initial load is:
 
 `AE_configure` declares stable metadata and capabilities such as the title, action/menu labels, integer slider lattices, labeled external HTTPS destinations, synth programs, and sampled FLAC assets. Do not repeatedly redeclare them during updates.
 
-`AE_init*` receives a deterministic 64-bit seed as two `i32` halves and the initial logical viewport. Initialize all mutable state there. If you need randomness, implement a deterministic PRNG in guest state from that seed; do not assume an ambient source.
+`AE_init*` receives a deterministic 64-bit seed as two `i32` halves and the initial logical viewport. Initialize all mutable state there. ABI minor `9` adds the explicit `AE_random_v1_*` deterministic stream and distribution imports described below. Older hosts still require a guest-side PRNG; no host supplies ambient entropy.
 
 Events are ordered input edges. Update guest state in `AE_event*` or `AE_control_event`, then let subsequent fixed ticks consume that state. `AE_tick(ticks)` advances exactly the requested number of whole simulation steps. `AE_render` reads current state and emits an atomic visual transaction.
 
@@ -147,6 +147,16 @@ A link activates only through a real click on the host-rendered accessible contr
 `AE_sin_cos_turn` returns sine and cosine in Q1.30 using deterministic integer arithmetic. The input is a wrapping binary angle: the full unsigned 32-bit range is one turn, `0x40000000` is one quarter-turn, and so on. Use widened intermediates when combining Q1.30 and Q16.16 values.
 
 This import returns two values, not a status. It is the exception to the usual status-returning import convention.
+
+### Deterministic RandomZ v1
+
+ABI minor `9` provides cross-platform-identical RandomZ v1 bytes, inclusive integer ranges, uniform fixed values, and normal, range-scaled normal, exponential, Poisson, log-normal, and beta distributions. Import names include `v1` because their sequence and byte-consumption behavior are permanent compatibility promises.
+
+Each stream uses a 48-byte guest-owned state region. Seed it from the two `AE_init*` halves with `AE_random_v1_seed_u64`, or from exactly 32 bytes with `AE_random_v1_seed_bytes`. Keep that state inside the exported snapshot region if hot reload must continue the same stream. Multiple independent streams need distinct non-overlapping 48-byte regions.
+
+Batch integer output is packed little-endian `i64`. Batch fixed output uses 12-byte little-endian records containing a canonical signed `i64` mantissa and `i32` binary exponent. Check every import status before reading output. A rejected pointer, parameter, batch, source-consumption limit, or invalid stream leaves output and serialized stream state unchanged. Use bounded batches rather than one host call per particle or sample.
+
+This profile is deterministic. It has no system-entropy capability, and a seed is replay material rather than a password. Do not use it for secrets or security tokens.
 
 ### Audio
 
@@ -284,7 +294,7 @@ For nontrivial code, use named helper functions and locals even when inlining wo
 ### Reload, determinism, and containment mistakes
 
 - Changing state layout while retaining its schema number.
-- Reading ambient time, randomness, filesystem, or network through an undeclared import. Aedicule deliberately provides none.
+- Reading ambient time, entropy, filesystem, or network through an undeclared import. Aedicule provides only explicit bounded capabilities; RandomZ v1 is deterministic and replayable.
 - Using nondeterministic iteration/order in golden outputs.
 - Performing unbounded work in one lifecycle call. Aedicule meters calls and bounds command/resource counts.
 - “Fixing” a failing test by weakening or deleting it. First reproduce the exact failure, then make the smallest guest change.
@@ -331,7 +341,7 @@ aedicule --test --seed 0x5eed project/
 aedicule-render project/ --ticks 1
 ```
 
-Pin tool versions in reproducible builds. Tool defaults evolve as WebAssembly proposals graduate, while Aedicule ABI `0.8` intentionally exposes a narrower core contract.
+Pin tool versions in reproducible builds. Tool defaults evolve as WebAssembly proposals graduate, while Aedicule ABI `0.9` intentionally exposes a narrower core contract.
 
 ## Proposed—not callable yet
 
@@ -394,7 +404,7 @@ Before calling a guest ready:
 
 The remainder is generated from the same declarative Rust table used to check `WAT_ABI.md`. It is deliberately duplicated here so an LLM with only this file still has every current name, signature, event code, and lifecycle rule.
 
-### Aedicule WAT ABI v0.8
+### Aedicule WAT ABI v0.9
 
 This is the complete client-facing ABI for WAT applications accepted by Aedicule today. The only import module is `aedicule.v0`. Every function at this boundary is named `AE_*`; the provisional `host.v0` / `fp_*` names are rejected.
 
@@ -499,6 +509,16 @@ The guest never receives a byte buffer and the host never writes into guest memo
 Focusing a placed text field is the only thing in Aedicule that may raise a mobile software keyboard: the platform text widget takes focus, GPUI installs its input handler, and the browser backend then moves DOM focus to its editable element. Ordinary canvas interaction leaves no editable element focused, so a touch on non-text content presents no keyboard.
 
 In v0.5 the platform widget owns its edit buffer. A placement carries geometry only, so a guest cannot set, clear, or restore the displayed text, and a reload discards it; a guest that needs to own the value must wait for a later revision of this profile. Headless `aedicule-render --text ID=VALUE` is repeatable, splits at the first `=` so a value may itself contain `=` or be empty, uses phase `2`, and executes after initialization but before requested ticks and rendering.
+
+#### Deterministic RandomZ v1
+
+ABI v0.9 exposes the RandomZ v1 deterministic byte stream and its integer-only nonlinear distributions. The `v1` import names freeze the algorithm and call-consumption behavior: a future incompatible generator must use new import names rather than changing an existing sequence. There is no ambient or system-entropy import in this profile.
+
+Every stream occupies 48 guest-owned bytes. Bytes `0..4` are `AER\x01`; bytes `4..8` are zero; bytes `8..40` are the derived 256-bit stream key; bytes `40..48` are the unsigned byte position in little-endian order. Initialize the region once with `AE_random_v1_seed_u64` or `AE_random_v1_seed_bytes`, keep distinct streams in non-overlapping regions, and include every live region inside `AE_state_ptr` / `AE_state_len` if it must survive transactional reload. `seed_u64` joins the two `AE_init*` seed halves as one unsigned value and places its big-endian encoding in the final eight bytes of a zero-filled 32-byte seed. `seed_bytes` consumes exactly 32 bytes as supplied.
+
+RandomZ fixed values are canonical `(mantissa i64, exponent i32)` pairs representing `(mantissa / 2^62) * 2^exponent`. Zero is exactly `(0, 0)`; a nonzero mantissa has magnitude from `2^62` through `2^63 - 1`. Fixed batch output uses a 12-byte little-endian record: mantissa first, exponent second. Integer batch output is packed little-endian `i64`. `range_i64` is inclusive and requires an ordered range whose cardinality is at most `2^53`; normal standard deviation, exponential rate, Poisson lambda, and both beta parameters must be positive canonical fixed values. Other distribution-specific numeric-domain limits fail closed.
+
+`count = 0` and zero-length raw fills are valid no-ops. A normal host admits at most 65,536 output bytes and 65,536 source bytes per import; callers should split larger work and check every status. State and output regions may not overlap. The host computes into private buffers and commits output plus the advanced state only after the full batch succeeds. Invalid pointers, state headers, parameters, output budgets, source-consumption budgets, or position overflow leave both regions unchanged.
 
 ##### `AE_title`
 
@@ -627,6 +647,94 @@ Places one declared text field in a guest-owned panel using Q16.16 logical-pixel
 ```
 
 Returns deterministic Q1.30 sine and cosine for a wrapping binary angle where `2^32` units are one turn.
+
+##### `AE_random_v1_seed_u64`
+
+```wat
+(func $AE_random_v1_seed_u64 (param state_ptr i32) (param seed_low i32) (param seed_high i32) (result i32))
+```
+
+Initializes one 48-byte guest-owned RandomZ v1 stream from the unsigned 64-bit seed supplied to `AE_init[_i32]`.
+
+##### `AE_random_v1_seed_bytes`
+
+```wat
+(func $AE_random_v1_seed_bytes (param state_ptr i32) (param seed_ptr i32) (result i32))
+```
+
+Initializes one 48-byte guest-owned RandomZ v1 stream from exactly 32 seed bytes.
+
+##### `AE_random_v1_fill`
+
+```wat
+(func $AE_random_v1_fill (param state_ptr i32) (param output_ptr i32) (param output_len i32) (result i32))
+```
+
+Writes deterministic raw stream bytes and advances the serialized stream only after the complete bounded output succeeds.
+
+##### `AE_random_v1_range_i64`
+
+```wat
+(func $AE_random_v1_range_i64 (param state_ptr i32) (param start i64) (param end i64) (param output_ptr i32) (param count i32) (result i32))
+```
+
+Writes a bounded batch of unbiased inclusive-range integers as little-endian `i64` values.
+
+##### `AE_random_v1_uniform`
+
+```wat
+(func $AE_random_v1_uniform (param state_ptr i32) (param output_ptr i32) (param count i32) (result i32))
+```
+
+Writes a bounded batch of exact uniform `[0,1)` RandomZ fixed values.
+
+##### `AE_random_v1_normal`
+
+```wat
+(func $AE_random_v1_normal (param state_ptr i32) (param mean_m i64) (param mean_e i32) (param stddev_m i64) (param stddev_e i32) (param output_ptr i32) (param count i32) (result i32))
+```
+
+Writes a bounded batch from the integer-only RandomZ normal distribution.
+
+##### `AE_random_v1_normal_i64`
+
+```wat
+(func $AE_random_v1_normal_i64 (param state_ptr i32) (param start i64) (param end i64) (param output_ptr i32) (param count i32) (result i32))
+```
+
+Writes a bounded batch of range-scaled normal integers as little-endian `i64` values.
+
+##### `AE_random_v1_exponential`
+
+```wat
+(func $AE_random_v1_exponential (param state_ptr i32) (param rate_m i64) (param rate_e i32) (param output_ptr i32) (param count i32) (result i32))
+```
+
+Writes a bounded batch from the integer-only RandomZ exponential distribution.
+
+##### `AE_random_v1_poisson`
+
+```wat
+(func $AE_random_v1_poisson (param state_ptr i32) (param lambda_m i64) (param lambda_e i32) (param output_ptr i32) (param count i32) (result i32))
+```
+
+Writes a bounded batch of RandomZ Poisson variates as little-endian `i64` values.
+
+##### `AE_random_v1_log_normal`
+
+```wat
+(func $AE_random_v1_log_normal (param state_ptr i32) (param mean_m i64) (param mean_e i32) (param stddev_m i64) (param stddev_e i32) (param output_ptr i32) (param count i32) (result i32))
+```
+
+Writes a bounded batch from the integer-only RandomZ log-normal distribution.
+
+##### `AE_random_v1_beta`
+
+```wat
+(func $AE_random_v1_beta (param state_ptr i32) (param alpha_m i64) (param alpha_e i32) (param beta_m i64) (param beta_e i32) (param output_ptr i32) (param count i32) (result i32))
+```
+
+Writes a bounded batch from the integer-only RandomZ beta distribution.
 
 ##### `AE_synth_voice`
 
@@ -862,7 +970,7 @@ Accepts a bounded UTF-8 diagnostic message; version 0 does not expose its sink t
 
 #### Portable text faces
 
-`AE_text` remains source-compatible and uses the active platform UI face. `AE_text_font` and `AE_text_font_q16` accept stable selector `0` for that platform default or `1` for Aedicule's embedded Geist Mono Regular. Selector `1` is registered from identical OFL-1.1 font bytes in native and browser adapters, so aligned numerical data never depends on host installation. Unknown selectors reject the complete render transaction rather than silently substituting a proportional face. Package-supplied font handles are not part of ABI v0.8; they require bounded `.aed` asset transport and collision-safe family identities in every adapter.
+`AE_text` remains source-compatible and uses the active platform UI face. `AE_text_font` and `AE_text_font_q16` accept stable selector `0` for that platform default or `1` for Aedicule's embedded Geist Mono Regular. Selector `1` is registered from identical OFL-1.1 font bytes in native and browser adapters, so aligned numerical data never depends on host installation. Unknown selectors reject the complete render transaction rather than silently substituting a proportional face. Package-supplied font handles are not part of ABI v0.9; they require bounded `.aed` asset transport and collision-safe family identities in every adapter.
 
 #### Stable draw IDs
 
