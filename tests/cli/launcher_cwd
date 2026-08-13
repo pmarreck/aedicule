@@ -8,15 +8,19 @@ tmp=$(mktemp -d "$TMPDIR/aedicule-launcher-cwd.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 foreign_dir="$tmp/adjacent application"
 fake_bin="$tmp/fake-bin"
-argv_file="$tmp/nix-argv"
+argv_prefix="$tmp/nix-argv"
 cwd_file="$tmp/nix-cwd"
+runtime_env_file="$tmp/web-runtime-env"
+web_runtime="$tmp/generated web runtime"
 mkdir -p "$foreign_dir" "$fake_bin"
 
 printf '%s\n' \
 	'#!/usr/bin/env bash' \
 	'set -u' \
-	'printf "%s\0" "$@" > "$FAKE_NIX_ARGV"' \
+	'printf "%s\0" "$@" > "$FAKE_NIX_ARGV.$1"' \
 	'pwd -P > "$FAKE_NIX_CWD"' \
+	'if [[ $1 == build ]]; then printf "%s\n" "$FAKE_WEB_RUNTIME"; fi' \
+	'if [[ $1 == develop ]]; then printf "%s\n" "${AEDICULE_WEB_RUNTIME-}" > "$FAKE_RUNTIME_ENV"; fi' \
 	> "$fake_bin/nix"
 chmod +x "$fake_bin/nix"
 
@@ -25,8 +29,10 @@ err=
 rc=0
 capture env \
 	PATH="$fake_bin:$PATH" \
-	FAKE_NIX_ARGV="$argv_file" \
+	FAKE_NIX_ARGV="$argv_prefix" \
 	FAKE_NIX_CWD="$cwd_file" \
+	FAKE_RUNTIME_ENV="$runtime_env_file" \
+	FAKE_WEB_RUNTIME="$web_runtime" \
 	bash -c 'cd "$1" && exec "$2" --watch "$3"' \
 	bash "$foreign_dir" "$root/run" "$foreign_dir/code.wat"
 
@@ -51,7 +57,7 @@ expected=(
 	--watch
 	"$foreign_dir/code.wat"
 )
-mapfile -d '' -t observed < "$argv_file"
+mapfile -d '' -t observed < "$argv_prefix.develop"
 if (( ${#observed[@]} != ${#expected[@]} )); then
 	printf 'run passed %d nix arguments; expected %d\n' "${#observed[@]}" "${#expected[@]}" >&2
 	failures=$((failures + 1))
@@ -69,5 +75,123 @@ if [[ $(<"$cwd_file") != "$foreign_dir" ]]; then
 	printf 'run changed the caller working directory\n' >&2
 	failures=$((failures + 1))
 fi
+
+out=
+err=
+rc=0
+capture env \
+	PATH="$fake_bin:$PATH" \
+	FAKE_NIX_ARGV="$argv_prefix" \
+	FAKE_NIX_CWD="$cwd_file" \
+	FAKE_RUNTIME_ENV="$runtime_env_file" \
+	FAKE_WEB_RUNTIME="$web_runtime" \
+	bash -c 'cd "$1" && exec "$2" --watch "$3" --web --bind 127.0.0.1 --port 8137' \
+	bash "$foreign_dir" "$root/run" "$foreign_dir/code.wat"
+
+if (( rc != 0 )); then
+	printf 'run --web failed from a foreign working directory: %s\n' "$err" >&2
+	failures=$((failures + 1))
+fi
+
+expected_build=(
+	build
+	"$root#webRuntime"
+	--no-link
+	--print-out-paths
+)
+if [[ ! -f "$argv_prefix.build" ]]; then
+	printf 'run --web did not ask Nix for the checkout Web runtime\n' >&2
+	failures=$((failures + 1))
+else
+	mapfile -d '' -t observed_build < "$argv_prefix.build"
+	if (( ${#observed_build[@]} != ${#expected_build[@]} )); then
+		printf 'run --web passed %d Nix build arguments; expected %d\n' \
+			"${#observed_build[@]}" "${#expected_build[@]}" >&2
+		failures=$((failures + 1))
+	else
+		for index in "${!expected_build[@]}"; do
+			if [[ "${observed_build[$index]}" != "${expected_build[$index]}" ]]; then
+				printf 'Nix build argument %d was %q; expected %q\n' \
+					"$index" "${observed_build[$index]}" "${expected_build[$index]}" >&2
+				failures=$((failures + 1))
+			fi
+		done
+	fi
+fi
+
+expected_web=("${expected[@]}" --web --bind 127.0.0.1 --port 8137)
+mapfile -d '' -t observed_web < "$argv_prefix.develop"
+if (( ${#observed_web[@]} != ${#expected_web[@]} )); then
+	printf 'run --web passed %d Nix develop arguments; expected %d\n' \
+		"${#observed_web[@]}" "${#expected_web[@]}" >&2
+	failures=$((failures + 1))
+else
+	for index in "${!expected_web[@]}"; do
+		if [[ "${observed_web[$index]}" != "${expected_web[$index]}" ]]; then
+			printf 'Nix develop argument %d was %q; expected %q\n' \
+				"$index" "${observed_web[$index]}" "${expected_web[$index]}" >&2
+			failures=$((failures + 1))
+		fi
+	done
+fi
+
+if [[ ! -f "$runtime_env_file" || $(<"$runtime_env_file") != "$web_runtime" ]]; then
+	printf 'run --web did not export the exact Nix Web runtime path\n' >&2
+	failures=$((failures + 1))
+fi
+
+if [[ $(<"$cwd_file") != "$foreign_dir" ]]; then
+	printf 'run --web changed the caller working directory\n' >&2
+	failures=$((failures + 1))
+fi
+
+mv "$argv_prefix.build" "$argv_prefix.build-generated"
+explicit_runtime="$tmp/explicit web runtime"
+out=
+err=
+rc=0
+capture env \
+	PATH="$fake_bin:$PATH" \
+	AEDICULE_WEB_RUNTIME="$explicit_runtime" \
+	FAKE_NIX_ARGV="$argv_prefix" \
+	FAKE_NIX_CWD="$cwd_file" \
+	FAKE_RUNTIME_ENV="$runtime_env_file" \
+	FAKE_WEB_RUNTIME="$web_runtime" \
+	bash -c 'cd "$1" && exec "$2" "$3" --web' \
+	bash "$foreign_dir" "$root/run" "$foreign_dir/code.wat"
+
+if (( rc != 0 )); then
+	printf 'run --web rejected an explicit runtime override: %s\n' "$err" >&2
+	failures=$((failures + 1))
+fi
+if [[ -e "$argv_prefix.build" ]]; then
+	printf 'run --web rebuilt despite an explicit runtime override\n' >&2
+	failures=$((failures + 1))
+fi
+if [[ ! -f "$runtime_env_file" || $(<"$runtime_env_file") != "$explicit_runtime" ]]; then
+	printf 'run --web did not preserve the explicit runtime override\n' >&2
+	failures=$((failures + 1))
+fi
+
+case_index=0
+for overriding_mode in --help --about --test --package --depackage --embedded; do
+	case_index=$((case_index + 1))
+	out=
+	err=
+	rc=0
+	capture env -u AEDICULE_WEB_RUNTIME \
+		PATH="$fake_bin:$PATH" \
+		FAKE_NIX_ARGV="$argv_prefix" \
+		FAKE_NIX_CWD="$cwd_file" \
+		FAKE_RUNTIME_ENV="$runtime_env_file" \
+		FAKE_WEB_RUNTIME="$web_runtime" \
+		"$root/run" --web "$foreign_dir/code.wat" "$overriding_mode" "$foreign_dir/other.wat"
+	if [[ -e "$argv_prefix.build" ]]; then
+		printf 'run built the Web runtime after later mode %s overrode --web\n' \
+			"$overriding_mode" >&2
+		failures=$((failures + 1))
+		mv "$argv_prefix.build" "$argv_prefix.unexpected-build-$case_index"
+	fi
+done
 
 exit "$failures"

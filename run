@@ -4,5 +4,40 @@ set -u
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 
+web_requested=false
+arguments=("$@")
+for ((index = 0; index < ${#arguments[@]}; index++)); do
+	case ${arguments[$index]} in
+		--)
+			break
+			;;
+		-h|--help|--about)
+			web_requested=false
+			break
+			;;
+		--web)
+			web_requested=true
+			;;
+		--package|--depackage|--test|--embedded)
+			web_requested=false
+			;;
+		--bind|--port|--seed)
+			index=$((index + 1))
+			;;
+	esac
+done
+
+if $web_requested && [[ ! -v AEDICULE_WEB_RUNTIME ]]; then
+	if web_runtime=$(nix build "$root#webRuntime" --no-link --print-out-paths); then
+		if [[ -z $web_runtime || $web_runtime == *$'\n'* ]]; then
+			printf 'aedicule: Nix returned an invalid Web runtime path\n' >&2
+			exit 1
+		fi
+		export AEDICULE_WEB_RUNTIME="$web_runtime"
+	else
+		exit $?
+	fi
+fi
+
 exec nix develop "$root" -c cargo run --manifest-path "$root/Cargo.toml" \
 	--release --bin aedicule -- "$@"

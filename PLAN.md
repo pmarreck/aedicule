@@ -81,13 +81,19 @@
       Aedicule's gallery and Tailscale staging page, verify the packaged tests
       and browser startup first, then send Peter the exact iPhone test URL.
       (Requested 2026-08-13 16:42 EDT.)
-- [ ] Fix the Aedicule-owned source-checkout launcher regression: `./run --web`
+- [x] Fix the Aedicule-owned source-checkout launcher regression: `./run --web`
   currently builds successfully and then exits because it cannot find a Web
   runtime unless `AEDICULE_WEB_RUNTIME` is supplied. The source runner must
   locate or produce the exact runtime from its own checkout without
   guest-specific setup. Reproduce with the Vibesteroids command from the
   2026-08-11 inbox note, add the failing launcher test first, and preserve
-  packaged-install discovery behavior.
+  packaged-install discovery behavior. The wrapper now materializes its exact
+  `.#webRuntime` only when the final CLI mode is Web, exports the returned
+  store path into the unchanged caller working directory, and preserves an
+  explicit `AEDICULE_WEB_RUNTIME`. The set-classifier gate covers every later
+  mode override, and the real foreign-source invocation crossed runtime
+  discovery before failing at the intentionally missing WAT. Focused test
+  green. (2026-08-13 17:37 EDT.)
 - [ ] Advance Spring Simulator to its layout-v3 and damping-fix release:
   source commit `6e89c4a0d9993540c0f0577b16565c73dccf5438`, 41,009-byte
   `spring_sim.aed`, SHA-256
