@@ -81,6 +81,16 @@
       Aedicule's gallery and Tailscale staging page, verify the packaged tests
       and browser startup first, then send Peter the exact iPhone test URL.
       (Requested 2026-08-13 16:42 EDT.)
+      - [x] Provisional phone acceptance is live from the sibling's current
+        dirty candidate while its immutable pin is pending. Packaged WAST is
+        green; the live `.aed` SHA-256 is
+        `233fb1ebb537585fd1161a47c1faa23cd851d6cea05e53cfb92bc81666a353ae`;
+        nested WAT SHA-256 is
+        `33c305a80a84cf961cf4268c5640a870e15dbdadba46ffbb9d0162b6e3b31af9`;
+        the ABI-v0.9 browser runtime reaches `settled`; and live Tailscale GETs
+        return 200 at
+        `https://thelio-nixos.tail66c90.ts.net:8911/vibesteroids/`.
+        (2026-08-13 17:47 EDT.)
 - [x] Fix the Aedicule-owned source-checkout launcher regression: `./run --web`
   currently builds successfully and then exits because it cannot find a Web
   runtime unless `AEDICULE_WEB_RUNTIME` is supplied. The source runner must
@@ -105,8 +115,9 @@
   headless renders were clean; and real Chromium/WebGPU at 780x437 settled in
   2.386 seconds with all 7 sliders and 5 buttons visible, delivering semantic
   events without pointer leakage. The manifest and package snapshot now drive
-  every generated delivery/release copy. (Queued 2026-08-10 16:40 EDT;
-  completed 2026-08-13 17:42 EDT.)
+  every generated delivery/release copy. Tailscale staging serves the exact
+  package and nested WAT hashes. (Queued 2026-08-10 16:40 EDT; completed
+  2026-08-13 17:47 EDT.)
 - [x] Add RandomZ-compatible deterministic randomization to the WAT/AED ABI
   after agreeing on the guest contract. Prefer `../random`'s new pure
   `randomr` Rust crate as Aedicule's implementation if it passes an explicit
