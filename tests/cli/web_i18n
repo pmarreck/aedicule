@@ -18,6 +18,10 @@ assert.deepEqual(i18n.supportedLocales, [
 	"sw", "ta", "th", "tr", "uk", "ur", "vi", "yo", "zh_hans", "zh_hant",
 ]);
 assert.deepEqual(Object.keys(i18n.english).sort(), [
+	"abiCallable", "abiCurrentDescription", "abiCurrentTitle", "abiEvidenceLink",
+	"abiMarkdownLink", "abiNotCallable", "abiProposedDescription", "abiProposedTitle",
+	"abiReferenceBack", "abiReferenceEyebrow", "abiReferenceHeadline",
+	"abiReferenceLead", "abiReferenceLink", "abiReferenceTitle",
 	"aboutAbiLink", "aboutAuthoringBody", "aboutAuthoringTitle", "aboutBack",
 	"aboutControlsBody", "aboutControlsTitle", "aboutEyebrow",
 	"aboutGraphicsBody", "aboutGraphicsTitle", "aboutGuideLink", "aboutHeadline",

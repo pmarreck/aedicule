@@ -184,6 +184,8 @@
 									"/packaging"
 									"/packaging/windows"
 									"/packaging/windows/aedicule.rc"
+									"/packaging/web"
+									"/packaging/web/abi.html"
 									"/src"
 									"/third_party"
 									"/web"
@@ -799,6 +801,7 @@
 							mkdir -p $out/ulam-flower $out/vibesteroids $out/spring-sim $out/run
 							cp ${./packaging/web/index.html} $out/index.html
 							cp ${./packaging/web/about.html} $out/about.html
+							cp ${./packaging/web/abi.html} $out/abi.html
 							cp ${./packaging/web/launcher.mjs} $out/launcher.mjs
 							cp ${./packaging/web/launcher-i18n.mjs} $out/launcher-i18n.mjs
 							cp ${./packaging/web/local-application.mjs} $out/local-application.mjs

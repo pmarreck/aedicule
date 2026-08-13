@@ -1,7 +1,9 @@
 use aedicule::{
-    ABI_MAJOR, ABI_MINOR, LLM_GUIDE_VERSION, WAT_ABI_IMPORTS, guide_for_llms_markdown,
+    ABI_MAJOR, ABI_MINOR, Frontplane, LLM_GUIDE_VERSION, Limits, WAT_ABI_IMPORTS,
+    WAT_ABI_PROPOSALS, abi_reference_html, guide_for_llms_markdown, wat_abi_conformance_module,
     wat_abi_markdown,
 };
+use std::collections::HashSet;
 
 #[test]
 fn checked_in_wat_abi_reference_is_the_generated_canonical_document() {
@@ -116,4 +118,35 @@ fn checked_in_llm_guide_is_generated_versioned_and_complete_without_host_source(
         readme.contains("[Guide for LLMs](GUIDE_FOR_LLMS.md)"),
         "the canonical guide is discoverable from the repository landing page"
     );
+}
+
+#[test]
+fn checked_in_web_reference_separates_callable_and_proposed_capabilities() {
+    let checked_in = std::fs::read_to_string("packaging/web/abi.html")
+        .expect("the build-generated Web ABI reference exists");
+
+    assert_eq!(checked_in, abi_reference_html());
+    assert!(checked_in.contains("id=\"current\""));
+    assert!(checked_in.contains("id=\"proposed\""));
+    assert!(checked_in.contains("AE_random_v1_normal"));
+    assert!(checked_in.contains("data-abi-status=\"not-callable\""));
+    for import in WAT_ABI_IMPORTS {
+        assert!(checked_in.contains(import.name));
+    }
+    let mut slugs = HashSet::new();
+    for proposal in WAT_ABI_PROPOSALS {
+        assert!(
+            slugs.insert(proposal.slug),
+            "duplicate proposal slug {}",
+            proposal.slug
+        );
+        let card = format!("id=\"{}\" data-abi-status=\"not-callable\"", proposal.slug);
+        assert!(checked_in.contains(&card));
+    }
+}
+
+#[test]
+fn declared_current_imports_link_at_the_documented_value_types() {
+    Frontplane::from_wat(&wat_abi_conformance_module(), Limits::default())
+        .expect("the complete generated current ABI module links");
 }

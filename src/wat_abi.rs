@@ -20,6 +20,18 @@ pub struct WatAbiImport {
     pub summary: &'static str,
 }
 
+/// One explicitly non-callable capability direction shown beside the current
+/// ABI without assigning it an import name or prematurely freezing a signature.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WatAbiProposal {
+    pub slug: &'static str,
+    pub title: &'static str,
+    pub status: &'static str,
+    pub summary: &'static str,
+    pub adapters: &'static str,
+    pub evidence_url: &'static str,
+}
+
 pub const WAT_ABI_IMPORTS: &[WatAbiImport] = &[
     WatAbiImport {
         name: "AE_title",
@@ -302,6 +314,267 @@ pub const WAT_ABI_IMPORTS: &[WatAbiImport] = &[
         summary: "Accepts a bounded UTF-8 diagnostic message; version 0 does not expose its sink to the guest.",
     },
 ];
+
+pub const WAT_ABI_PROPOSALS: &[WatAbiProposal] = &[
+    WatAbiProposal {
+        slug: "semantic-view-tree",
+        title: "Semantic view tree and layout",
+        status: "Specified direction",
+        summary: "General guest-owned composition, layout, scrolling, tabs, grids, editable values, and accessibility semantics beyond the current flat AVP controls.",
+        adapters: "Native, Web, headless",
+        evidence_url: "https://github.com/pmarreck/aedicule/blob/yolo/VIEW_PROTOCOL.md",
+    },
+    WatAbiProposal {
+        slug: "touch-contacts",
+        title: "Identity-bearing touch contacts",
+        status: "Contract design",
+        summary: "Ordered start, move, end, and cancel edges for multiple simultaneous contacts without embedding application gesture policy in Aedicule.",
+        adapters: "Web, macOS, Linux, Windows",
+        evidence_url: "https://github.com/pmarreck/aedicule/blob/yolo/PLAN.md",
+    },
+    WatAbiProposal {
+        slug: "persistent-key-value",
+        title: "Persistent key/value storage",
+        status: "Policy design",
+        summary: "Bounded, rate-limited application state with desktop and browser adapters, transactional writes, quotas, and no ambient filesystem access.",
+        adapters: "Native, Web, headless test double",
+        evidence_url: "https://github.com/pmarreck/aedicule/blob/yolo/PLAN.md",
+    },
+    WatAbiProposal {
+        slug: "file-capabilities",
+        title: "User-mediated file capabilities",
+        status: "Policy design",
+        summary: "Explicit open/save grants for general applications, with browser file-picker parity and no path authority beyond the selected resource.",
+        adapters: "Native, Web",
+        evidence_url: "https://github.com/pmarreck/aedicule/blob/yolo/PLAN.md",
+    },
+    WatAbiProposal {
+        slug: "game-controllers",
+        title: "Game-controller input",
+        status: "Adapter research",
+        summary: "Stable device, button, axis, connection, and disconnection events with deterministic dead-zone and ordering rules.",
+        adapters: "Web, macOS, Linux, Windows",
+        evidence_url: "https://github.com/pmarreck/aedicule/blob/yolo/PLAN.md",
+    },
+    WatAbiProposal {
+        slug: "cli-tui",
+        title: "CLI and TUI application profiles",
+        status: "Architecture proposal",
+        summary: "Non-windowed lifecycle, structured standard streams, terminal capability negotiation, and deterministic headless execution for WAT applications.",
+        adapters: "Terminal, headless",
+        evidence_url: "https://github.com/pmarreck/aedicule/blob/yolo/PLAN.md",
+    },
+    WatAbiProposal {
+        slug: "package-fonts",
+        title: "Package-supplied fonts",
+        status: "Asset-contract proposal",
+        summary: "Bounded font assets with stable family handles and identical native/browser shaping behavior beyond bundled Geist Mono.",
+        adapters: "Native, Web, headless",
+        evidence_url: "https://github.com/pmarreck/aedicule/blob/yolo/PLAN.md",
+    },
+    WatAbiProposal {
+        slug: "appify",
+        title: "Appify and deappify",
+        status: "Delivery proposal",
+        summary: "Combine one pinned Aedicule runtime and one exact .aed package into a normal platform application, then recover both constituents losslessly.",
+        adapters: "macOS, Linux, Windows",
+        evidence_url: "https://github.com/pmarreck/aedicule/blob/yolo/PLAN.md",
+    },
+];
+
+/// Produces one neutral guest that imports every declared capability at the
+/// registry's exact value types, so both runtime linkers can prove the docs.
+pub fn wat_abi_conformance_module() -> String {
+    let mut module = String::from("(module\n");
+    for import in WAT_ABI_IMPORTS {
+        let (parameters, results) = signature_value_types(import.signature);
+        let _ = write!(
+            module,
+            "  (import \"{IMPORT_MODULE}\" \"{}\" (func",
+            import.name
+        );
+        if !parameters.is_empty() {
+            let _ = write!(module, " (param {})", parameters.join(" "));
+        }
+        if !results.is_empty() {
+            let _ = write!(module, " (result {})", results.join(" "));
+        }
+        module.push_str("))\n");
+    }
+    let _ = write!(
+        module,
+        "  (memory (export \"memory\") 1)\n\
+         \t(func (export \"AE_abi_major\") (result i32) i32.const {ABI_MAJOR})\n\
+         \t(func (export \"AE_abi_minor\") (result i32) i32.const {ABI_MINOR})\n\
+         \t(func (export \"AE_configure\") (result i32) i32.const 0)\n\
+         \t(func (export \"AE_init_i32\") (param i32 i32 i32 i32) (result i32) i32.const 0)\n\
+         \t(func (export \"AE_event_i32\") (param i32 i32 i32 i32) (result i32) i32.const 0)\n\
+         \t(func (export \"AE_tick\") (param i32) (result i32) i32.const 0)\n\
+         \t(func (export \"AE_render\") (result i32) i32.const 0)\n\
+         \t(func (export \"AE_state_ptr\") (result i32) i32.const 0)\n\
+         \t(func (export \"AE_state_len\") (result i32) i32.const 0)\n\
+         \t(func (export \"AE_state_schema\") (result i32) i32.const 1))"
+    );
+    module
+}
+
+fn signature_value_types(signature: &str) -> (Vec<&str>, Vec<&str>) {
+    let mut parameters = Vec::new();
+    let mut results = Vec::new();
+    for clause in signature.split(')') {
+        let clause = clause.trim();
+        let Some(clause) = clause.strip_prefix('(') else {
+            continue;
+        };
+        let mut words = clause.split_whitespace();
+        let Some(kind) = words.next() else {
+            continue;
+        };
+        let value_type = words
+            .last()
+            .unwrap_or_else(|| panic!("ABI signature clause has no value type: {clause}"));
+        assert!(
+            matches!(value_type, "i32" | "i64" | "f32" | "f64"),
+            "unknown ABI value type in {clause}"
+        );
+        match kind {
+            "param" => parameters.push(value_type),
+            "result" => results.push(value_type),
+            _ => panic!("unknown ABI signature clause: {clause}"),
+        }
+    }
+    (parameters, results)
+}
+
+/// Renders the Web reference from the same current/proposed registries used by
+/// checked Markdown and runtime-linker conformance tests.
+pub fn abi_reference_html() -> String {
+    let mut document = String::from(
+        r##"<!doctype html>
+<html lang="en" dir="ltr" data-i18n-title="abiReferenceTitle">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<title>Aedicule ABI reference</title>
+		<link rel="icon" href="./icon.png">
+		<link rel="manifest" href="./manifest.webmanifest">
+		<style>
+			:root { color-scheme: dark; font: 16px/1.55 Inter, ui-sans-serif, system-ui, sans-serif; --ink: #f7f9ff; --muted: #aeb8d4; --cyan: #6ee7ff; --violet: #c89aff; --panel: #11182bdc; }
+			* { box-sizing: border-box; }
+			html { scroll-behavior: smooth; }
+			body { min-height: 100vh; margin: 0; background: radial-gradient(circle at 8% 0%, #183d69 0, transparent 34rem), radial-gradient(circle at 92% 18%, #4b1f65 0, transparent 32rem), linear-gradient(155deg, #080b14, #060810 70%); color: var(--ink); }
+			body::before { position: fixed; inset: 0; background-image: linear-gradient(#ffffff08 1px, transparent 1px), linear-gradient(90deg, #ffffff08 1px, transparent 1px); background-size: 3rem 3rem; mask-image: linear-gradient(to bottom, #000, transparent 72%); content: ""; pointer-events: none; }
+			main { position: relative; width: min(82rem, calc(100% - 2rem)); margin-inline: auto; padding: 1.25rem 0 4rem; }
+			nav, .jump { display: flex; align-items: center; gap: 1rem; }
+			nav { justify-content: space-between; }
+			a { color: var(--cyan); text-underline-offset: .24rem; }
+			.brand { display: flex; align-items: center; gap: .65rem; color: var(--ink); font-weight: 850; text-decoration: none; }
+			.brand img { width: 2.5rem; height: 2.5rem; }
+			.back, .jump a { color: var(--muted); font-weight: 750; }
+			.hero { padding: clamp(3.5rem, 8vw, 7rem) 0 2.5rem; }
+			.eyebrow, .status, .adapters { font: 800 .72rem/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .09em; text-transform: uppercase; }
+			.eyebrow { color: var(--cyan); }
+			h1 { max-width: 12ch; margin: .8rem 0 1.3rem; background: linear-gradient(100deg, #fff 15%, var(--cyan) 60%, var(--violet)); background-clip: text; color: transparent; font-size: clamp(3rem, 9vw, 7rem); line-height: .87; letter-spacing: -.07em; }
+			.lead { max-width: 50rem; color: #d4dcf2; font-size: clamp(1.05rem, 2.2vw, 1.35rem); }
+			.jump { margin-top: 1.5rem; flex-wrap: wrap; }
+			section { padding-top: 2.5rem; }
+			section > header { display: grid; grid-template-columns: minmax(0, 1fr) minmax(18rem, 38rem); gap: 2rem; align-items: end; margin-bottom: 1.25rem; }
+			h2 { margin: 0; font-size: clamp(2rem, 5vw, 3.6rem); letter-spacing: -.055em; }
+			section > header p { margin: 0; color: var(--muted); }
+			.grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .85rem; }
+			.card { min-width: 0; padding: 1.15rem; border: 1px solid #ffffff18; border-radius: 1.1rem; background: linear-gradient(145deg, #151d34e8, var(--panel)); box-shadow: inset 0 1px #ffffff10; }
+			.card h3 { margin: .65rem 0 .7rem; font-size: 1rem; overflow-wrap: anywhere; }
+			.card p { margin: 0; color: var(--muted); }
+			.card code { color: #f5e7ff; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+			.signature { display: block; max-width: 100%; margin: .7rem 0; padding: .72rem; overflow-x: auto; border-radius: .7rem; background: #060913cc; color: #cfefff; font-size: .76rem; }
+			.status { color: var(--cyan); }
+			.status.proposed { color: #ffca84; }
+			.adapters { margin-top: 1rem !important; color: var(--violet) !important; }
+			footer { display: flex; flex-wrap: wrap; gap: 1.2rem; padding-top: 3rem; }
+			@media (max-width: 62rem) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } section > header { grid-template-columns: 1fr; gap: .5rem; } }
+			@media (max-width: 42rem) { .grid { grid-template-columns: 1fr; } .jump { align-items: flex-start; flex-direction: column; } }
+			@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } *, *::before, *::after { animation: none !important; transition: none !important; } }
+		</style>
+	</head>
+	<body>
+		<main>
+			<nav>
+				<a class="brand" href="./"><img src="./icon.png" alt=""><span>Aedicule</span></a>
+				<a class="back" href="./" data-i18n="abiReferenceBack"></a>
+			</nav>
+			<header class="hero">
+				<p class="eyebrow" data-i18n="abiReferenceEyebrow"></p>
+				<h1 data-i18n="abiReferenceHeadline"></h1>
+				<p class="lead" data-i18n="abiReferenceLead"></p>
+				<div class="jump"><a href="#current" data-i18n="abiCurrentTitle"></a><a href="#proposed" data-i18n="abiProposedTitle"></a></div>
+			</header>
+			<section id="current">
+				<header><h2 data-i18n="abiCurrentTitle"></h2><p data-i18n="abiCurrentDescription"></p></header>
+				<div class="grid">
+"##,
+    );
+    for import in WAT_ABI_IMPORTS {
+        let _ = writeln!(
+            document,
+            "\t\t\t\t\t<article class=\"card\" data-abi-status=\"callable\"><span class=\"status\" data-i18n=\"abiCallable\"></span><h3><code>{}</code></h3><code class=\"signature\">{}</code><p>{}</p></article>",
+            html_escape(import.name),
+            html_escape(import.signature),
+            inline_code_html(import.summary),
+        );
+    }
+    document.push_str(
+        r#"				</div>
+			</section>
+			<section id="proposed">
+				<header><h2 data-i18n="abiProposedTitle"></h2><p data-i18n="abiProposedDescription"></p></header>
+				<div class="grid">
+"#,
+    );
+    for proposal in WAT_ABI_PROPOSALS {
+        let _ = writeln!(
+            document,
+            "\t\t\t\t\t<article class=\"card\" id=\"{}\" data-abi-status=\"not-callable\"><span class=\"status proposed\" data-i18n=\"abiNotCallable\"></span><h3>{}</h3><p>{}</p><p class=\"adapters\">{} · {}</p><p><a href=\"{}\" data-i18n=\"abiEvidenceLink\"></a></p></article>",
+            html_escape(proposal.slug),
+            html_escape(proposal.title),
+            html_escape(proposal.summary),
+            html_escape(proposal.status),
+            html_escape(proposal.adapters),
+            html_escape(proposal.evidence_url),
+        );
+    }
+    document.push_str(
+        r#"				</div>
+			</section>
+			<footer><a href="./about.html" data-i18n="aboutLink"></a><a href="https://github.com/pmarreck/aedicule/blob/yolo/WAT_ABI.md" data-i18n="abiMarkdownLink"></a><a href="https://github.com/pmarreck/aedicule/blob/yolo/GUIDE_FOR_LLMS.md" data-i18n="aboutGuideLink"></a></footer>
+		</main>
+		<script type="module" src="./launcher.mjs"></script>
+	</body>
+</html>
+"#,
+    );
+    document
+}
+
+fn inline_code_html(text: &str) -> String {
+    let mut output = String::new();
+    for (index, part) in text.split('`').enumerate() {
+        if index % 2 == 0 {
+            output.push_str(&html_escape(part));
+        } else {
+            output.push_str("<code>");
+            output.push_str(&html_escape(part));
+            output.push_str("</code>");
+        }
+    }
+    output
+}
+
+fn html_escape(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
 
 /// Renders the exact checked-in WAT client reference from the ABI declarations.
 pub fn wat_abi_markdown() -> String {

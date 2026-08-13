@@ -66,7 +66,8 @@ pub mod gpui_canvas;
 pub mod web;
 
 pub use wat_abi::{
-    LLM_GUIDE_VERSION, WAT_ABI_IMPORTS, WatAbiImport, guide_for_llms_markdown, wat_abi_markdown,
+    LLM_GUIDE_VERSION, WAT_ABI_IMPORTS, WAT_ABI_PROPOSALS, WatAbiImport, WatAbiProposal,
+    abi_reference_html, guide_for_llms_markdown, wat_abi_conformance_module, wat_abi_markdown,
 };
 
 pub const ABI_MAJOR: i32 = wat_abi::ABI_MAJOR;

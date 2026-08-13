@@ -559,7 +559,7 @@
     than making an unresearched exclusivity claim. (Completed 2026-07-24 09:12
     EDT.)
     - [ ] Receive Peter's visual approval of the desktop/mobile rendering.
-  - [ ] Publish one build-generated Current + Proposed ABI reference page.
+  - [x] Publish one build-generated Current + Proposed ABI reference page.
     Generate the current callable surface from the same typed Rust capability
     registry as `WAT_ABI.md`, and generate future cards only from an explicit
     non-callable proposal registry with status, evidence/spec links, and
@@ -567,6 +567,9 @@
     documented import at its exact generated signature so the reference proves
     linker reality rather than only self-consistency. Never present a proposed
     name or signature as callable, and fail the build on generated-page drift.
+    Native and portable linker conformance, focused Web delivery, `./test`,
+    optimized `./build`, and Nix flake evaluation passed. (Completed 2026-08-13
+    18:06 EDT.)
     - Curiosity poke: keep proposal granularity stable enough for durable links
       without prematurely freezing function names or signatures.
   - [x] Add a prominent keyboard-accessible dropzone/file picker to the launch
