@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Prevent native, web, and cross-delivery builds from silently falling behind
+# the Rust MSRV declared by Aedicule and its pinned deterministic RNG.
+set -u
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+source "$root/tests/lib/capture.bash"
+out= err= rc=
+capture rustc --version
+
+if [ "$rc" -ne 0 ]; then
+	printf 'rust toolchain pin FAILED: rustc exited %d\n%s\n' \
+		"$rc" "$err" >&2
+	exit 1
+fi
+
+case "$out" in
+	'rustc 1.97.0 '*) ;;
+	*)
+		printf 'rust toolchain pin FAILED: expected Rust 1.97.0, got %s\n' \
+			"$out" >&2
+		exit 1
+		;;
+esac

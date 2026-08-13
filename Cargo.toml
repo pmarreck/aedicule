@@ -2,6 +2,7 @@
 name = "aedicule"
 version = "0.1.4"
 edition = "2024"
+rust-version = "1.97"
 authors = ["Peter Marreck"]
 description = "A generic GPUI frontplane for capability-bounded WAT applications"
 license = "MIT"
@@ -46,6 +47,7 @@ gui-test-support = ["gui", "gpui/test-support"]
 async_zip = { version = "0.0.18", default-features = false, features = ["zstd"] }
 claxon = "0.4.3"
 futures-lite = "2.6.1"
+randomr = { git = "https://github.com/pmarreck/random", rev = "346889f1762d421b15186a2b14f105639afef6a2", default-features = false }
 thiserror = "2.0.16"
 unicode-normalization = "0.1.25"
 url = "2.5.8"

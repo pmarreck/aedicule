@@ -19,6 +19,30 @@
 				inherit system;
 				config.allowUnsupportedSystem = true;
 			};
+			rustChannel = "1.97.0";
+			rustManifestHash = "sha256-OATSZm98Es5kIFuqaba+UvkQtFsVgJEBMmS+t6od5/U=";
+			rustManifestFor = system:
+				fenix.packages.${system}.toolchainOf {
+					channel = rustChannel;
+					sha256 = rustManifestHash;
+				};
+			rustTargetManifestFor = system: rustTarget:
+				fenix.packages.${system}.targets.${rustTarget}.toolchainOf {
+					channel = rustChannel;
+					sha256 = rustManifestHash;
+				};
+			rustToolchainFor = system:
+				let
+					fenixPackages = fenix.packages.${system};
+					toolchain = rustManifestFor system;
+				in fenixPackages.combine [
+					toolchain.cargo
+					toolchain.clippy
+					toolchain.rust-src
+					toolchain.rust-std
+					toolchain.rustc
+					toolchain.rustfmt
+				];
 			luajitWithPackagesFor = pkgs: pkgs.luajit.withPackages (ps: with ps; [
 				# Enable only modules a project tool actually imports. Common choices:
 				# alt-getopt
@@ -41,6 +65,9 @@
 				let
 					fenixPackages = fenix.packages.${system};
 				in fenixPackages.combine [
+					# GPUI Web's wasm_thread dependency still uses the nightly-only
+					# stdarch_wasm_atomic_wait feature. Keep that adapter on the exact
+					# nightly pinned by flake.lock while native/cross builds use 1.97.
 					fenixPackages.minimal.cargo
 					fenixPackages.minimal.rustc
 					fenixPackages.complete.rust-src
@@ -55,9 +82,10 @@
 			nativeCrossToolchainFor = system: rustTarget:
 				let fenixPackages = fenix.packages.${system};
 				in fenixPackages.combine [
-					fenixPackages.minimal.cargo
-					fenixPackages.minimal.rustc
-					fenixPackages.targets.${rustTarget}.latest.rust-std
+					(rustManifestFor system).cargo
+					(rustManifestFor system).rustc
+					(rustManifestFor system).rust-std
+					(rustTargetManifestFor system rustTarget).rust-std
 				];
 			wasmBindgenArtifacts = {
 				x86_64-linux = {
@@ -211,7 +239,8 @@
 								|| pkgs.lib.hasPrefix "/tests/" relative
 								|| pkgs.lib.hasPrefix "/web/" relative;
 					};
-					nativeCrane = crane.mkLib pkgs;
+					nativeCrane = (crane.mkLib pkgs).overrideToolchain
+						(_: rustToolchainFor system);
 					cargoDependencySource = nativeCrane.mkDummySrc {
 						src = frontplaneSource;
 						# These two local compatibility crates are dependencies, not
@@ -228,7 +257,7 @@
 					rawApplicationCargoDeps = pkgs.rustPlatform.fetchCargoVendor {
 						name = "aedicule-cargo-deps";
 						src = cargoDependencySource;
-						hash = "sha256-o37NxvXlGwDoZAb5erQecCibvb1RybTX3ecy5vqd4EA=";
+						hash = "sha256-6aOytWjh4Lmwf9xCLhoFaPHxw2T5sQJpF8QQwmC697U=";
 					};
 					# fetchCargoVendor reorders source-identical gpui_macros entries
 					# from the upstream and patched repositories. Cargo accepts either
@@ -329,11 +358,16 @@
 					mkRawFrontplane = targetName: targetPkgs:
 						let
 							targetLinux = targetPkgs.stdenv.hostPlatform.isLinux;
-							targetLlvmWindows = targetPkgs.stdenv.hostPlatform.isWindows
-								&& (targetPkgs.stdenv.hostPlatform.useLLVM or false);
-							targetRustTarget = targetPkgs.stdenv.hostPlatform.rust.cargoShortTarget;
-							binaryName = "aedicule${targetPkgs.stdenv.hostPlatform.extensions.executable}";
-						in targetPkgs.rustPlatform.buildRustPackage {
+						targetLlvmWindows = targetPkgs.stdenv.hostPlatform.isWindows
+							&& (targetPkgs.stdenv.hostPlatform.useLLVM or false);
+						targetRustTarget = targetPkgs.stdenv.hostPlatform.rust.cargoShortTarget;
+						targetToolchain = nativeCrossToolchainFor system targetRustTarget;
+						targetRustPlatform = targetPkgs.makeRustPlatform {
+							cargo = targetToolchain;
+							rustc = targetToolchain;
+						};
+						binaryName = "aedicule${targetPkgs.stdenv.hostPlatform.extensions.executable}";
+					in targetRustPlatform.buildRustPackage {
 							pname = "aedicule-${targetName}";
 							inherit version;
 							src = frontplaneSource;
@@ -633,6 +667,7 @@
 								tests/cli/publish \
 								tests/cli/web_i18n tests/cli/github_pages \
 								tests/cli/ci_acceleration \
+								tests/cli/rust_toolchain_pin \
 								tests/cli/native_parallelism \
 								tests/cli/browser_test_partition \
 								tests/cli/browser_test_reminder \
@@ -656,6 +691,7 @@
 							./tests/cli/web_i18n
 							./tests/cli/github_pages
 							./tests/cli/ci_acceleration
+							./tests/cli/rust_toolchain_pin
 							# Daemon-dependent flake mutation and real package realization
 							# remain in the outer ./test gate; this sandbox runs pure checks.
 							./tests/cli/native_parallelism
@@ -864,12 +900,9 @@
 				let
 					pkgs = pkgsFor system;
 					webToolchain = webToolchainFor system;
+					rustToolchain = rustToolchainFor system;
 					luajitWithPackages = luajitWithPackagesFor pkgs;
-					developmentPackages = with pkgs; [
-						rustc
-						cargo
-						rustfmt
-						clippy
+					developmentPackages = [ rustToolchain ] ++ (with pkgs; [
 						pkg-config
 						cmake
 						clang
@@ -883,7 +916,7 @@
 						ripgrep
 						luajitWithPackages
 						openssl
-					] ++ pkgs.lib.optionals pkgs.stdenv.isLinux (linuxLibraries pkgs);
+					]) ++ pkgs.lib.optionals pkgs.stdenv.isLinux (linuxLibraries pkgs);
 					developmentEnvironment = {
 						packages = developmentPackages;
 						LD_LIBRARY_PATH = pkgs.lib.optionalString pkgs.stdenv.isLinux

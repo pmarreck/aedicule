@@ -47,9 +47,16 @@
     proved a 6.22 MiB gzip transfer, immutable headers, and continued no-store
     treatment for `bootstrap.js`; the complete `./test` suite passed.
     (2026-08-05 21:09 EDT)
-  - [ ] Rebuild and restart exact Tailscale staging, stress repeated fresh
-    startups after Mechatron releases local build pressure, then obtain Peter's
-    second iPhone acceptance pass.
+  - [x] Rebuild and restart exact Tailscale staging. The nested runtime now
+    serves compressed/immutable over Tailscale; a fresh real Chromium/WebGPU
+    run reached `wasm-initialized` at 1.02 seconds and `settled` at 2.19 seconds
+    with no controlling service worker. (2026-08-05 21:12 EDT)
+  - [x] Replace the session-owned staging process with the transient user
+    service `aedicule-staging.service`, configured to restart Caddy after
+    failure. Verified active continuously since 2026-08-07 16:54 EDT and the
+    Tailscale HTTPS endpoint returned 200 on 2026-08-10 16:39 EDT.
+  - [ ] Obtain Peter's second iPhone acceptance pass on the cached/compressed
+    delivery, recording the last visible stage and elapsed time if it pauses.
   - Curiosity poke: preserve secure-context and WebGPU checks, multi-tab
     startup serialization, diagnostics, and content-addressed runtime caching
     without retaining any accidental dependency on cross-origin isolation.
@@ -66,7 +73,57 @@
   sibling's newer uncommitted work. (2026-08-05 21:18 EDT.)
   - [ ] Supersede this clean interim pin when the Vibesteroids agent finishes
     its already-requested native `AE_action` Start/Resume conversion and sends
-    a new public commit/package pair.
+    a new public commit/package pair. The conversion is now green against
+    Aedicule v0.8 with standalone actions 8/9 and one retained native button,
+    but remains intentionally uncommitted pending Peter's live visual
+    approval. (Updated 2026-08-11 EDT.)
+    - [ ] Promote Vibesteroids' newest immutable source/package pair through
+      Aedicule's gallery and Tailscale staging page, verify the packaged tests
+      and browser startup first, then send Peter the exact iPhone test URL.
+      (Requested 2026-08-13 16:42 EDT.)
+- [ ] Fix the Aedicule-owned source-checkout launcher regression: `./run --web`
+  currently builds successfully and then exits because it cannot find a Web
+  runtime unless `AEDICULE_WEB_RUNTIME` is supplied. The source runner must
+  locate or produce the exact runtime from its own checkout without
+  guest-specific setup. Reproduce with the Vibesteroids command from the
+  2026-08-11 inbox note, add the failing launcher test first, and preserve
+  packaged-install discovery behavior.
+- [ ] Advance Spring Simulator to its layout-v3 and damping-fix release:
+  source commit `6e89c4a0d9993540c0f0577b16565c73dccf5438`, 41,009-byte
+  `spring_sim.aed`, SHA-256
+  `ce2b757e108737ca45fbc2a809d9444ea32327591c462511634fcbd502291ae3`.
+  Independently verify the immutable bytes, packaged WAST, headless viewport
+  renders, and real Chromium semantic controls before updating every gallery,
+  manifest, delivery, and release copy. (Queued 2026-08-10 16:40 EDT.)
+- [ ] Add RandomZ-compatible deterministic randomization to the WAT/AED ABI
+  after agreeing on the guest contract. Prefer `../random`'s new pure
+  `randomr` Rust crate as Aedicule's implementation if it passes an explicit
+  `wasm32-unknown-unknown` compile/runtime gate; it already passes the shared
+  LuaJIT/Zig pairwise oracle, mutation, cross-target, and `wasm32-wasip1`
+  controls. Retain those independent producers and frozen vectors as the
+  conformance authority rather than duplicating the algorithm again. Specify
+  algorithm/profile versioning, guest-owned serializable stream state, integer
+  fixed-point nonlinear distributions, bounded batch sampling, hot-reload
+  preservation, and a separate opt-in entropy capability. (Queued 2026-08-11
+  08:55 EDT; revised for the completed Rust port at 15:24 EDT; architecture
+  discussion first; implementation authorized 2026-08-13.)
+  - [x] Prove the pure `randomr` crate compiles unchanged for Aedicule's exact
+    `wasm32-unknown-unknown` target under its declared Rust 1.97 MSRV. Its 11
+    focused unit tests and doctest pass with default features disabled. It also
+    compiles under Aedicule's current Rust 1.96.1 when Cargo's version guard is
+    bypassed, isolating the remaining integration decision to declared
+    toolchain policy rather than source compatibility. (2026-08-11 15:27 EDT.)
+  - [x] Advance Aedicule's native, cross, and development Rust toolchain to
+    exact stable 1.97 and pin `randomr` at RandomZ commit
+    `346889f1762d421b15186a2b14f105639afef6a2`. GPUI Web retains the exact
+    nightly pinned by `flake.lock` because its `wasm_thread` dependency still
+    requires `stdarch_wasm_atomic_wait`. Frozen raw/nonlinear vectors, the
+    focused toolchain gate, `nix flake check --no-build`, the native Nix build,
+    and the complete `./test` suite pass. (2026-08-13 16:57 EDT.)
+  - Curiosity poke: a host-owned hidden stream would split from the guest's
+    snapshot on reload, while per-sample host imports may be too expensive for
+    particle-heavy clients; test state transactionality and batch cost before
+    freezing the ABI.
 - [ ] Land "option C": one `.aed` implementation for every adapter.
   - [x] `browser_application_from_package(bytes)` in `src/web.rs` expands a
     package to (WAT, assets) through the same validated Rust reader native
@@ -1139,6 +1196,20 @@
   - [ ] Preserve identity-bearing multi-touch from browser Pointer Events to
     WAT clients: event kinds 11/12/13/14 are start/move/end/cancel,
     `code = pointerId`, and `a,b = logical x,y`.
+    - [ ] Make delivery configure-time opt-in so legacy guests keep the
+      touch-to-primary-pointer compatibility path. The opt-in admits an
+      ordered, bounded active-contact stream, suppresses only compatibility
+      mouse echoes from those contacts, and retains concurrent real mouse,
+      trackpad, keyboard, wheel, hover, and motion input.
+    - [ ] Enforce active-ID uniqueness and deterministic terminal semantics:
+      IDs may be reused only after end/cancel; unknown moves/terminals and
+      duplicate starts cannot mutate another contact; focus loss, lost capture,
+      pointer cancellation, and teardown cannot strand a held contact.
+      Terminal edges carry the last admitted logical coordinate, and resize
+      ordering follows the existing device-change barrier.
+    - [ ] Define and enforce the host active-contact limit, retain ordered
+      delivery before fixed ticks, and make retained AVP controls occlude
+      contact starts exactly as they occlude gameplay pointer starts.
     - [ ] Add a versioned semantic input-capabilities event before the first
       render and whenever the set changes: keyboard, fine pointer, hover,
       wheel, touch, multi-touch, motion, and later gamepad—not OS/browser names
@@ -1149,6 +1220,10 @@
       opaque IDs remain distinct. (2026-07-20 21:18 EDT)
     - [ ] Prove those same phases and identities reach `AE_event` through core
       WAT tests and the rebuilt browser runtime.
+    - [ ] Add repeatable actual-binary touch-sequence arguments to
+      `aedicule-render` so downstream `.aed` projects can test simultaneous
+      IDs, interleaved movement, independent terminal edges, cancellation,
+      and ID reuse against an immutable Aedicule package.
     - [ ] Prevent GPUI Web's current mouse-compatibility conversion from
       duplicating each touch as primary-button input.
     - [ ] Hand the raw-contact contract to Vibesteroids so that guest—not
@@ -1160,6 +1235,10 @@
     - Curiosity poke: Chrome remapped the probe's requested touch IDs 41/42/43
       to pointer IDs 2/3/4; clients must treat IDs as opaque, page-local
       correlation tokens and never persist or interpret their numeric values.
+  - [ ] Separately extend host-owned suspension so a guest may classify a
+    dynamic contact region and request pause without encoding any demo zone in
+    Aedicule, while resume remains host-observable when ordinary guest ticks
+    are stopped. This must not delay the raw multi-contact stream.
   - [x] Add an independently runnable downstream Vibesteroids web smoke proof
     sourced from the exact `.aed`, including its declared FLAC asset and a real
     muted WebAudio request. (2026-07-22 22:43 EDT)

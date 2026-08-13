@@ -104,6 +104,7 @@ parallel_checks=(
 	./tests/cli/github_pages
 	./tests/cli/ci_acceleration
 	./tests/cli/rust_dependency_cache
+	./tests/cli/rust_toolchain_pin
 	./tests/cli/native_parallelism
 	./tests/cli/parallel_test_runner
 	./tests/cli/frontplane_tools
