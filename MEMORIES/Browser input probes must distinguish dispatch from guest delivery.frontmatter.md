@@ -14,3 +14,11 @@ Keep four layers explicit in browser-input diagnostics: CDP dispatch, DOM
 receipt, GPUI callback, and successful `AE_event` delivery. Default CI output
 should summarize counts; gate coordinate/button-level streams behind an
 explicit diagnostic switch such as `AEDICULE_BROWSER_TRACE_EVENTS=1`.
+
+Compose lifecycle boundaries in the same browser run. A transport probe can
+prove every raw touch phase reaches a gated guest, while a headless guest test
+can prove touch gameplay after an injected Start action, yet neither proves a
+physical touch can activate the real Start control, retire its occlusion, and
+then drive gameplay. The combined oracle must activate the platform control,
+wait for its accepted UI snapshot to disappear, deliver the raw contacts, and
+assert a guest-owned observable response rather than another transport count.

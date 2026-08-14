@@ -159,6 +159,7 @@ annotate=[
 	tests/integration/web_touch_activation = Browser gate: a coarse-pointer press that releases just outside an AVP control still activates once; far outside never
 	tests/integration/web_touch_bridge.mjs = Deterministic DOM-free unit tests for raw touch bridging, overflow, AVP occlusion, and compatibility suppression.
 	tests/integration/web_touch_contacts = Real Chromium raw-contact, AVP-touch, and pointer-leak integration gate
+	tests/integration/web_vibesteroids_touch = Real-browser Vibesteroids gate that composes touch Start with active-game multi-contact behavior.
 	tests/launch.rs = Launch resolution, file revision, fallback, and stable WAT rejection diagnostic tests.
 	tests/lib/browser_test_freshness.bash = Pure 48-hour/new-commit reminder classifier plus worktree-local browser-success marker helpers.
 	tests/lib/capture.bash = Project-local no-temp stdout/stderr/status capture helper for portable Bash tests

@@ -120,7 +120,19 @@
 					panel.textContent = [
 						`frames ${frames}  stalled ${stalledPolls}`,
 						`guest ${Math.round(runtime?.lastGuestElapsedMs ?? -1)}ms`,
-						`ctl ${delivered?.controls ?? -1}  ptr ${delivered?.pointer ?? -1}`,
+						`ctl ${delivered?.controls ?? -1}  ptr ${delivered?.pointer ?? -1}`
+							+ `  touch ${delivered?.touch ?? -1}`,
+						(() => {
+							const touch = globalThis.__AEDICULE_TOUCH_DIAGNOSTIC;
+							return `touch-max ${globalThis.__AEDICULE_TOUCH_MAX_CONTACTS ?? -1}`
+								+ ` raw ${touch?.rawActive ?? -1}`
+								+ ` occ ${touch?.occludedActive ?? -1}`
+								+ ` q ${touch?.queued ?? -1}\n`
+								+ `touch-enq ${touch?.enqueued ?? -1}`
+								+ ` dis ${touch?.ignoredDisabled ?? -1}`
+								+ ` occ-start ${touch?.occludedStarts ?? -1}`
+								+ ` last ${touch?.lastPhase ?? "-"}`;
+						})(),
 						`pd ${taps.pd} pu ${taps.pu} ts ${taps.ts} te ${taps.te} `
 							+ `md ${taps.md} mu ${taps.mu} ck ${taps.ck}`,
 						`down ${pressed.id}  up ${released}  drift ${drift}px`,

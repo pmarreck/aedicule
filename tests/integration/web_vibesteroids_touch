@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+# Composes the boundary that transport-only and headless guest tests miss:
+# activate Vibesteroids' Start action with a touch, then require active-game
+# multi-contact delivery and a guest-produced firing sound request.
+
+set -u
+
+if (( $# != 1 )); then
+	printf 'usage: web_vibesteroids_touch WEB_DELIVERY\n' >&2
+	exit 2
+fi
+
+delivery=$1
+root=$(cd "$(dirname "$0")/../.." && pwd -P)
+
+"$root/tests/integration/web_browser_startup" --timeout-ms 60000 \
+	--require-post-action-touch 8 \
+	--static-root "$delivery/vibesteroids"

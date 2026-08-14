@@ -28,8 +28,8 @@ const EXPECTED_STAGES = [
 	"settled",
 ];
 
-const HELP = `usage: web_browser_startup [--chrome PATH] [--timeout-ms N] [--require-audio-playback] [--require-key-delivery] [--require-controls] [--require-action ID] [--require-external-link] [--require-text-entry] [--require-touch-activation] [--require-touch-contacts] URL
-       web_browser_startup [--chrome PATH] [--timeout-ms N] [--require-audio-playback] [--require-key-delivery] [--require-controls] [--require-action ID] [--require-external-link] [--require-text-entry] [--require-touch-activation] [--require-touch-contacts] [--local-application PATH] --static-root PATH
+const HELP = `usage: web_browser_startup [--chrome PATH] [--timeout-ms N] [--require-audio-playback] [--require-key-delivery] [--require-controls] [--require-action ID] [--require-external-link] [--require-text-entry] [--require-touch-activation] [--require-touch-contacts] [--require-post-action-touch ID] URL
+       web_browser_startup [--chrome PATH] [--timeout-ms N] [--require-audio-playback] [--require-key-delivery] [--require-controls] [--require-action ID] [--require-external-link] [--require-text-entry] [--require-touch-activation] [--require-touch-contacts] [--require-post-action-touch ID] [--local-application PATH] --static-root PATH
 
 Launch a headless Chromium browser, stream Aedicule's structured startup
 timeline, and reject browser exceptions or a missing/1x1 GPUI canvas.
@@ -52,6 +52,9 @@ released just past a control edge still activates it, while one released far
 outside does not.
 --require-touch-contacts requires three opaque raw contacts, every terminal
 phase, guest-visible delivery, and no compatibility-pointer leakage.
+--require-post-action-touch ID activates the named AVP action with a touch,
+waits for its control to disappear, then requires active-game edge contacts to
+reach the guest without pointer leakage and produce an audio request.
 --local-application selects a .wat or .aed through the gallery and requires the
 generic origin-local runner to reach the same settled application state.
 
@@ -71,6 +74,7 @@ function parseArguments(arguments_) {
 	let requireKeyDelivery = false;
 	let requireTouchActivation = false;
 	let requireTouchContacts = false;
+	let requiredPostActionTouchId;
 	let localApplication;
 	let staticRoot;
 	let url;
@@ -132,6 +136,10 @@ function parseArguments(arguments_) {
 			requireTouchContacts = true;
 			continue;
 		}
+		if (argument === "--require-post-action-touch") {
+			requiredPostActionTouchId = Number(arguments_[index += 1]);
+			continue;
+		}
 		if (argument.startsWith("-")) {
 			throw new Error(`unknown option: ${argument}`);
 		}
@@ -149,6 +157,13 @@ function parseArguments(arguments_) {
 		|| requiredActionId > 0xffff_ffff
 	)) {
 		throw new Error("--require-action must be an unsigned 32-bit integer");
+	}
+	if (requiredPostActionTouchId !== undefined && (
+		!Number.isSafeInteger(requiredPostActionTouchId)
+		|| requiredPostActionTouchId < 0
+		|| requiredPostActionTouchId > 0xffff_ffff
+	)) {
+		throw new Error("--require-post-action-touch must be an unsigned 32-bit integer");
 	}
 	if ((url === undefined) === (staticRoot === undefined)) {
 		throw new Error("exactly one URL or --static-root PATH is required");
@@ -175,6 +190,7 @@ function parseArguments(arguments_) {
 		requireTextEntry,
 		requireTouchActivation,
 		requireTouchContacts,
+		requiredPostActionTouchId,
 		staticRoot,
 		timeoutMs,
 		url: url === undefined ? undefined : new URL(url).href,
@@ -941,6 +957,97 @@ async function dispatchDriftingTouch(protocol, bounds, drift) {
 	await protocol.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
 }
 
+async function waitForActionAbsence(protocol, actionId) {
+	const result = await protocol.send("Runtime.evaluate", {
+		expression: `(async () => {
+			for (let frame = 0; frame < 120; frame += 1) {
+				const buttons = globalThis.__AEDICULE_UI_SNAPSHOT?.buttons ?? [];
+				if (!buttons.some(button => button.actionId === ${actionId})) return true;
+				await new Promise(resolve => requestAnimationFrame(resolve));
+			}
+			return false;
+		})()`,
+		awaitPromise: true,
+		returnByValue: true,
+	});
+	return result.result.value === true;
+}
+
+async function waitForAudioRequestAfter(protocol, count) {
+	const result = await protocol.send("Runtime.evaluate", {
+		expression: `(async () => {
+			for (let frame = 0; frame < 120; frame += 1) {
+				if ((globalThis.__AEDICULE_AUDIO_REQUEST_COUNT ?? 0) > ${count}) return true;
+				await new Promise(resolve => requestAnimationFrame(resolve));
+			}
+			return false;
+		})()`,
+		awaitPromise: true,
+		returnByValue: true,
+	});
+	return result.result.value === true;
+}
+
+/**
+ * Composes the physical-phone boundary in one browser: a touch-owned AVP Start
+ * action must retire its occlusion before raw edge contacts can drive gameplay.
+ */
+async function exercisePostActionTouch(protocol, snapshot, actionId) {
+	const button = snapshot.ui?.buttons?.find(candidate => candidate.actionId === actionId);
+	if (button === undefined) {
+		return { actionId, buttonFound: false };
+	}
+	const beforeAction = snapshot.deliveredEventCounts;
+	await dispatchDriftingTouch(protocol, button, 0);
+	const actionDelivered = await waitForSemanticEvent(
+		protocol, "menuActions", beforeAction.menuActions,
+	);
+	const uiCleared = await waitForActionAbsence(protocol, actionId);
+	const active = await pageSnapshot(protocol);
+	const canvas = active.canvases[0];
+	if (canvas === undefined) {
+		return { actionId, actionDelivered, buttonFound: true, uiCleared, canvasFound: false };
+	}
+
+	const beforeTouch = active.deliveredEventCounts;
+	const beforeAudio = active.audioRequestCount;
+	const touchPoint = (id, x, y) => ({ id, x, y, radiusX: 8, radiusY: 8, force: 1 });
+	const leftX = Math.max(1, Math.floor(canvas.cssWidth * 0.1));
+	const rightX = Math.max(1, Math.floor(canvas.cssWidth * 0.9));
+	const startY = Math.max(100, Math.floor(canvas.cssHeight * 0.52));
+	await protocol.send("Input.dispatchTouchEvent", {
+		type: "touchStart",
+		touchPoints: [touchPoint(81, leftX, startY), touchPoint(82, rightX, startY)],
+	});
+	await protocol.send("Input.dispatchTouchEvent", {
+		type: "touchMove",
+		touchPoints: [touchPoint(81, leftX, startY - 96), touchPoint(82, rightX, startY + 96)],
+	});
+	const touchDelivered = await waitForSemanticCount(
+		protocol, "touch", (beforeTouch.touch ?? 0) + 4,
+	);
+	const audioResponded = await waitForAudioRequestAfter(protocol, beforeAudio);
+	await protocol.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+	const terminalDelivered = await waitForSemanticCount(
+		protocol, "touch", (beforeTouch.touch ?? 0) + 6,
+	);
+	const after = await pageSnapshot(protocol);
+	return {
+		actionId,
+		actionDelivered,
+		deliveredActionId: active.deliveredEventCounts.lastMenuActionId ?? null,
+		buttonFound: true,
+		canvasFound: true,
+		uiCleared,
+		touchDelivered,
+		terminalDelivered,
+		touchDelta: (after.deliveredEventCounts.touch ?? 0) - (beforeTouch.touch ?? 0),
+		pointerDelta: after.deliveredEventCounts.pointer - beforeTouch.pointer,
+		audioRequestDelta: after.audioRequestCount - beforeAudio,
+		audioResponded,
+	};
+}
+
 /**
  * Classifies control activation against release drift on a coarse pointer. A
  * release just past the declared edge must still activate, because a fingertip
@@ -1385,7 +1492,7 @@ async function inspect(options) {
 		await protocol.send("Page.addScriptToEvaluateOnNewDocument", {
 			source: inputObserverSource(verboseEvents, options.requireExternalLink),
 		});
-		if (options.requireTouchActivation) {
+		if (options.requireTouchActivation || options.requiredPostActionTouchId !== undefined) {
 			// Peter's device geometry, so the button under test is the same
 			// 70x36 rectangle the hardware lays out rather than a desktop one.
 			await protocol.send("Emulation.setDeviceMetricsOverride",
@@ -1398,8 +1505,22 @@ async function inspect(options) {
 			await selectLocalApplication(protocol, options.localApplication, options.timeoutMs);
 		}
 		await withTimeout(settled, options.timeoutMs, "Aedicule's settled startup stage");
-		const snapshot = await pageSnapshot(protocol);
+		let snapshot = await pageSnapshot(protocol);
 		process.stdout.write(`${JSON.stringify({ type: "snapshot", ...snapshot })}\n`);
+		const postActionTouchSummary = options.requiredPostActionTouchId === undefined
+			? undefined
+			: await exercisePostActionTouch(
+				protocol,
+				snapshot,
+				options.requiredPostActionTouchId,
+			);
+		if (postActionTouchSummary !== undefined) {
+			process.stdout.write(`${JSON.stringify({
+				type: "post-action-touch-summary",
+				...postActionTouchSummary,
+			})}\n`);
+			snapshot = await pageSnapshot(protocol);
+		}
 		const inputSummary = await synthesizeInput(
 			protocol,
 			snapshot,
@@ -1500,6 +1621,23 @@ async function inspect(options) {
 				`touch activation failed: ${JSON.stringify(touchActivationSummary)}`,
 			);
 		}
+		if (postActionTouchSummary !== undefined && (
+			!postActionTouchSummary.buttonFound
+			|| !postActionTouchSummary.canvasFound
+			|| !postActionTouchSummary.actionDelivered
+			|| postActionTouchSummary.deliveredActionId !== options.requiredPostActionTouchId
+			|| !postActionTouchSummary.uiCleared
+			|| !postActionTouchSummary.touchDelivered
+			|| !postActionTouchSummary.terminalDelivered
+			|| postActionTouchSummary.touchDelta !== 6
+			|| postActionTouchSummary.pointerDelta !== 0
+			|| !postActionTouchSummary.audioResponded
+			|| postActionTouchSummary.audioRequestDelta < 1
+		)) {
+			failures.push(
+				`post-action touch did not activate action ${options.requiredPostActionTouchId}, retire its UI, or drive isolated guest gameplay: ${JSON.stringify(postActionTouchSummary)}`,
+			);
+		}
 		// Every gate here loads without `?diag`, so the debugging overlay must be
 		// absent. Nothing else would notice it: it inherits the page's selection
 		// suppression and throws nothing, so it would ship invisibly to this gate.
@@ -1598,7 +1736,9 @@ async function inspect(options) {
 		if (missingMousePointer.length > 0) {
 			failures.push(`synthetic mouse-pointer input was not observed: ${missingMousePointer.map(([type]) => type).join(", ")}`);
 		}
-		if (missingTouch.length > 0 || inputSummary.touchContacts?.length !== 3) {
+		const expectedTouchContacts = postActionTouchSummary === undefined ? 3 : 6;
+		if (missingTouch.length > 0
+			|| inputSummary.touchContacts?.length !== expectedTouchContacts) {
 			failures.push("synthetic multi-touch identity/phases were not preserved at the DOM");
 		}
 		if (options.requireTouchContacts && (

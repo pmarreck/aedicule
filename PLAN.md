@@ -1,5 +1,40 @@
 # Plan
 
+- [ ] Reproduce the port-8911 Vibesteroids touch-controls regression from the
+  exact staged `1e04c70` package with a real-guest behavioral browser test.
+  The existing gate proves ordered touch delivery but not visible ship
+  response, so add an oracle over the guest's reaction to left/right stroke,
+  center thrust, and simultaneous fire before changing implementation. Compare
+  the previously accepted and current guest pins to assign ownership, then
+  atomically restage and obtain Peter's iPhone acceptance before public Pages
+  promotion. Peter reproduced in a different browser, ruling out stale cache;
+  the guest diff changes only gift rendering and Help layout, so compare the
+  last iPhone-accepted host runtime against the current bridge first. A new
+  combined real-Chromium gate now touch-activates Start action 8, proves that
+  its UI/occlusion retires, delivers six edge-contact phases with zero pointer
+  leakage, and observes a guest firing-audio request; it passes against both
+  live staging and the rebuilt delivery. The physical failure is therefore
+  iOS/WebKit-specific until phone evidence says otherwise. A `?diag` staging
+  build now exposes the negotiated limit plus raw, occluded, queued, disabled,
+  enqueued, last-phase, and guest-delivery counters for that classification.
+  Curiosity poke: distinguish a retained native-UI panel occluding the whole
+  canvas from a bridge never enabled, a Rust drain stall, viewport coordinate
+  drift, and guest pause state.
+  (Reported 2026-08-14 16:33 EDT; cache ruled out 16:38 EDT;
+  release-blocking.)
+- [x] Audit every Aedicule change made after the guest-owned gift-circle crash
+  report. Commit `a9da8e0` changes only the rejected error class for unsupported
+  flags from the false `InvalidNumber("circle")/-5` to the precise fail-closed
+  `InvalidFrame("unsupported circle flags")/-8`, adds a regression using the
+  exact bad packed color, and corrects the single-source ABI description plus
+  its generated copies. Valid geometry and guest containment are unchanged.
+  Commit `6cb4693` promotes the independently proven corrected guest/package
+  and immutable provenance oracle. The complete runtime touch diff from the
+  pre-report `a7a9ca1` through `6cb4693` is empty. Both commits are worth
+  retaining and neither can cause the physical touch regression. The guest now
+  further makes raw flag calls unreachable behind semantic fill/outline
+  wrappers; adding host imports is deferred unless another guest reproduces
+  the WAT arity hazard. (Completed 2026-08-14 16:46 EDT.)
 - [ ] TDD the physical iPhone shake path from browser user activation through
   `DeviceMotionEvent.requestPermission`, bounded sample capture,
   `ShakeDetector`, and guest kind-16/code-1 delivery. Add phone-visible
