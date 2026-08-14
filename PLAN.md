@@ -1284,6 +1284,15 @@
       edges; a deliberate reorder remains red. The exact staged Vibesteroids
       guest changed deterministic SVG output only after action/touch/tick
       ordering was corrected.)
+    - [x] Restore the Nix CI test runtime closure exposed by touch-savepoint
+      shipment `5f68591`. The exact Mechatron commit passed six-platform
+      `release-all`, then all native and touch tests passed before all five
+      `gui_cli` cases exited 127 because `libxcb.so.1` was absent from the
+      check process runtime path. The direct Nix check reproduced the same
+      failure. Add the existing Linux GUI library set to the test derivation's
+      `LD_LIBRARY_PATH` and rerun the exact check. The corrected direct Nix
+      check passed all five GUI CLI cases and its complete check phase.
+      (Completed 2026-08-14 11:40 EDT.)
     - [x] Prevent GPUI Web's current mouse-compatibility conversion from
       duplicating each touch as primary-button input.
       (2026-08-13 18:41 EDT: phase-and-coordinate markers survive GPUI's queue

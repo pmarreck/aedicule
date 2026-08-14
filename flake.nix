@@ -659,6 +659,8 @@
 							</fontconfig>
 						'';
 						buildInputs = pkgs.lib.optionals linux (linuxLibraries pkgs);
+						LD_LIBRARY_PATH = pkgs.lib.optionalString linux
+							(pkgs.lib.makeLibraryPath (linuxLibraries pkgs));
 						checkPhase = ''
 							runHook preCheck
 							patchShebangs tests/cli/development_dependencies tests/cli/repository_boundary \
