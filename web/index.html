@@ -127,7 +127,7 @@
 							return `touch-max ${globalThis.__AEDICULE_TOUCH_MAX_CONTACTS ?? -1}`
 								+ ` raw ${touch?.rawActive ?? -1}`
 								+ ` occ ${touch?.occludedActive ?? -1}`
-								+ ` q ${touch?.queued ?? -1}\n`
+								+ ` q ${globalThis.__AEDICULE_TOUCH_EVENTS?.length ?? -1}\n`
 								+ `touch-enq ${touch?.enqueued ?? -1}`
 								+ ` dis ${touch?.ignoredDisabled ?? -1}`
 								+ ` occ-start ${touch?.occludedStarts ?? -1}`

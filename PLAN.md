@@ -22,6 +22,15 @@
   drift, and guest pause state.
   (Reported 2026-08-14 16:33 EDT; cache ruled out 16:38 EDT;
   release-blocking.)
+- [ ] Narrow the Nix source closures for `webRuntime` and `delivery-web` so a
+  browser-test-only or HTML-only edit does not rebuild unrelated Rust/Wasm and
+  native frontplane artifacts. Preserve reproducibility by classifying the
+  exact runtime inputs rather than excluding filenames ad hoc, and add
+  mutation controls proving a runtime source change invalidates the derivation
+  while test-only and native-only changes do not. Curiosity poke: the delivery
+  still embeds packages produced by the native CLI, so separate the package
+  writer dependency from the browser runtime before claiming full decoupling.
+  (Observed during touch-diagnostic rebuild, 2026-08-14 16:55 EDT.)
 - [x] Audit every Aedicule change made after the guest-owned gift-circle crash
   report. Commit `a9da8e0` changes only the rejected error class for unsupported
   flags from the false `InvalidNumber("circle")/-5` to the precise fail-closed
