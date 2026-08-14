@@ -66,6 +66,7 @@ annotate=[
 	home/pmarreck/Code/ulam-flower-wat/README.md = Run instructions and WAT guest ownership for the demo.
 	home/pmarreck/Code/ulam-flower-wat/code.wat = WAT guest: animated pointer-reactive radial flower.
 	home/pmarreck/Code/ulam-flower-wat/test = Deterministic guest SVG render regression test.
+	inbox/processed/2026-08-14-from-vibesteroids_wat-mobile-refinements-green.md = Authoritative green source/package pin and evidence for six mobile refinements
 	packaging/linux/aedicule-launcher.in = Relocatable Linux launcher that selects bundled loader, libraries, and platform data.
 	packaging/linux/aedicule.desktop = Linux desktop launcher and WAT MIME association metadata.
 	packaging/linux/org.webassembly.wat.xml = Linux shared-mime-info declaration for .wat documents.

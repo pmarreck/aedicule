@@ -71,16 +71,29 @@
   gate pass through current Aedicule. This publishes the seeded star field,
   Start Game gate, and viewport-edge projectile lifetime while preserving the
   sibling's newer uncommitted work. (2026-08-05 21:18 EDT.)
-  - [ ] Supersede this clean interim pin when the Vibesteroids agent finishes
+  - [x] Supersede this clean interim pin when the Vibesteroids agent finishes
     its already-requested native `AE_action` Start/Resume conversion and sends
-    a new public commit/package pair. The conversion is now green against
-    Aedicule v0.8 with standalone actions 8/9 and one retained native button,
-    but remains intentionally uncommitted pending Peter's live visual
-    approval. (Updated 2026-08-11 EDT.)
-    - [ ] Promote Vibesteroids' newest immutable source/package pair through
+    a new public commit/package pair. Commit
+    `e8efd62d0a15eafae7c43d0ed745e6c3b4781cd8` includes the native actions,
+    raw multi-touch, phone-aware help, shake-triggered Death Blossom, shorter
+    gift intervals, parcel bow, and predictive UFO/Voyager spawn safety. The
+    guest's complete suite, optimized package, actual Aedicule touch timeline,
+    and exact-commit Mechatron Prime CI are green. Peter's visual acceptance of
+    the bow and Start/Resume buttons remains open. (Completed 2026-08-14 14:32
+    EDT.)
+    - [x] Promote Vibesteroids' newest immutable source/package pair through
       Aedicule's gallery and Tailscale staging page, verify the packaged tests
       and browser startup first, then send Peter the exact iPhone test URL.
-      (Requested 2026-08-13 16:42 EDT.)
+      Pinned the 214,133-byte WAT at SHA-256 `9af66843...ac4` and the
+      139,054-byte `.aed` at SHA-256 `c7faceb9...bf23`; the provenance test was
+      observed red against the former pair, then green. The package's
+      `tests/main.wast` passed through current Aedicule. Fresh Chromium/WebGPU
+      reached every startup stage through `settled` in 2.84 seconds and
+      observed all eight synthetic raw-touch deliveries with no pointer leak.
+      The Tailscale staging root was replaced atomically with rollback retained;
+      both served hashes match and
+      `https://thelio-nixos.tail66c90.ts.net:8911/vibesteroids/` returns 200.
+      (Completed 2026-08-14 14:32 EDT.)
       - [x] Provisional phone acceptance is live from the sibling's current
         dirty candidate while its immutable pin is pending. Packaged WAST is
         green; the live `.aed` SHA-256 is
