@@ -926,7 +926,7 @@ Draws a uniquely identified line.
 (func $AE_circle (param id i32) (param x f32) (param y f32) (param radius f32) (param width f32) (param rgba i32) (param flags i32) (result i32))
 ```
 
-Draws a uniquely identified circle; `flags & 1` fills it.
+Draws a uniquely identified circle; `flags = 0` outlines it and `flags = 1` fills it, while every other flag value is rejected.
 
 ##### `AE_text`
 

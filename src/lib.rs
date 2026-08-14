@@ -5259,11 +5259,15 @@ fn bind_host_functions(linker: &mut Linker<HostState>) -> Result<(), FrontplaneE
                 if !bounded_finite(&[x, y, radius, width], max_abs)
                     || radius < 0.0
                     || width < 0.0
-                    || flags & !1 != 0
                 {
                     return caller
                         .data_mut()
                         .reject(PendingError::InvalidNumber("circle"), -5);
+                }
+                if flags & !1 != 0 {
+                    return caller
+                        .data_mut()
+                        .reject(PendingError::InvalidFrame("unsupported circle flags"), -8);
                 }
                 push_command(
                     caller.data_mut(),

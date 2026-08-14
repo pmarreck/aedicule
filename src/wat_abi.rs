@@ -276,7 +276,7 @@ pub const WAT_ABI_IMPORTS: &[WatAbiImport] = &[
     WatAbiImport {
         name: "AE_circle",
         signature: "(param id i32) (param x f32) (param y f32) (param radius f32) (param width f32) (param rgba i32) (param flags i32) (result i32)",
-        summary: "Draws a uniquely identified circle; `flags & 1` fills it.",
+        summary: "Draws a uniquely identified circle; `flags = 0` outlines it and `flags = 1` fills it, while every other flag value is rejected.",
     },
     WatAbiImport {
         name: "AE_text",

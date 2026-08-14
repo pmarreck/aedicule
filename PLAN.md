@@ -1,5 +1,27 @@
 # Plan
 
+- [ ] TDD the physical iPhone shake path from browser user activation through
+  `DeviceMotionEvent.requestPermission`, bounded sample capture,
+  `ShakeDetector`, and guest kind-16/code-1 delivery. Add phone-visible
+  diagnostics that distinguish absent/late interest, unavailable or insecure
+  API, permission granted/denied/exception, zero samples, below-threshold
+  samples, and emitted gestures; add a browser integration test covering the
+  permission callback and synthetic motion sequence. Guest action eligibility
+  remains Vibesteroids-owned. Curiosity poke: iOS may require permission from
+  the completed Start tap rather than its initial pointer edge, and gravity
+  inclusion changes the meaningful threshold. (Queued from Vibesteroids
+  2026-08-14 16:10 EDT; follows the active gift-bow crash promotion.)
+- [ ] Reproduce the iPhone Vibesteroids freeze reported as `invalid or
+  non-finite number in circle`. Peter subsequently observed a repeatable rough
+  delay and suspects ship, satellite, or gift spawn, possibly the newly drawn
+  bow; treat edge-stroke rotation as a secondary correlation. Determine
+  whether Aedicule emitted invalid data or the guest produced invalid
+  geometry, preserve strict render validation, add deterministic seeded
+  regressions isolating each spawn/bow path on the owning side, and promote the
+  green fix to Tailscale staging and public web. Curiosity poke: also cover
+  interrupted/cancelled strokes, zero-size viewports, simultaneous contacts,
+  extreme deltas, and the exact first-spawn boundary so coincidence cannot
+  choose the owner. (Queued 2026-08-14 15:59 EDT; refined 16:03 EDT.)
 - [x] Repair the fresh-runner Cargo vendor fixed-output hash exposed by GitHub
   Actions after the Rust 1.97 migration. Exact push `c075d1e` independently
   reported `sha256-6CdssA6EJpAFe1HMceLDJCwT9a82+O9x0nZ3g18E2Hg=` in all six

@@ -98,6 +98,29 @@ fn non_finite_drawing_values_fail_closed() {
 }
 
 #[test]
+fn circle_flags_fail_closed_with_a_specific_diagnostic() {
+    let imports = r#"
+        (import "aedicule.v0" "AE_frame_begin" (func $begin (param f32 f32 f32 f32) (result i32)))
+        (import "aedicule.v0" "AE_circle" (func $circle (param i32 f32 f32 f32 f32 i32 i32) (result i32)))
+        (import "aedicule.v0" "AE_frame_end" (func $end (result i32)))
+    "#;
+    let render = r#"
+        f32.const 0 f32.const 0 f32.const 0 f32.const 1 call $begin drop
+        i32.const 915 f32.const 320 f32.const 240 f32.const 3 f32.const 1
+        i32.const 0xffcf5cff i32.const 0x5ee7ffff call $circle drop
+        call $end drop
+        i32.const 0
+    "#;
+    let source = host_module(imports, "", "i32.const 0", "i32.const 0", render);
+    let mut frontplane = Frontplane::from_wat(&source, Limits::default()).unwrap();
+
+    assert!(matches!(
+        frontplane.render(),
+        Err(FrontplaneError::InvalidFrame("unsupported circle flags"))
+    ));
+}
+
+#[test]
 fn finite_but_pathological_coordinates_fail_closed() {
     let imports = r#"
         (import "aedicule.v0" "AE_frame_begin" (func $begin (param f32 f32 f32 f32) (result i32)))
