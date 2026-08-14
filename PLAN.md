@@ -11,17 +11,25 @@
   the completed Start tap rather than its initial pointer edge, and gravity
   inclusion changes the meaningful threshold. (Queued from Vibesteroids
   2026-08-14 16:10 EDT; follows the active gift-bow crash promotion.)
-- [ ] Reproduce the iPhone Vibesteroids freeze reported as `invalid or
-  non-finite number in circle`. Peter subsequently observed a repeatable rough
-  delay and suspects ship, satellite, or gift spawn, possibly the newly drawn
-  bow; treat edge-stroke rotation as a secondary correlation. Determine
-  whether Aedicule emitted invalid data or the guest produced invalid
-  geometry, preserve strict render validation, add deterministic seeded
-  regressions isolating each spawn/bow path on the owning side, and promote the
-  green fix to Tailscale staging and public web. Curiosity poke: also cover
-  interrupted/cancelled strokes, zero-size viewports, simultaneous contacts,
-  extreme deltas, and the exact first-spawn boundary so coincidence cannot
-  choose the owner. (Queued 2026-08-14 15:59 EDT; refined 16:03 EDT.)
+- [x] Reproduce and repair the delayed iPhone Vibesteroids freeze. Peter's
+  repeatable-spawn timing and bow suspicion redirected diagnosis from touch
+  handling to the gift render. Gift circle ID 915 passed packed cyan color
+  `0x5ee7ffff` as `AE_circle` flags; the real ABI accepts only outline `0` or
+  fill `1`, so the first active gift frame stopped the guest. Vibesteroids
+  forced that frame RED, fixed the argument, tightened its fake host, and
+  passed its full WAST/actual-Aedicule suite and Mechatron CI at clean commit
+  `1e04c701dcb2709c4441d987fc0fbecaf11333dd`. Aedicule independently rejected
+  one stale package, then proved exact inner-source provenance for WAT SHA-256
+  `5043234c1c97b4fe27c926e13453f2d24cba5c65475d0145f68d28a1633fb906`
+  and AED SHA-256
+  `37b14181f2731f8728c862c719ebc152044c2c44001d705f1b675b7d39b9e77b`.
+  Its package WAST and real Chromium/WebGPU startup/input gate pass. The exact
+  artifacts are live through Tailscale staging. Host commit `a9da8e0` also
+  distinguishes unsupported circle flags from non-finite geometry so a future
+  violation names the contract it broke. Touch was incidental; the existing
+  interrupted/multi-contact controls remain green. Peter's live gift replay
+  and public Pages promotion remain release acceptance, not bug ownership.
+  (Completed 2026-08-14 16:28 EDT.)
 - [x] Repair the fresh-runner Cargo vendor fixed-output hash exposed by GitHub
   Actions after the Rust 1.97 migration. Exact push `c075d1e` independently
   reported `sha256-6CdssA6EJpAFe1HMceLDJCwT9a82+O9x0nZ3g18E2Hg=` in all six

@@ -3,7 +3,7 @@
 set -u
 
 root=$(cd "$(dirname "$0")/../.." && pwd -P)
-expected=$'slug\tfile\tsource\tcommit\tsha256\nulam-flower\tulam-flower.wat\thttps://github.com/pmarreck/ulam-flower-wat\t30cc41b4fa6e12b2b691d8eecc9ef490d252d937\t21952a212febf96d102be1ab31424641a7db4fa4255688f19dc55dadae5d0dd7\nvibesteroids\tvibesteroids.wat\thttps://github.com/pmarreck/vibesteroids_wat\te8efd62d0a15eafae7c43d0ed745e6c3b4781cd8\t9af668430386705550db63a5d9f8a7b91bbc11c82aafb481374dcddd14858ac4\nvibesteroids-package\tvibesteroids.aed\thttps://github.com/pmarreck/vibesteroids_wat\te8efd62d0a15eafae7c43d0ed745e6c3b4781cd8\tc7faceb98120cb32e4cfc8f46e6d9a104c5e441ac3979c646e4efada0e5cbf23\nspring-sim\tspring_sim.aed\thttps://github.com/pmarreck/spring_sim_aed\t6e89c4a0d9993540c0f0577b16565c73dccf5438\tce2b757e108737ca45fbc2a809d9444ea32327591c462511634fcbd502291ae3'
+expected=$'slug\tfile\tsource\tcommit\tsha256\nulam-flower\tulam-flower.wat\thttps://github.com/pmarreck/ulam-flower-wat\t30cc41b4fa6e12b2b691d8eecc9ef490d252d937\t21952a212febf96d102be1ab31424641a7db4fa4255688f19dc55dadae5d0dd7\nvibesteroids\tvibesteroids.wat\thttps://github.com/pmarreck/vibesteroids_wat\t1e04c701dcb2709c4441d987fc0fbecaf11333dd\t5043234c1c97b4fe27c926e13453f2d24cba5c65475d0145f68d28a1633fb906\nvibesteroids-package\tvibesteroids.aed\thttps://github.com/pmarreck/vibesteroids_wat\t1e04c701dcb2709c4441d987fc0fbecaf11333dd\t37b14181f2731f8728c862c719ebc152044c2c44001d705f1b675b7d39b9e77b\nspring-sim\tspring_sim.aed\thttps://github.com/pmarreck/spring_sim_aed\t6e89c4a0d9993540c0f0577b16565c73dccf5438\tce2b757e108737ca45fbc2a809d9444ea32327591c462511634fcbd502291ae3'
 failures=0
 
 if [[ ! -f "$root/demos/manifest.tsv" ]]; then

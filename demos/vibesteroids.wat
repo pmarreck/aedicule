@@ -3240,7 +3240,7 @@
 			local.get $x i64.const 2000000 i64.add call $to_host local.get $y i64.const 12000000 i64.sub call $to_host call $path_line drop
 			call $path_close drop f32.const 1.5 i32.const 0xffcf5cff i32.const 0x5ee7ffff i32.const 0 call $path_end drop
 			i32.const 915 local.get $x call $to_host local.get $y i64.const 12000000 i64.sub call $to_host
-			f32.const 3 f32.const 1 i32.const 0xffcf5cff i32.const 0x5ee7ffff call $circle drop)))
+			f32.const 3 f32.const 1 i32.const 0xffcf5cff i32.const 1 call $circle drop)))
 
 	;; Renders a brief cyan-white afterimage from the exact finite segment used
 	;; for collision resolution, making the no-wrap boundary visually explicit.
@@ -3330,6 +3330,47 @@
 	(func $help_y (param $reference i64) (result f32)
 		local.get $reference call $help_fixed_y call $to_host)
 
+	;; Below 720 logical pixels, two complete input/action sections no longer fit
+	;; legibly side by side. The narrow layout reuses one grid and stacks the
+	;; active Pointer/Touch section after Keyboard.
+	(func $help_stacked_mode (result i32)
+		global.get $state_width_address i64.load i64.const 720000000 i64.lt_s
+		global.get $state_height_address i64.load
+		global.get $state_width_address i64.load i64.gt_s i32.and)
+
+	(func $help_keyboard_header_y (result f32)
+		call $help_stacked_mode
+		(if (result i64) (then i64.const 180) (else i64.const 190))
+		call $help_y)
+
+	(func $help_keyboard_row_y (param $index i64) (result f32)
+		call $help_stacked_mode
+		(if (result i64)
+			(then i64.const 220 local.get $index i64.const 28 i64.mul i64.add)
+			(else i64.const 230 local.get $index i64.const 36 i64.mul i64.add))
+		call $help_y)
+
+	(func $help_second_header_y (result f32)
+		call $help_stacked_mode
+		(if (result i64) (then i64.const 480) (else i64.const 190))
+		call $help_y)
+
+	(func $help_second_row_y (param $index i64) (result f32)
+		call $help_stacked_mode
+		(if (result i64)
+			(then i64.const 514 local.get $index i64.const 34 i64.mul i64.add)
+			(else i64.const 230 local.get $index i64.const 36 i64.mul i64.add))
+		call $help_y)
+
+	(func $help_feature_reference (param $reference i64) (result i64)
+		call $help_stacked_mode
+		(if (result i64)
+			(then local.get $reference i64.const 70 i64.add)
+			(else local.get $reference)))
+
+	(func $help_feature_y (param $reference i64) (result f32)
+		local.get $reference call $help_feature_reference call $help_y)
+
 	;; Game Over owns the viewport centre, so its Start button moves down by 96
 	;; logical pixels. Start-at-boot and Resume use the centre directly.
 	(func $gate_button_center_y (result i64)
@@ -3338,91 +3379,106 @@
 			(then global.get $state_height_address i64.load i64.const 2 i64.div_s i64.const 96000000 i64.add)
 			(else global.get $state_height_address i64.load i64.const 2 i64.div_s)))
 
-	;; Draws the approved two-column Help panel after the world. Its second column
-	;; describes the active touch grammar after coarse-device or raw-contact
-	;; evidence; ordinary fine-only desktop keeps the pointer grammar.
+	;; Draws Help after the world, stacking its control groups on narrow portrait
+	;; screens while retaining the approved columns elsewhere. Coarse-device or
+	;; raw-contact evidence selects touch copy; fine-only desktop keeps pointer copy.
 	(func $draw_help_overlay
 		(local $center i64) (local $keyboard_input i64) (local $keyboard_action i64)
 		(local $pointer_input i64) (local $pointer_action i64)
-		(local $far_x i64) (local $bottom f32)
+		(local $near_x i64) (local $far_x i64) (local $bottom f32)
+		(local $row_size f32)
 		global.get $state_width_address i64.load i64.const 2 i64.div_s local.set $center
-		global.get $state_width_address i64.load i64.const 98 i64.mul i64.const 1024 i64.div_u local.set $keyboard_input
-		global.get $state_width_address i64.load i64.const 285 i64.mul i64.const 1024 i64.div_u local.set $keyboard_action
-		global.get $state_width_address i64.load i64.const 470 i64.mul i64.const 1024 i64.div_u local.set $pointer_input
-		global.get $state_width_address i64.load i64.const 610 i64.mul i64.const 1024 i64.div_u local.set $pointer_action
-		local.get $pointer_action local.get $pointer_input i64.const 130000000 i64.add i64.lt_s
-		(if (then local.get $pointer_input i64.const 130000000 i64.add local.set $pointer_action))
-		global.get $state_width_address i64.load i64.const 40000000 i64.sub local.set $far_x
+		call $help_stacked_mode
+		(if
+			(then
+				i64.const 24000000 local.set $near_x
+				local.get $near_x i64.const 20000000 i64.add local.set $keyboard_input
+				global.get $state_width_address i64.load i64.const 52 i64.mul
+				i64.const 100 i64.div_u local.set $keyboard_action
+				local.get $keyboard_input local.set $pointer_input
+				local.get $keyboard_action local.set $pointer_action
+				f32.const 15 local.set $row_size)
+			(else
+				i64.const 40000000 local.set $near_x
+				global.get $state_width_address i64.load i64.const 98 i64.mul i64.const 1024 i64.div_u local.set $keyboard_input
+				global.get $state_width_address i64.load i64.const 285 i64.mul i64.const 1024 i64.div_u local.set $keyboard_action
+				global.get $state_width_address i64.load i64.const 470 i64.mul i64.const 1024 i64.div_u local.set $pointer_input
+				global.get $state_width_address i64.load i64.const 610 i64.mul i64.const 1024 i64.div_u local.set $pointer_action
+				local.get $pointer_action local.get $pointer_input i64.const 130000000 i64.add i64.lt_s
+				(if (then local.get $pointer_input i64.const 130000000 i64.add local.set $pointer_action))
+				f32.const 17 local.set $row_size))
+		global.get $state_width_address i64.load local.get $near_x i64.sub local.set $far_x
 		;; Size the panel from its last content baseline, not the viewport edge:
 		;; this removes dead space on tall windows and carries the same 32px
 		;; content padding through the compact layout used by short windows.
-		i64.const 636 call $help_fixed_y i64.const 32000000 i64.add call $to_host
+		i64.const 636 call $help_feature_reference call $help_fixed_y
+		i64.const 32000000 i64.add call $to_host
 		local.set $bottom
 		i32.const 2009 call $path_begin drop
-		f32.const 40 f32.const 62 call $path_move drop
+		local.get $near_x call $to_host f32.const 62 call $path_move drop
 		local.get $far_x call $to_host f32.const 62 call $path_line drop
 		local.get $far_x call $to_host local.get $bottom call $path_line drop
-		f32.const 40 local.get $bottom call $path_line drop
+		local.get $near_x call $to_host local.get $bottom call $path_line drop
 		call $path_close drop f32.const 0 i32.const 0x081021f5 i32.const 0 i32.const 0 call $path_end drop
-		i32.const 2010 f32.const 40 f32.const 62 local.get $far_x call $to_host f32.const 62 f32.const 2 i32.const 0x5ee7ffff call $line drop
+		i32.const 2010 local.get $near_x call $to_host f32.const 62 local.get $far_x call $to_host f32.const 62 f32.const 2 i32.const 0x5ee7ffff call $line drop
 		i32.const 2011 local.get $far_x call $to_host f32.const 62 local.get $far_x call $to_host local.get $bottom f32.const 2 i32.const 0x5ee7ffff call $line drop
-		i32.const 2012 local.get $far_x call $to_host local.get $bottom f32.const 40 local.get $bottom f32.const 2 i32.const 0x5ee7ffff call $line drop
-		i32.const 2013 f32.const 40 local.get $bottom f32.const 40 f32.const 62 f32.const 2 i32.const 0x5ee7ffff call $line drop
-		i32.const 2014 f32.const 88 i64.const 150 call $help_y global.get $state_width_address i64.load i64.const 88000000 i64.sub call $to_host i64.const 150 call $help_y f32.const 1 i32.const 0x31536bff call $line drop
+		i32.const 2012 local.get $far_x call $to_host local.get $bottom local.get $near_x call $to_host local.get $bottom f32.const 2 i32.const 0x5ee7ffff call $line drop
+		i32.const 2013 local.get $near_x call $to_host local.get $bottom local.get $near_x call $to_host f32.const 62 f32.const 2 i32.const 0x5ee7ffff call $line drop
+		i32.const 2014 local.get $near_x i64.const 48000000 i64.add call $to_host i64.const 150 call $help_y global.get $state_width_address i64.load local.get $near_x i64.const 48000000 i64.add i64.sub call $to_host i64.const 150 call $help_y f32.const 1 i32.const 0x31536bff call $line drop
 		i32.const 40 i32.const 224 i32.const 8 local.get $center call $to_host i64.const 125 call $help_y f32.const 36 i32.const 0x5ee7ffff i32.const 1 call $text drop
-		i32.const 54 i32.const 560 i32.const 8 local.get $keyboard_input call $to_host i64.const 190 call $help_y f32.const 18 i32.const 0xffcf5cff i32.const 0 call $text drop
+		i32.const 54 i32.const 560 i32.const 8 local.get $keyboard_input call $to_host call $help_keyboard_header_y f32.const 18 i32.const 0xffcf5cff i32.const 0 call $text drop
 		call $touch_help_mode
 		(if
-			(then i32.const 55 i32.const 768 i32.const 5 local.get $pointer_input call $to_host i64.const 190 call $help_y f32.const 18 i32.const 0xffcf5cff i32.const 0 call $text drop)
-			(else i32.const 55 i32.const 568 i32.const 7 local.get $pointer_input call $to_host i64.const 190 call $help_y f32.const 18 i32.const 0xffcf5cff i32.const 0 call $text drop))
-		i32.const 41 i32.const 240 i32.const 14 local.get $keyboard_input call $to_host i64.const 230 call $help_y f32.const 17 i32.const 0xffffffff i32.const 0 call $text drop
-		i32.const 62 i32.const 255 i32.const 6 local.get $keyboard_action call $to_host i64.const 230 call $help_y f32.const 17 i32.const 0x9bb8d1ff i32.const 0 call $text drop
-		i32.const 42 i32.const 264 i32.const 4 local.get $keyboard_input call $to_host i64.const 266 call $help_y f32.const 17 i32.const 0xffffffff i32.const 0 call $text drop
-		i32.const 63 i32.const 279 i32.const 6 local.get $keyboard_action call $to_host i64.const 266 call $help_y f32.const 17 i32.const 0x9bb8d1ff i32.const 0 call $text drop
-		i32.const 43 i32.const 288 i32.const 5 local.get $keyboard_input call $to_host i64.const 302 call $help_y f32.const 17 i32.const 0xffffffff i32.const 0 call $text drop
-		i32.const 64 i32.const 303 i32.const 4 local.get $keyboard_action call $to_host i64.const 302 call $help_y f32.const 17 i32.const 0x9bb8d1ff i32.const 0 call $text drop
-		i32.const 44 i32.const 312 i32.const 1 local.get $keyboard_input call $to_host i64.const 338 call $help_y f32.const 17 i32.const 0xffffffff i32.const 0 call $text drop
-		i32.const 65 i32.const 327 i32.const 9 local.get $keyboard_action call $to_host i64.const 338 call $help_y f32.const 17 i32.const 0x9bb8d1ff i32.const 0 call $text drop
-		i32.const 45 i32.const 340 i32.const 1 local.get $keyboard_input call $to_host i64.const 374 call $help_y f32.const 17 i32.const 0xffffffff i32.const 0 call $text drop
-		i32.const 66 i32.const 355 i32.const 8 local.get $keyboard_action call $to_host i64.const 374 call $help_y f32.const 17 i32.const 0x9bb8d1ff i32.const 0 call $text drop
-		i32.const 46 i32.const 368 i32.const 1 local.get $keyboard_input call $to_host i64.const 410 call $help_y f32.const 17 i32.const 0xffffffff i32.const 0 call $text drop
-		i32.const 67 i32.const 383 i32.const 13 local.get $keyboard_action call $to_host i64.const 410 call $help_y f32.const 17 i32.const 0x9bb8d1ff i32.const 0 call $text drop
-		i32.const 47 i32.const 400 i32.const 7 local.get $keyboard_input call $to_host i64.const 446 call $help_y f32.const 17 i32.const 0xffffffff i32.const 0 call $text drop
-		i32.const 68 i32.const 415 i32.const 5 local.get $keyboard_action call $to_host i64.const 446 call $help_y f32.const 17 i32.const 0x9bb8d1ff i32.const 0 call $text drop
-		i32.const 48 i32.const 424 i32.const 1 local.get $keyboard_input call $to_host i64.const 482 call $help_y f32.const 17 i32.const 0xffffffff i32.const 0 call $text drop
-		i32.const 69 i32.const 439 i32.const 7 local.get $keyboard_action call $to_host i64.const 482 call $help_y f32.const 17 i32.const 0x9bb8d1ff i32.const 0 call $text drop
-		i32.const 49 i32.const 448 i32.const 6 local.get $keyboard_input call $to_host i64.const 518 call $help_y f32.const 17 i32.const 0xffffffff i32.const 0 call $text drop
-		i32.const 70 i32.const 463 i32.const 4 local.get $keyboard_action call $to_host i64.const 518 call $help_y f32.const 17 i32.const 0x9bb8d1ff i32.const 0 call $text drop
+			(then i32.const 55 i32.const 768 i32.const 5 local.get $pointer_input call $to_host call $help_second_header_y f32.const 18 i32.const 0xffcf5cff i32.const 0 call $text drop)
+			(else i32.const 55 i32.const 568 i32.const 7 local.get $pointer_input call $to_host call $help_second_header_y f32.const 18 i32.const 0xffcf5cff i32.const 0 call $text drop))
+		i32.const 41 i32.const 240 i32.const 14 local.get $keyboard_input call $to_host i64.const 0 call $help_keyboard_row_y local.get $row_size i32.const 0xffffffff i32.const 0 call $text drop
+		i32.const 62 i32.const 255 i32.const 6 local.get $keyboard_action call $to_host i64.const 0 call $help_keyboard_row_y local.get $row_size i32.const 0x9bb8d1ff i32.const 0 call $text drop
+		i32.const 42 i32.const 264 i32.const 4 local.get $keyboard_input call $to_host i64.const 1 call $help_keyboard_row_y local.get $row_size i32.const 0xffffffff i32.const 0 call $text drop
+		i32.const 63 i32.const 279 i32.const 6 local.get $keyboard_action call $to_host i64.const 1 call $help_keyboard_row_y local.get $row_size i32.const 0x9bb8d1ff i32.const 0 call $text drop
+		i32.const 43 i32.const 288 i32.const 5 local.get $keyboard_input call $to_host i64.const 2 call $help_keyboard_row_y local.get $row_size i32.const 0xffffffff i32.const 0 call $text drop
+		i32.const 64 i32.const 303 i32.const 4 local.get $keyboard_action call $to_host i64.const 2 call $help_keyboard_row_y local.get $row_size i32.const 0x9bb8d1ff i32.const 0 call $text drop
+		i32.const 44 i32.const 312 i32.const 1 local.get $keyboard_input call $to_host i64.const 3 call $help_keyboard_row_y local.get $row_size i32.const 0xffffffff i32.const 0 call $text drop
+		i32.const 65 i32.const 327 i32.const 9 local.get $keyboard_action call $to_host i64.const 3 call $help_keyboard_row_y local.get $row_size i32.const 0x9bb8d1ff i32.const 0 call $text drop
+		i32.const 45 i32.const 340 i32.const 1 local.get $keyboard_input call $to_host i64.const 4 call $help_keyboard_row_y local.get $row_size i32.const 0xffffffff i32.const 0 call $text drop
+		i32.const 66 i32.const 355 i32.const 8 local.get $keyboard_action call $to_host i64.const 4 call $help_keyboard_row_y local.get $row_size i32.const 0x9bb8d1ff i32.const 0 call $text drop
+		i32.const 46 i32.const 368 i32.const 1 local.get $keyboard_input call $to_host i64.const 5 call $help_keyboard_row_y local.get $row_size i32.const 0xffffffff i32.const 0 call $text drop
+		i32.const 67 i32.const 383 i32.const 13 local.get $keyboard_action call $to_host i64.const 5 call $help_keyboard_row_y local.get $row_size i32.const 0x9bb8d1ff i32.const 0 call $text drop
+		i32.const 47 i32.const 400 i32.const 7 local.get $keyboard_input call $to_host i64.const 6 call $help_keyboard_row_y local.get $row_size i32.const 0xffffffff i32.const 0 call $text drop
+		i32.const 68 i32.const 415 i32.const 5 local.get $keyboard_action call $to_host i64.const 6 call $help_keyboard_row_y local.get $row_size i32.const 0x9bb8d1ff i32.const 0 call $text drop
+		i32.const 48 i32.const 424 i32.const 1 local.get $keyboard_input call $to_host i64.const 7 call $help_keyboard_row_y local.get $row_size i32.const 0xffffffff i32.const 0 call $text drop
+		i32.const 69 i32.const 439 i32.const 7 local.get $keyboard_action call $to_host i64.const 7 call $help_keyboard_row_y local.get $row_size i32.const 0x9bb8d1ff i32.const 0 call $text drop
+		i32.const 49 i32.const 448 i32.const 6 local.get $keyboard_input call $to_host i64.const 8 call $help_keyboard_row_y local.get $row_size i32.const 0xffffffff i32.const 0 call $text drop
+		i32.const 70 i32.const 463 i32.const 4 local.get $keyboard_action call $to_host i64.const 8 call $help_keyboard_row_y local.get $row_size i32.const 0x9bb8d1ff i32.const 0 call $text drop
 		call $touch_help_mode
 		(if
 			(then
-				i32.const 56 i32.const 776 i32.const 15 local.get $pointer_input call $to_host i64.const 230 call $help_y f32.const 17 i32.const 0xffffffff i32.const 0 call $text drop
-				i32.const 71 i32.const 792 i32.const 4 local.get $pointer_action call $to_host i64.const 230 call $help_y f32.const 17 i32.const 0x9bb8d1ff i32.const 0 call $text drop
-				i32.const 57 i32.const 800 i32.const 11 local.get $pointer_input call $to_host i64.const 266 call $help_y f32.const 17 i32.const 0xffffffff i32.const 0 call $text drop
-				i32.const 72 i32.const 812 i32.const 6 local.get $pointer_action call $to_host i64.const 266 call $help_y f32.const 17 i32.const 0x9bb8d1ff i32.const 0 call $text drop
-				i32.const 58 i32.const 820 i32.const 11 local.get $pointer_input call $to_host i64.const 302 call $help_y f32.const 17 i32.const 0xffffffff i32.const 0 call $text drop
-				i32.const 73 i32.const 832 i32.const 6 local.get $pointer_action call $to_host i64.const 302 call $help_y f32.const 17 i32.const 0x9bb8d1ff i32.const 0 call $text drop
-				i32.const 59 i32.const 840 i32.const 10 local.get $pointer_input call $to_host i64.const 338 call $help_y f32.const 17 i32.const 0xffffffff i32.const 0 call $text drop
-				i32.const 74 i32.const 852 i32.const 14 local.get $pointer_action call $to_host i64.const 338 call $help_y f32.const 17 i32.const 0x9bb8d1ff i32.const 0 call $text drop)
+				i32.const 56 i32.const 776 i32.const 15 local.get $pointer_input call $to_host i64.const 0 call $help_second_row_y local.get $row_size i32.const 0xffffffff i32.const 0 call $text drop
+				i32.const 71 i32.const 792 i32.const 4 local.get $pointer_action call $to_host i64.const 0 call $help_second_row_y local.get $row_size i32.const 0x9bb8d1ff i32.const 0 call $text drop
+				i32.const 57 i32.const 800 i32.const 11 local.get $pointer_input call $to_host i64.const 1 call $help_second_row_y local.get $row_size i32.const 0xffffffff i32.const 0 call $text drop
+				i32.const 72 i32.const 812 i32.const 6 local.get $pointer_action call $to_host i64.const 1 call $help_second_row_y local.get $row_size i32.const 0x9bb8d1ff i32.const 0 call $text drop
+				i32.const 58 i32.const 820 i32.const 11 local.get $pointer_input call $to_host i64.const 2 call $help_second_row_y local.get $row_size i32.const 0xffffffff i32.const 0 call $text drop
+				i32.const 73 i32.const 832 i32.const 6 local.get $pointer_action call $to_host i64.const 2 call $help_second_row_y local.get $row_size i32.const 0x9bb8d1ff i32.const 0 call $text drop
+				i32.const 59 i32.const 840 i32.const 10 local.get $pointer_input call $to_host i64.const 3 call $help_second_row_y local.get $row_size i32.const 0xffffffff i32.const 0 call $text drop
+				i32.const 74 i32.const 852 i32.const 14 local.get $pointer_action call $to_host i64.const 3 call $help_second_row_y local.get $row_size i32.const 0x9bb8d1ff i32.const 0 call $text drop)
 			(else
-				i32.const 56 i32.const 576 i32.const 4 local.get $pointer_input call $to_host i64.const 230 call $help_y f32.const 17 i32.const 0xffffffff i32.const 0 call $text drop
-				i32.const 71 i32.const 589 i32.const 3 local.get $pointer_action call $to_host i64.const 230 call $help_y f32.const 17 i32.const 0x9bb8d1ff i32.const 0 call $text drop
-				i32.const 57 i32.const 592 i32.const 9 local.get $pointer_input call $to_host i64.const 266 call $help_y f32.const 17 i32.const 0xffffffff i32.const 0 call $text drop
-				i32.const 72 i32.const 605 i32.const 4 local.get $pointer_action call $to_host i64.const 266 call $help_y f32.const 17 i32.const 0x9bb8d1ff i32.const 0 call $text drop
-				i32.const 58 i32.const 616 i32.const 10 local.get $pointer_input call $to_host i64.const 302 call $help_y f32.const 17 i32.const 0xffffffff i32.const 0 call $text drop
-				i32.const 73 i32.const 629 i32.const 6 local.get $pointer_action call $to_host i64.const 302 call $help_y f32.const 17 i32.const 0x9bb8d1ff i32.const 0 call $text drop
-				i32.const 59 i32.const 640 i32.const 6 local.get $pointer_input call $to_host i64.const 338 call $help_y f32.const 17 i32.const 0xffffffff i32.const 0 call $text drop
-				i32.const 74 i32.const 653 i32.const 7 local.get $pointer_action call $to_host i64.const 338 call $help_y f32.const 17 i32.const 0x9bb8d1ff i32.const 0 call $text drop))
-		i32.const 2030 local.get $center call $to_host i64.const 585 call $help_y f32.const 6 f32.const 0 i32.const 0xff5cf4ff i32.const 1 call $circle drop
-		i32.const 2031 local.get $center i64.const 18000000 i64.sub call $to_host i64.const 585 call $help_y local.get $center i64.const 7000000 i64.sub call $to_host i64.const 585 call $help_y f32.const 2 i32.const 0xff5cf4ff call $line drop
-		i32.const 2032 local.get $center i64.const 7000000 i64.add call $to_host i64.const 585 call $help_y local.get $center i64.const 18000000 i64.add call $to_host i64.const 585 call $help_y f32.const 2 i32.const 0xff5cf4ff call $line drop
-		i32.const 2033 local.get $center call $to_host i64.const 567 call $help_y local.get $center call $to_host i64.const 578 call $help_y f32.const 2 i32.const 0xff5cf4ff call $line drop
-		i32.const 2034 local.get $center call $to_host i64.const 592 call $help_y local.get $center call $to_host i64.const 603 call $help_y f32.const 2 i32.const 0xff5cf4ff call $line drop
-		i32.const 2035 local.get $center i64.const 13000000 i64.sub call $to_host i64.const 572 call $help_y local.get $center i64.const 5000000 i64.sub call $to_host i64.const 580 call $help_y f32.const 2 i32.const 0xff5cf4ff call $line drop
-		i32.const 2036 local.get $center i64.const 5000000 i64.add call $to_host i64.const 590 call $help_y local.get $center i64.const 13000000 i64.add call $to_host i64.const 598 call $help_y f32.const 2 i32.const 0xff5cf4ff call $line drop
-		i32.const 2037 local.get $center i64.const 13000000 i64.sub call $to_host i64.const 598 call $help_y local.get $center i64.const 5000000 i64.sub call $to_host i64.const 590 call $help_y f32.const 2 i32.const 0xff5cf4ff call $line drop
-		i32.const 2038 local.get $center i64.const 5000000 i64.add call $to_host i64.const 580 call $help_y local.get $center i64.const 13000000 i64.add call $to_host i64.const 572 call $help_y f32.const 2 i32.const 0xff5cf4ff call $line drop
-		i32.const 53 i32.const 512 i32.const 26 local.get $center call $to_host i64.const 636 call $help_y f32.const 17 i32.const 0xffcf5cff i32.const 1 call $text drop)
+				i32.const 56 i32.const 576 i32.const 4 local.get $pointer_input call $to_host i64.const 0 call $help_second_row_y local.get $row_size i32.const 0xffffffff i32.const 0 call $text drop
+				i32.const 71 i32.const 589 i32.const 3 local.get $pointer_action call $to_host i64.const 0 call $help_second_row_y local.get $row_size i32.const 0x9bb8d1ff i32.const 0 call $text drop
+				i32.const 57 i32.const 592 i32.const 9 local.get $pointer_input call $to_host i64.const 1 call $help_second_row_y local.get $row_size i32.const 0xffffffff i32.const 0 call $text drop
+				i32.const 72 i32.const 605 i32.const 4 local.get $pointer_action call $to_host i64.const 1 call $help_second_row_y local.get $row_size i32.const 0x9bb8d1ff i32.const 0 call $text drop
+				i32.const 58 i32.const 616 i32.const 10 local.get $pointer_input call $to_host i64.const 2 call $help_second_row_y local.get $row_size i32.const 0xffffffff i32.const 0 call $text drop
+				i32.const 73 i32.const 629 i32.const 6 local.get $pointer_action call $to_host i64.const 2 call $help_second_row_y local.get $row_size i32.const 0x9bb8d1ff i32.const 0 call $text drop
+				i32.const 59 i32.const 640 i32.const 6 local.get $pointer_input call $to_host i64.const 3 call $help_second_row_y local.get $row_size i32.const 0xffffffff i32.const 0 call $text drop
+				i32.const 74 i32.const 653 i32.const 7 local.get $pointer_action call $to_host i64.const 3 call $help_second_row_y local.get $row_size i32.const 0x9bb8d1ff i32.const 0 call $text drop))
+		i32.const 2030 local.get $center call $to_host i64.const 585 call $help_feature_y f32.const 6 f32.const 0 i32.const 0xff5cf4ff i32.const 1 call $circle drop
+		i32.const 2031 local.get $center i64.const 18000000 i64.sub call $to_host i64.const 585 call $help_feature_y local.get $center i64.const 7000000 i64.sub call $to_host i64.const 585 call $help_feature_y f32.const 2 i32.const 0xff5cf4ff call $line drop
+		i32.const 2032 local.get $center i64.const 7000000 i64.add call $to_host i64.const 585 call $help_feature_y local.get $center i64.const 18000000 i64.add call $to_host i64.const 585 call $help_feature_y f32.const 2 i32.const 0xff5cf4ff call $line drop
+		i32.const 2033 local.get $center call $to_host i64.const 567 call $help_feature_y local.get $center call $to_host i64.const 578 call $help_feature_y f32.const 2 i32.const 0xff5cf4ff call $line drop
+		i32.const 2034 local.get $center call $to_host i64.const 592 call $help_feature_y local.get $center call $to_host i64.const 603 call $help_feature_y f32.const 2 i32.const 0xff5cf4ff call $line drop
+		i32.const 2035 local.get $center i64.const 13000000 i64.sub call $to_host i64.const 572 call $help_feature_y local.get $center i64.const 5000000 i64.sub call $to_host i64.const 580 call $help_feature_y f32.const 2 i32.const 0xff5cf4ff call $line drop
+		i32.const 2036 local.get $center i64.const 5000000 i64.add call $to_host i64.const 590 call $help_feature_y local.get $center i64.const 13000000 i64.add call $to_host i64.const 598 call $help_feature_y f32.const 2 i32.const 0xff5cf4ff call $line drop
+		i32.const 2037 local.get $center i64.const 13000000 i64.sub call $to_host i64.const 598 call $help_feature_y local.get $center i64.const 5000000 i64.sub call $to_host i64.const 590 call $help_feature_y f32.const 2 i32.const 0xff5cf4ff call $line drop
+		i32.const 2038 local.get $center i64.const 5000000 i64.add call $to_host i64.const 580 call $help_feature_y local.get $center i64.const 13000000 i64.add call $to_host i64.const 572 call $help_feature_y f32.const 2 i32.const 0xff5cf4ff call $line drop
+		i32.const 53 i32.const 512 i32.const 26 local.get $center call $to_host i64.const 636 call $help_feature_y local.get $row_size i32.const 0xffcf5cff i32.const 1 call $text drop)
 
 	;; Converts canonical millionths-of-a-logical-pixel geometry to the retained
 	;; UI protocol's signed Q16.16 coordinates without introducing new float math.
