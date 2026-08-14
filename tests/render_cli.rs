@@ -22,6 +22,14 @@ fn standalone_action_wat() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/standalone_action.wat")
 }
 
+fn touch_contacts_wat() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/touch_contacts.wat")
+}
+
+fn touch_timeline_wat() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/touch_timeline.wat")
+}
+
 fn render(arguments: &[&str]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_aedicule-render"))
         .env("MUTE_DEBUG_STATUS", "1")
@@ -84,6 +92,159 @@ fn cli_renders_distinct_requested_frames_to_stdout() {
     assert!(after.stderr.is_empty(), "{:?}", after.stderr);
     assert!(before.stdout.starts_with(b"<svg "));
     assert_ne!(before.stdout, after.stdout);
+}
+
+#[test]
+fn headless_touch_sequence_preserves_simultaneous_ids_and_terminal_phases() {
+    let source = touch_contacts_wat();
+    let before = render(&[source.to_str().unwrap(), "--output", "-"]);
+    let after = render(&[
+        source.to_str().unwrap(),
+        "--touch",
+        "start,41,100.5,200.25",
+        "--touch",
+        "start,42,700,200",
+        "--touch",
+        "move,41,100.5,120",
+        "--touch",
+        "move,42,700,280",
+        "--touch",
+        "end,41,999,999",
+        "--touch",
+        "end,42,999,999",
+        "--touch",
+        "start,43,400,300",
+        "--touch",
+        "cancel,43,999,999",
+        "--output",
+        "-",
+    ]);
+
+    assert!(before.status.success(), "{:?}", before.stderr);
+    assert!(after.status.success(), "{:?}", after.stderr);
+    assert!(
+        String::from_utf8(before.stdout)
+            .unwrap()
+            .contains("fill=\"#ff0000\"")
+    );
+    assert!(
+        String::from_utf8(after.stdout)
+            .unwrap()
+            .contains("fill=\"#00ff00\"")
+    );
+
+    let wrong_identity = render(&[
+        source.to_str().unwrap(),
+        "--touch",
+        "start,41,100,200",
+        "--touch",
+        "start,42,700,200",
+        "--touch",
+        "move,99,100,120",
+        "--touch",
+        "move,42,700,280",
+        "--touch",
+        "end,41,999,999",
+        "--touch",
+        "end,42,999,999",
+        "--touch",
+        "start,43,400,300",
+        "--touch",
+        "cancel,43,999,999",
+        "--output",
+        "-",
+    ]);
+    assert!(
+        wrong_identity.status.success(),
+        "{:?}",
+        wrong_identity.stderr
+    );
+    assert!(
+        String::from_utf8(wrong_identity.stdout)
+            .unwrap()
+            .contains("fill=\"#ff0000\"")
+    );
+}
+
+#[test]
+fn headless_touch_arguments_reject_malformed_values_as_a_set() {
+    for invalid in [
+        "start",
+        "start,1,2",
+        "start,1,2,3,4",
+        "unknown,1,2,3",
+        "start,-1,2,3",
+        "start,1,NaN,3",
+        "start,1,2,inf",
+    ] {
+        let result = render(&["--touch", invalid]);
+        assert!(!result.status.success(), "{invalid}");
+        assert!(result.stdout.is_empty(), "{invalid}");
+        assert!(
+            String::from_utf8_lossy(&result.stderr).contains("invalid --touch value"),
+            "{invalid}: {:?}",
+            result.stderr
+        );
+    }
+}
+
+#[test]
+fn headless_touch_requires_guest_opt_in() {
+    let source = animated_wat();
+    let result = render(&[source.to_str().unwrap(), "--touch", "start,1,20,30"]);
+
+    assert!(!result.status.success());
+    assert!(result.stdout.is_empty());
+    assert_eq!(
+        result.stderr,
+        b"aedicule-render: unsupported or unavailable touch capability\n"
+    );
+}
+
+#[test]
+fn headless_touch_and_tick_steps_preserve_one_behavioral_timeline() {
+    let source = touch_timeline_wat();
+    let held_then_released = render(&[
+        source.to_str().unwrap(),
+        "--touch",
+        "start,41,20,30",
+        "--advance",
+        "3",
+        "--touch",
+        "end,41,20,30",
+        "--advance",
+        "2",
+    ]);
+    let released_before_ticks = render(&[
+        source.to_str().unwrap(),
+        "--touch",
+        "start,41,20,30",
+        "--touch",
+        "end,41,20,30",
+        "--advance",
+        "5",
+    ]);
+
+    assert!(
+        held_then_released.status.success(),
+        "{:?}",
+        held_then_released.stderr
+    );
+    assert!(
+        String::from_utf8(held_then_released.stdout)
+            .unwrap()
+            .contains("fill=\"#00ff00\"")
+    );
+    assert!(
+        released_before_ticks.status.success(),
+        "{:?}",
+        released_before_ticks.stderr
+    );
+    assert!(
+        String::from_utf8(released_before_ticks.stdout)
+            .unwrap()
+            .contains("fill=\"#ff0000\"")
+    );
 }
 
 #[test]
@@ -259,6 +420,8 @@ fn cli_reports_help_about_and_invalid_arguments_cleanly() {
     assert!(help.status.success());
     assert!(String::from_utf8_lossy(&help.stdout).contains("--output"));
     assert!(String::from_utf8_lossy(&help.stdout).contains("--control"));
+    assert!(String::from_utf8_lossy(&help.stdout).contains("--touch"));
+    assert!(String::from_utf8_lossy(&help.stdout).contains("--advance"));
     assert!(String::from_utf8_lossy(&help.stdout).contains("--activate-action"));
     assert!(
         String::from_utf8_lossy(&help.stdout).contains(DISPLAY_REFRESH_RATE_ENV),

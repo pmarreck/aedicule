@@ -1261,10 +1261,29 @@
       WAT tests and the rebuilt browser runtime.
       (2026-08-13 18:41 EDT: real Chromium delivered 3 starts, 2 moves, 2
       ends, and 1 cancel across three opaque IDs.)
-    - [ ] Add repeatable actual-binary touch-sequence arguments to
+    - [ ] Reproduce Peter's 2026-08-14 iPhone result where no Vibesteroids touch
+      control responds, using the exact staged guest and mobile viewport. Add a
+      behavioral browser oracle that proves edge stroke rotation, edge-held
+      fire, center-held thrust, independent simultaneous contacts, terminal
+      release/cancel, and the pause region by observing guest state or rendered
+      output rather than merely counting delivered ABI events. Fix the owning
+      layer only after the new gate fails RED.
+      (2026-08-14 10:37 EDT: RED proved that the raw bridge called
+      `preventDefault()` on AVP-owned contacts after Vibesteroids opted into raw
+      touch. The bridge now leaves the complete occluded contact lifetime to
+      GPUI. A combined 430x775 Chromium gate and deterministic actual-guest SVG
+      comparison are green; iPhone Safari confirmation remains required.)
+    - [x] Add repeatable actual-binary touch-sequence arguments to
       `aedicule-render` so downstream `.aed` projects can test simultaneous
       IDs, interleaved movement, independent terminal edges, cancellation,
       and ID reuse against an immutable Aedicule package.
+      (Done 2026-08-14 10:39 EDT: `--touch PHASE,ID,X,Y` uses the same bounded
+      tracker as Web, rejects malformed/non-finite input as a set, requires
+      guest opt-in, and preserves ordered opaque IDs. Interleaved `--advance N`
+      steps prove held behavior across fixed ticks before later move/end/cancel
+      edges; a deliberate reorder remains red. The exact staged Vibesteroids
+      guest changed deterministic SVG output only after action/touch/tick
+      ordering was corrected.)
     - [x] Prevent GPUI Web's current mouse-compatibility conversion from
       duplicating each touch as primary-button input.
       (2026-08-13 18:41 EDT: phase-and-coordinate markers survive GPUI's queue
@@ -1508,6 +1527,15 @@
   advance to df61ffe already conforms; their note's pin pair independently
   matched ours. They will adopt 2ca03e5 + declare AE_abi_minor 6 with their
   touch tranche, after Peter's current 61f287f playtest.
+  - [x] Refresh the Tailscale phone staging demo from Vibesteroids' current
+    implementation, validate the packaged guest, and report the exact served
+    source/package hashes. The guest's green multi-contact implementation did
+    not yet declare the final host opt-in, so the staging candidate adds only
+    `AE_touch_interest(8, 0)` and ABI minor 10 while the guest agent lands those
+    lines at source. Real Chromium observed all eight ordered touch transitions
+    with zero compatibility-pointer duplicates. The Tailscale gallery now
+    serves WAT SHA-256 `5ddee65c...b059` and AED SHA-256
+    `8bca22da...000b`. (Done 2026-08-13 19:06 EDT.)
 - [ ] Vibesteroids on iPhone (Peter, 2026-08-03 hardware pass): three gaps, split
   by responsibility. This is exactly what the demo apps exist to tease out —
   "aedicule apps may need to be client-aware."

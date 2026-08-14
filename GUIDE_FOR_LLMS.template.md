@@ -220,7 +220,17 @@ Only `code.wat`, direct `tests/*.wast`, and declared `assets/` currently have ru
 
 `aedicule --package DIRECTORY [OUTPUT.aed]` creates a deterministic stored-ZIP `.aed` with a leading Aedicule MIME entry. It preserves already-compressed FLAC instead of wastefully recompressing it. `--depackage` validates and expands into a new directory without merging over existing data. Packages are bounded to 1,024 entries, 16 MiB per entry, and 64 MiB total.
 
-`aedicule --web SOURCE [--bind ADDRESS] [--port PORT]` serves the same guest/assets through the bundled browser runtime. `--watch` transactionally reloads source changes. `aedicule-render` is the deterministic headless rendering/control adapter.
+`aedicule --web SOURCE [--bind ADDRESS] [--port PORT]` serves the same guest/assets through the bundled browser runtime. `--watch` transactionally reloads source changes. `aedicule-render` is the deterministic headless rendering/control adapter. Repeat `--touch PHASE,ID,X,Y` to deliver an ordered raw-contact sequence after initialization and action activation. Interleave `--advance N` to run exact fixed-tick spans while contacts remain held; the legacy `--ticks N` advances once after the timeline. Phases are `start`, `move`, `end`, and `cancel`; IDs are opaque unsigned correlation tokens, and coordinates are finite logical viewport pixels. The guest must first opt in with `AE_touch_interest`.
+
+For example, this activates a retained Start action, holds one left-edge contact while six ticks advance, and emits a deterministic SVG suitable for an assertion:
+
+```text
+aedicule-render project/ --width 430 --height 775 --activate-action 8 \
+  --touch start,41,40,400 --advance 6 --touch end,41,40,400 \
+  --advance 1 --output frame.svg
+```
+
+Repeat contacts to test simultaneous ownership and finish them independently with `end` or `cancel`. Aedicule validates the same bounded identity lifecycle used by the browser adapter, so unknown moves/terminals and over-capacity contacts remain deterministic. This checks guest behavior; retain a real-browser integration gate for DOM capture, AVP occlusion, and browser compatibility events.
 
 ### Application tests
 

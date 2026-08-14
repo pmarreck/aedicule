@@ -53,16 +53,16 @@ globalObject.__AEDICULE_UI_SNAPSHOT = {
 };
 assert.deepEqual(
 	dispatch("pointerdown", { pointerId: 42, clientX: 30, clientY: 50 }),
-	{ prevented: 1, stopped: 0 },
+	{ prevented: 0, stopped: 0 },
 	"an AVP-owned touch must continue to GPUI",
 );
 assert.deepEqual(
 	dispatch("pointermove", { pointerId: 42, clientX: 200, clientY: 200 }),
-	{ prevented: 1, stopped: 0 },
+	{ prevented: 0, stopped: 0 },
 );
 assert.deepEqual(
 	dispatch("pointerup", { pointerId: 42, clientX: 200, clientY: 200 }),
-	{ prevented: 1, stopped: 0 },
+	{ prevented: 0, stopped: 0 },
 );
 assert.equal(
 	globalObject.__AEDICULE_TOUCH_EVENTS.some(event => event.id === 42),

@@ -55,7 +55,6 @@ export function createTouchBridge({
 		const x = event.clientX - bounds.left;
 		const y = event.clientY - bounds.top;
 		if (!Number.isInteger(event.pointerId) || !Number.isFinite(x) || !Number.isFinite(y)) return;
-		event.preventDefault();
 
 		if (phase === "start") {
 			if (controlOccludes(globalObject.__AEDICULE_UI_SNAPSHOT, x, y)) {
@@ -70,6 +69,7 @@ export function createTouchBridge({
 		} else if (!raw.has(event.pointerId)) {
 			return;
 		}
+		event.preventDefault();
 		event.stopImmediatePropagation();
 		enqueue({ phase, id: event.pointerId, x, y });
 		if (phase === "end" || phase === "cancel") raw.delete(event.pointerId);

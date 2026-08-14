@@ -7,8 +7,8 @@ use std::{
 
 use aedicule::{
     ControlPhase, DEFAULT_PLUGIN_ENV, Event, FALLBACK_WAT, Frontplane, Limits, PluginInit,
-    PluginSource, TextPhase, display_refresh_rate_from_environment, initialize_frontplane,
-    render_svg, text_value_events,
+    PluginSource, TextPhase, TouchContactPhase, TouchContactTracker,
+    display_refresh_rate_from_environment, initialize_frontplane, render_svg, text_value_events,
 };
 
 const DEFAULT_WIDTH: f32 = 1024.0;
@@ -26,6 +26,9 @@ Options:
   --ticks N          Advance N fixed simulation ticks before rendering
   --control ID=VALUE Apply an exact declared integer control; repeatable
   --text ID=VALUE    Commit a declared text field's complete value; repeatable
+  --touch PHASE,ID,X,Y
+                     Deliver an ordered raw touch; repeatable
+  --advance N        Advance N ticks at this point in the touch timeline
   --activate-action ID
                      Activate an exact currently placed guest action; repeatable
   --activate-link ID Validate/report a current external-link request; repeatable
@@ -50,6 +53,7 @@ struct RenderOptions {
     height: f32,
     controls: Vec<ControlArgument>,
     texts: Vec<TextArgument>,
+    timeline: Vec<TimelineStep>,
     activate_actions: Vec<u32>,
     activate_links: Vec<u32>,
 }
@@ -58,6 +62,20 @@ struct RenderOptions {
 struct ControlArgument {
     id: u32,
     value: i32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct TouchArgument {
+    phase: TouchContactPhase,
+    id: u32,
+    x: f32,
+    y: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum TimelineStep {
+    Touch(TouchArgument),
+    Advance(u64),
 }
 
 /// One complete headless text-field value. It is retained as text only so the
@@ -80,6 +98,7 @@ impl Default for RenderOptions {
             height: DEFAULT_HEIGHT,
             controls: Vec::new(),
             texts: Vec::new(),
+            timeline: Vec::new(),
             activate_actions: Vec::new(),
             activate_links: Vec::new(),
         }
@@ -155,6 +174,20 @@ fn parse_arguments(arguments: impl Iterator<Item = String>) -> Result<Action, St
             "--text" => {
                 let value = next_value(&mut arguments, "--text")?;
                 options.texts.push(parse_text(&value)?);
+            }
+            "--touch" => {
+                let value = next_value(&mut arguments, "--touch")?;
+                options
+                    .timeline
+                    .push(TimelineStep::Touch(parse_touch(&value)?));
+            }
+            "--advance" => {
+                let value = next_value(&mut arguments, "--advance")?;
+                options.timeline.push(TimelineStep::Advance(
+                    value
+                        .parse()
+                        .map_err(|_| format!("invalid --advance value: {value}"))?,
+                ));
             }
             "--activate-action" => {
                 let value = next_value(&mut arguments, "--activate-action")?;
@@ -255,6 +288,31 @@ fn parse_text(value: &str) -> Result<TextArgument, String> {
     })
 }
 
+/// Parses one identity-bearing contact edge without admitting NaN/infinity,
+/// which would otherwise make guest coordinate behavior platform-dependent.
+fn parse_touch(value: &str) -> Result<TouchArgument, String> {
+    let invalid =
+        || format!("invalid --touch value: {value}; expected start|move|end|cancel,ID,X,Y");
+    let fields = value.split(',').collect::<Vec<_>>();
+    let [phase, id, x, y] = fields.as_slice() else {
+        return Err(invalid());
+    };
+    let phase = match *phase {
+        "start" => TouchContactPhase::Start,
+        "move" => TouchContactPhase::Move,
+        "end" => TouchContactPhase::End,
+        "cancel" => TouchContactPhase::Cancel,
+        _ => return Err(invalid()),
+    };
+    let id = id.parse().map_err(|_| invalid())?;
+    let x: f32 = x.parse().map_err(|_| invalid())?;
+    let y: f32 = y.parse().map_err(|_| invalid())?;
+    if !x.is_finite() || !y.is_finite() {
+        return Err(invalid());
+    }
+    Ok(TouchArgument { phase, id, x, y })
+}
+
 fn set_plugin(options: &mut RenderOptions, path: String) -> Result<(), String> {
     if options.plugin.is_some() {
         return Err("only one plugin input may be specified".into());
@@ -274,7 +332,6 @@ fn run(options: RenderOptions) -> Result<(), String> {
     }
     let input = read_plugin(options.plugin.as_deref())?;
     let limits = Limits::default();
-    let max_ticks_per_call = u64::from(limits.max_ticks_per_call);
     let mut frontplane = match input {
         RenderInput::Text(wat) => Frontplane::from_wat(&wat, limits),
         RenderInput::Application(source) => Frontplane::from_application(&source, limits),
@@ -316,14 +373,38 @@ fn run(options: RenderOptions) -> Result<(), String> {
         }
     }
 
-    let mut remaining = options.ticks;
-    while remaining > 0 {
-        let ticks = remaining
-            .min(max_ticks_per_call)
-            .min(MAX_TICKS_PER_FUEL_SLICE) as u32;
-        frontplane.tick(ticks).map_err(|error| error.to_string())?;
-        remaining -= u64::from(ticks);
+    let has_touch = options
+        .timeline
+        .iter()
+        .any(|step| matches!(step, TimelineStep::Touch(_)));
+    let mut contacts = if has_touch {
+        let max_contacts = frontplane
+            .metadata()
+            .touch_max_contacts
+            .ok_or_else(|| "unsupported or unavailable touch capability".to_owned())?;
+        Some(
+            TouchContactTracker::new(max_contacts)
+                .ok_or_else(|| "unsupported or unavailable touch capability".to_owned())?,
+        )
+    } else {
+        None
+    };
+    for step in options.timeline {
+        match step {
+            TimelineStep::Touch(touch) => {
+                if let Some(event) = contacts
+                    .as_mut()
+                    .expect("touch timeline initialized its contact tracker")
+                    .observe(touch.phase, touch.id, touch.x, touch.y)
+                {
+                    frontplane.event(event).map_err(|error| error.to_string())?;
+                }
+            }
+            TimelineStep::Advance(ticks) => advance_ticks(&mut frontplane, ticks)?,
+        }
     }
+
+    advance_ticks(&mut frontplane, options.ticks)?;
     let frame = frontplane.render().map_err(|error| error.to_string())?;
     let revision = frontplane
         .ui_snapshot()
@@ -343,6 +424,20 @@ fn run(options: RenderOptions) -> Result<(), String> {
         );
     }
     write_output(&options.output, svg.as_bytes())
+}
+
+/// Advances long scripted spans in bounded fuel slices, matching the final
+/// `--ticks` path while allowing contact edges between deterministic spans.
+fn advance_ticks(frontplane: &mut Frontplane, mut remaining: u64) -> Result<(), String> {
+    let max_ticks_per_call = u64::from(Limits::default().max_ticks_per_call);
+    while remaining > 0 {
+        let ticks = remaining
+            .min(max_ticks_per_call)
+            .min(MAX_TICKS_PER_FUEL_SLICE) as u32;
+        frontplane.tick(ticks).map_err(|error| error.to_string())?;
+        remaining -= u64::from(ticks);
+    }
+    Ok(())
 }
 
 fn read_plugin(path: Option<&str>) -> Result<RenderInput, String> {

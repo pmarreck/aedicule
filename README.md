@@ -276,12 +276,22 @@ also accepts `-` or `@stdin` as asset-free WAT input and `-`, `@stdout`, or
 result/bin/aedicule-render path/to/code.wat --ticks 300 -o frame.svg
 result/bin/aedicule-render path/to/application --ticks 300 -o frame.svg
 result/bin/aedicule-render application.aed --ticks 300 -o frame.svg
+result/bin/aedicule-render application.aed --activate-action 8 \
+  --touch start,41,40,400 --advance 6 --touch end,41,40,400 \
+  --advance 1 -o touch.svg
 ```
 
 This gives humans, CI systems, and review agents an exact inspectable artifact
 without desktop access. It complements rather than replaces native-window
 inspection, which independently covers layout, focus, compositor, and platform
 adapter behavior.
+
+Repeatable `--touch PHASE,ID,X,Y` arguments simulate ordered raw contacts with
+the same bounded identity tracker used by the browser adapter. Interleaved
+`--advance N` steps run fixed ticks at exact points in that timeline, letting
+application CI assert held, simultaneous, release, and cancellation behavior
+from deterministic SVG output. Browser integration tests remain responsible for
+DOM and platform event capture.
 
 `aedicule-render` is also the canonical non-GUI WAT validation executable:
 it performs the same bounded compile, configure, initialize, display-event,

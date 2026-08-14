@@ -7,7 +7,7 @@ use std::fmt::Write as _;
 pub const ABI_MAJOR: i32 = 0;
 pub const ABI_MINOR: i32 = 10;
 pub const IMPORT_MODULE: &str = "aedicule.v0";
-pub const LLM_GUIDE_VERSION: &str = "0.3.0";
+pub const LLM_GUIDE_VERSION: &str = "0.3.1";
 const LLM_GUIDE_CANONICAL_URL: &str =
     "https://github.com/pmarreck/aedicule/blob/yolo/GUIDE_FOR_LLMS.md";
 const LLM_GUIDE_ABI_MARKER: &str = "{{GENERATED_ABI_REFERENCE}}";
