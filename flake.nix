@@ -259,7 +259,7 @@
 					rawApplicationCargoDeps = pkgs.rustPlatform.fetchCargoVendor {
 						name = "aedicule-cargo-deps";
 						src = cargoDependencySource;
-						hash = "sha256-6aOytWjh4Lmwf9xCLhoFaPHxw2T5sQJpF8QQwmC697U=";
+						hash = "sha256-6CdssA6EJpAFe1HMceLDJCwT9a82+O9x0nZ3g18E2Hg=";
 					};
 					# fetchCargoVendor reorders source-identical gpui_macros entries
 					# from the upstream and patched repositories. Cargo accepts either

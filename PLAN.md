@@ -1,5 +1,12 @@
 # Plan
 
+- [x] Repair the fresh-runner Cargo vendor fixed-output hash exposed by GitHub
+  Actions after the Rust 1.97 migration. Exact push `c075d1e` independently
+  reported `sha256-6CdssA6EJpAFe1HMceLDJCwT9a82+O9x0nZ3g18E2Hg=` in all six
+  release jobs while the local warm store retained the former pin. The new pin
+  passed cold `release-macos-aarch64`, cold `release-linux-x86_64`, `./test`,
+  and `./build`; its focused commit triggers fresh GitHub and Mechatron Prime
+  verification. (Completed 2026-08-14 14:50 EDT.)
 - [ ] Remove the browser runtime's unnecessary shared-Wasm-memory requirement
   and obtain iPhone acceptance on the Tailscale staging delivery.
   - [x] Bound the imported shared memory from 1 GiB to 256 MiB and prove the
