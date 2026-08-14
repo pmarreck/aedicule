@@ -1272,7 +1272,22 @@
       `preventDefault()` on AVP-owned contacts after Vibesteroids opted into raw
       touch. The bridge now leaves the complete occluded contact lifetime to
       GPUI. A combined 430x775 Chromium gate and deterministic actual-guest SVG
-      comparison are green; iPhone Safari confirmation remains required.)
+      comparison are green. Peter confirmed working multitouch on iPhone Safari
+      at 13:12 EDT. (Completed 2026-08-14 13:12 EDT.)
+    - [x] Triage and hand off Peter's post-acceptance Vibesteroids refinements,
+      implementing any blocking host capability before guest work proceeds:
+      show help while paused on multitouch devices; describe touch controls in
+      that conditional help; provide a mobile Death Blossom trigger (shake or
+      another discoverable gesture); increase temporary gift frequency; draw a
+      bow on the gift; and reject unsafe satellite/enemy-ship spawn regions as
+      the game already does for other fairness-delayed spawns. All six are
+      guest-owned: DeviceChange bit 0 plus observed raw touch supplies the
+      current phone-mode discriminator, while existing `AE_motion_interest`
+      kind 1 and event kind 16/code 1 supply host-derived shake. Sent the
+      tested contracts and acceptance criteria to Vibesteroids in
+      `inbox/2026-08-14-from-aedicule-six-mobile-refinements.md`; the planned
+      exact semantic capabilities event remains useful for hybrids but does
+      not block this request. (Completed 2026-08-14 13:17 EDT.)
     - [x] Add repeatable actual-binary touch-sequence arguments to
       `aedicule-render` so downstream `.aed` projects can test simultaneous
       IDs, interleaved movement, independent terminal edges, cancellation,
