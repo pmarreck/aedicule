@@ -41,6 +41,7 @@ export function createTouchBridge({
 		enqueued: 0,
 		ignoredDisabled: 0,
 		occludedStarts: 0,
+		captureFailures: 0,
 		lastPhase: "-",
 	};
 	globalObject.__AEDICULE_TOUCH_DIAGNOSTIC = diagnostic;
@@ -97,7 +98,13 @@ export function createTouchBridge({
 				return;
 			}
 			raw.add(event.pointerId);
-			targetCanvas.setPointerCapture?.(event.pointerId);
+			try {
+				targetCanvas.setPointerCapture?.(event.pointerId);
+			} catch {
+				// Window-level capture listeners keep delivery intact when
+				// WebKit rejects advisory pointer capture.
+				diagnostic.captureFailures += 1;
+			}
 		} else if (occluded.has(event.pointerId)) {
 			if (phase === "end" || phase === "cancel") occluded.delete(event.pointerId);
 			refreshDiagnostic(`occluded-${phase}`);

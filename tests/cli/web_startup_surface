@@ -118,6 +118,8 @@ expect_text "$root/web/index.html" '__AEDICULE_TOUCH_DIAGNOSTIC' \
 	'phone diagnostic overlay omits raw/occluded/queued touch bridge state'
 expect_text "$root/web/index.html" '__AEDICULE_TOUCH_EVENTS?.length' \
 	'phone diagnostic overlay snapshots queue depth instead of reading the live Rust-drained queue'
+expect_text "$root/web/index.html" 'captureFailures' \
+	'phone diagnostic overlay cannot distinguish pointer-capture failure from absent touch input'
 expect_text "$root/tests/integration/web_browser_startup" '--require-post-action-touch' \
 	'browser gate cannot compose touch Start with active-game raw contacts'
 expect_text "$root/src/bin/aedicule-web.rs" 'report_browser_frame_started' \

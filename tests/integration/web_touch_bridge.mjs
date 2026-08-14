@@ -6,7 +6,10 @@ const globalObject = { __AEDICULE_TOUCH_MAX_CONTACTS: 2 };
 const captured = [];
 const canvas = {
 	getBoundingClientRect: () => ({ left: 10, top: 20, width: 320, height: 240 }),
-	setPointerCapture: id => captured.push(id),
+	setPointerCapture: id => {
+		if (id === 45) throw new DOMException("capture unavailable", "NotFoundError");
+		captured.push(id);
+	},
 };
 const eventTarget = {
 	addEventListener(name, listener) {
@@ -28,6 +31,7 @@ assert.deepEqual(globalObject.__AEDICULE_TOUCH_DIAGNOSTIC, {
 	enqueued: 0,
 	ignoredDisabled: 0,
 	occludedStarts: 0,
+	captureFailures: 0,
 	lastPhase: "-",
 });
 
@@ -92,6 +96,16 @@ dispatch("pointerdown", { pointerId: 43, clientX: 200, clientY: 200 });
 dispatch("pointermove", { pointerId: 43, clientX: 210, clientY: 210 });
 listeners.get("blur")();
 assert.deepEqual(globalObject.__AEDICULE_TOUCH_EVENTS.at(-1), { phase: "cancel-all" });
+
+assert.deepEqual(
+	dispatch("pointerdown", { pointerId: 45, clientX: 200, clientY: 200 }),
+	{ prevented: 1, stopped: 1 },
+	"pointer-capture failure must not abort raw touch delivery",
+);
+assert.equal(globalObject.__AEDICULE_TOUCH_DIAGNOSTIC.captureFailures, 1);
+assert.deepEqual(globalObject.__AEDICULE_TOUCH_EVENTS.at(-1),
+	{ phase: "start", id: 45, x: 190, y: 180 });
+dispatch("pointerup", { pointerId: 45, clientX: 200, clientY: 200 });
 
 assert.deepEqual(
 	dispatch("pointerdown", { pointerType: "mouse", pointerId: 1 }),

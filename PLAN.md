@@ -1,6 +1,6 @@
 # Plan
 
-- [ ] Reproduce the port-8911 Vibesteroids touch-controls regression from the
+- [x] Reproduce the port-8911 Vibesteroids touch-controls regression from the
   exact staged `1e04c70` package with a real-guest behavioral browser test.
   The existing gate proves ordered touch delivery but not visible ship
   response, so add an oracle over the guest's reaction to left/right stroke,
@@ -16,12 +16,22 @@
   live staging and the rebuilt delivery. The physical failure is therefore
   iOS/WebKit-specific until phone evidence says otherwise. A `?diag` staging
   build now exposes the negotiated limit plus raw, occluded, queued, disabled,
-  enqueued, last-phase, and guest-delivery counters for that classification.
+  enqueued, last-phase, pointer-capture-failure, and guest-delivery counters
+  for that classification. A RED bridge test proved that a WebKit exception
+  from advisory `setPointerCapture` previously aborted the whole contact;
+  pointer capture is now fail-soft because window capture listeners retain
+  delivery. Full tests, optimized build, immutable delivery, and the composed
+  live-staging browser gate are green. Port 8911 serves this exact build and
+  Peter confirmed on a physical iPhone that inputs work again. Because the
+  only staged runtime change was making advisory WebKit pointer capture
+  fail-soft, a thrown `setPointerCapture` is the strongest causal explanation;
+  the exception counter was not observed, so retain that distinction between
+  strong evidence and direct proof.
   Curiosity poke: distinguish a retained native-UI panel occluding the whole
   canvas from a bridge never enabled, a Rust drain stall, viewport coordinate
   drift, and guest pause state.
-  (Reported 2026-08-14 16:33 EDT; cache ruled out 16:38 EDT;
-  release-blocking.)
+  (Reported 2026-08-14 16:33 EDT; cache ruled out 16:38 EDT; physical iPhone
+  acceptance completed 2026-08-15 14:56 EDT.)
 - [ ] Narrow the Nix source closures for `webRuntime` and `delivery-web` so a
   browser-test-only or HTML-only edit does not rebuild unrelated Rust/Wasm and
   native frontplane artifacts. Preserve reproducibility by classifying the
@@ -31,6 +41,12 @@
   still embeds packages produced by the native CLI, so separate the package
   writer dependency from the browser runtime before claiming full decoupling.
   (Observed during touch-diagnostic rebuild, 2026-08-14 16:55 EDT.)
+- [ ] Eliminate ambiguous Tailscale playtest endpoints. Port 8910 is a stale
+  long-lived `aedicule-serve` process with guest `126c173`, while port 8911 is
+  current staging. Give endpoints visible revision labels and retire or
+  redirect the stale service only after Peter confirms it has no remaining
+  use. Curiosity poke: a URL must expose both host and guest revisions because
+  either half can change the observed behavior. (Queued 2026-08-15 15:00 EDT.)
 - [x] Audit every Aedicule change made after the guest-owned gift-circle crash
   report. Commit `a9da8e0` changes only the rejected error class for unsupported
   flags from the false `InvalidNumber("circle")/-5` to the precise fail-closed
