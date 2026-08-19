@@ -1,6 +1,6 @@
 # Plan
 
-- [ ] Promote the exact public Vibesteroids release
+- [x] Promote the exact public Vibesteroids release
   `d810415e800eb8ae8c077d3e4b18f7ce7af7a506` on host `b56abf6` or a tested
   descendant. Start RED by advancing the provenance oracle to WAT SHA-256
   `854e2fc1a6c084a2f45a409946929468fdc3c642bde12940851f0e8bd8719292`
@@ -20,9 +20,12 @@
   `./test`, optimized `./build`, immutable delivery, and live-8911 composed
   browser gates pass. Port 8911 now serves the exact hashes above; port 8910's
   tmux session, orphaned Caddy process, and Tailscale proxy are retired, with
-  socket and HTTPS probes proving only 8911 remains. Push, exact CI, public
-  Pages hash verification, and replies remain. (Peter approved via
-  Vibesteroids, 2026-08-19 16:42 EDT.)
+  socket and HTTPS probes proving only 8911 remains. Host commit `a20a448`
+  matches `origin/yolo`; exact Mechatron Prime and GitHub CI pass, including
+  the complete suite, all six delivery targets, web startup proof, and Pages
+  deployment. Cache-busted public-origin probes returned the exact committed
+  WAT, `.aed`, and manifest hashes on the first attempt, and all three demo
+  routes return 200. (Completed 2026-08-19 17:15 EDT.)
 - [x] Reproduce the port-8911 Vibesteroids touch-controls regression from the
   exact staged `1e04c70` package with a real-guest behavioral browser test.
   The existing gate proves ordered touch delivery but not visible ship
