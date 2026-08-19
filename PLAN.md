@@ -1,5 +1,28 @@
 # Plan
 
+- [ ] Promote the exact public Vibesteroids release
+  `d810415e800eb8ae8c077d3e4b18f7ce7af7a506` on host `b56abf6` or a tested
+  descendant. Start RED by advancing the provenance oracle to WAT SHA-256
+  `854e2fc1a6c084a2f45a409946929468fdc3c642bde12940851f0e8bd8719292`
+  and `.aed` SHA-256
+  `0a67be8c46c48a5a22f954f6b2bcad5e05319c19e4b71fc70379a6de566406c0`;
+  independently prove extracted package `code.wat` equals Git byte-for-byte.
+  Run package WAST, full suite/build, and composed Start-then-multitouch gates
+  against the immutable delivery and live port 8911. Atomically promote 8911,
+  retire stale port 8910 only after the new endpoint is healthy, push, watch
+  exact Mechatron/GitHub CI, and verify public Pages routes plus remote hashes.
+  Reply to both Vibesteroids notes with the exact host/guest revisions, hashes,
+  gates, CI, and listener evidence. Curiosity poke: reject an outer package
+  whose embedded WAT is stale even when the package hash matches a supplied
+  pin. The snapshot oracle first failed on the stale manifest, WAT, and package;
+  the new archive-reader containment assertion also failed under a deliberate
+  stale-WAT mutation before passing on exact `d810415`. Packaged WAST, full
+  `./test`, optimized `./build`, immutable delivery, and live-8911 composed
+  browser gates pass. Port 8911 now serves the exact hashes above; port 8910's
+  tmux session, orphaned Caddy process, and Tailscale proxy are retired, with
+  socket and HTTPS probes proving only 8911 remains. Push, exact CI, public
+  Pages hash verification, and replies remain. (Peter approved via
+  Vibesteroids, 2026-08-19 16:42 EDT.)
 - [x] Reproduce the port-8911 Vibesteroids touch-controls regression from the
   exact staged `1e04c70` package with a real-guest behavioral browser test.
   The existing gate proves ordered touch delivery but not visible ship
@@ -41,12 +64,15 @@
   still embeds packages produced by the native CLI, so separate the package
   writer dependency from the browser runtime before claiming full decoupling.
   (Observed during touch-diagnostic rebuild, 2026-08-14 16:55 EDT.)
-- [ ] Eliminate ambiguous Tailscale playtest endpoints. Port 8910 is a stale
+- [x] Eliminate ambiguous Tailscale playtest endpoints. Port 8910 was a stale
   long-lived `aedicule-serve` process with guest `126c173`, while port 8911 is
-  current staging. Give endpoints visible revision labels and retire or
-  redirect the stale service only after Peter confirms it has no remaining
-  use. Curiosity poke: a URL must expose both host and guest revisions because
-  either half can change the observed behavior. (Queued 2026-08-15 15:00 EDT.)
+  current staging. Peter approved retirement. After exact `d810415` passed the
+  immutable and live-8911 composed gates, the stale tmux session was retired;
+  its Caddy child required an explicit graceful SIGTERM, and the 8910 Tailscale
+  Serve handler was removed. Socket status and a failed HTTPS connection prove
+  8910 is absent; 8911 routes and exact hashes remain healthy. Curiosity poke:
+  a URL must expose both host and guest revisions because either half can
+  change observed behavior. (Completed 2026-08-19 16:51 EDT.)
 - [x] Audit every Aedicule change made after the guest-owned gift-circle crash
   report. Commit `a9da8e0` changes only the rejected error class for unsupported
   flags from the false `InvalidNumber("circle")/-5` to the precise fail-closed

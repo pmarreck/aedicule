@@ -65,7 +65,7 @@
 	(import "aedicule.v0" "AE_path_close" (func $path_close (result i32)))
 	(import "aedicule.v0" "AE_path_end" (func $path_end (param f32 i32 i32 i32) (result i32)))
 	(import "aedicule.v0" "AE_line" (func $line (param i32 f32 f32 f32 f32 f32 i32) (result i32)))
-	(import "aedicule.v0" "AE_circle" (func $circle (param i32 f32 f32 f32 f32 i32 i32) (result i32)))
+	(import "aedicule.v0" "AE_circle" (func $circle_raw (param i32 f32 f32 f32 f32 i32 i32) (result i32)))
 	(import "aedicule.v0" "AE_text" (func $text (param i32 i32 i32 f32 f32 f32 i32 i32) (result i32)))
 	(import "aedicule.v0" "AE_frame_end" (func $frame_end (result i32)))
 	(import "aedicule.v0" "AE_audio" (func $audio (param i32 f32 f32 i32) (result i32)))
@@ -242,6 +242,20 @@
 	(global $coarse_pointer_mode (mut i32) (i32.const 0))
 	(global $touch_mode_seen (mut i32) (i32.const 0))
 	(global $pause_opened_help (mut i32) (i32.const 0))
+
+	;; Owns the raw ABI flag so filled-circle callers cannot accidentally pass an
+	;; rgba value, stable ID, or other semantically unrelated i32 in its place.
+	(func $circle_filled (param $id i32) (param $x f32) (param $y f32)
+		(param $radius f32) (param $width f32) (param $rgba i32) (result i32)
+		local.get $id local.get $x local.get $y local.get $radius local.get $width
+		local.get $rgba i32.const 1 call $circle_raw)
+
+	;; Pairs the outline-only arity with flag zero, leaving the seven-argument
+	;; host import reachable from exactly these two semantic boundary functions.
+	(func $circle_outlined (param $id i32) (param $x f32) (param $y f32)
+		(param $radius f32) (param $width f32) (param $rgba i32) (result i32)
+		local.get $id local.get $x local.get $y local.get $radius local.get $width
+		local.get $rgba i32.const 0 call $circle_raw)
 
 	(func $load_flags (result i32)
 		global.get $state_flags_address i32.load)
@@ -2989,7 +3003,7 @@
 		f32.const 15 f32.const 0 call $path_move drop f32.const -10 f32.const -8 call $path_line drop
 		f32.const -5 f32.const 0 call $path_line drop f32.const -10 f32.const 8 call $path_line drop
 		call $path_close drop f32.const 2 i32.const 0 local.get $color i32.const 0 call $path_end drop
-		local.get $id i32.const 1000 i32.add f32.const 0 f32.const 0 f32.const 3 f32.const 0 local.get $color i32.const 1 call $circle drop
+		local.get $id i32.const 1000 i32.add f32.const 0 f32.const 0 f32.const 3 f32.const 0 local.get $color call $circle_filled drop
 		local.get $flame
 		(if (then
 			local.get $id i32.const 3 i32.add call $path_begin drop f32.const -5 f32.const -3 call $path_move drop
@@ -3052,7 +3066,7 @@
 			local.get $index call $star_address local.set $address
 			i32.const 800 local.get $index i32.add
 			local.get $address i64.load call $to_host local.get $address i32.const 8 i32.add i64.load call $to_host
-			f32.const 0.85 f32.const 0 i32.const 0x9bb8d199 i32.const 1 call $circle drop
+			f32.const 0.85 f32.const 0 i32.const 0x9bb8d199 call $circle_filled drop
 			local.get $index i32.const 1 i32.add local.set $index br $again)))
 
 	;; Reproduces the approved compact Voyager silhouette from local-space vector
@@ -3080,9 +3094,9 @@
 		global.get $state_satellite_x_address i64.load call $to_host
 		global.get $state_satellite_y_address i64.load call $to_host call $transform_push drop
 		i32.const 932 f32.const 0 f32.const 0 local.get $glow_radius call $to_host
-		f32.const 0 i32.const 0x4ddff21c i32.const 1 call $circle drop
+		f32.const 0 i32.const 0x4ddff21c call $circle_filled drop
 		i32.const 933 f32.const 0 f32.const 0 local.get $glow_radius i64.const 5000000 i64.sub call $to_host
-		f32.const 1 i32.const 0x4ddff244 i32.const 0 call $circle drop
+		f32.const 1 i32.const 0x4ddff244 call $circle_outlined drop
 
 		;; Dish bowl plus broken upper rim.
 		i32.const 934 call $path_begin drop
@@ -3161,23 +3175,23 @@
 		f32.const -58 f32.const 27 call $path_line drop
 		f32.const -62 f32.const 22 call $path_line drop
 		call $path_close drop f32.const 1.5 i32.const 0x172536ff i32.const 0x8eb0c9ff i32.const 0 call $path_end drop
-		i32.const 944 f32.const -31 f32.const 19 f32.const 1.7 f32.const 0.5 i32.const 0xff9b3dff i32.const 1 call $circle drop
-		i32.const 945 f32.const -43 f32.const 22 f32.const 1.7 f32.const 0.5 i32.const 0xe8792bff i32.const 1 call $circle drop
-		i32.const 946 f32.const -55 f32.const 24.5 f32.const 1.7 f32.const 0.5 i32.const 0xbb5724ff i32.const 1 call $circle drop
+		i32.const 944 f32.const -31 f32.const 19 f32.const 1.7 f32.const 0.5 i32.const 0xff9b3dff call $circle_filled drop
+		i32.const 945 f32.const -43 f32.const 22 f32.const 1.7 f32.const 0.5 i32.const 0xe8792bff call $circle_filled drop
+		i32.const 946 f32.const -55 f32.const 24.5 f32.const 1.7 f32.const 0.5 i32.const 0xbb5724ff call $circle_filled drop
 
 		;; Gold record, cracked panel, dish feed/supports, end joint, and cable.
-		i32.const 947 f32.const 9 f32.const 11 f32.const 4 f32.const 1 i32.const 0xb88731ff i32.const 1 call $circle drop
+		i32.const 947 f32.const 9 f32.const 11 f32.const 4 f32.const 1 i32.const 0xb88731ff call $circle_filled drop
 		i32.const 948 call $path_begin drop
 		f32.const 3 f32.const 2 call $path_move drop
 		f32.const -1 f32.const 8 call $path_line drop
 		f32.const 4 f32.const 12 call $path_line drop
 		f32.const 0 f32.const 19 call $path_line drop
 		f32.const 1.3 i32.const 0 i32.const 0x53687dff i32.const 0 call $path_end drop
-		i32.const 949 f32.const 0 f32.const -18 f32.const 2.3 f32.const 1 i32.const 0x5c7185ff i32.const 0 call $circle drop
+		i32.const 949 f32.const 0 f32.const -18 f32.const 2.3 f32.const 1 i32.const 0x5c7185ff call $circle_outlined drop
 		i32.const 950 f32.const -12 f32.const 2 f32.const 0 f32.const -17 f32.const 1 i32.const 0x7893acff call $line drop
 		i32.const 951 f32.const 12 f32.const 2 f32.const 0 f32.const -17 f32.const 1 i32.const 0x7893acff call $line drop
 		i32.const 952 f32.const 0 f32.const -6 f32.const 0 f32.const -17 f32.const 1.2 i32.const 0x8eb0c9ff call $line drop
-		i32.const 953 f32.const 74 f32.const -18 f32.const 2.5 f32.const 1 i32.const 0x8eb0c9ff i32.const 0 call $circle drop
+		i32.const 953 f32.const 74 f32.const -18 f32.const 2.5 f32.const 1 i32.const 0x8eb0c9ff call $circle_outlined drop
 		i32.const 954 call $path_begin drop
 		f32.const 21 f32.const -5 call $path_move drop
 		f32.const 26 f32.const -1 call $path_line drop
@@ -3201,7 +3215,7 @@
 			local.get $x i64.const 12000000 i64.sub call $to_host local.get $y i64.const 8000000 i64.add call $to_host call $path_line drop
 			call $path_close drop f32.const 2 i32.const 0x182033ff i32.const 0xffcf5cff i32.const 0 call $path_end drop
 			i32.const 901 local.get $x call $to_host local.get $y i64.const 8000000 i64.sub call $to_host
-			f32.const 10 f32.const 2 i32.const 0x5ee7ffff i32.const 0 call $circle drop
+			f32.const 10 f32.const 2 i32.const 0x5ee7ffff call $circle_outlined drop
 			i32.const 902 local.get $x i64.const 24000000 i64.sub call $to_host local.get $y call $to_host
 			local.get $x i64.const 24000000 i64.add call $to_host local.get $y call $to_host
 			f32.const 1 i32.const 0xffffffff call $line drop)))
@@ -3240,7 +3254,7 @@
 			local.get $x i64.const 2000000 i64.add call $to_host local.get $y i64.const 12000000 i64.sub call $to_host call $path_line drop
 			call $path_close drop f32.const 1.5 i32.const 0xffcf5cff i32.const 0x5ee7ffff i32.const 0 call $path_end drop
 			i32.const 915 local.get $x call $to_host local.get $y i64.const 12000000 i64.sub call $to_host
-			f32.const 3 f32.const 1 i32.const 0xffcf5cff i32.const 1 call $circle drop)))
+			f32.const 3 f32.const 1 i32.const 0xffcf5cff call $circle_filled drop)))
 
 	;; Renders a brief cyan-white afterimage from the exact finite segment used
 	;; for collision resolution, making the no-wrap boundary visually explicit.
@@ -3261,7 +3275,7 @@
 		call $load_flags global.get $flag_blossom_available i32.and i32.eqz (if (then return))
 		global.get $state_width_address i64.load i64.const 2 i64.div_s local.set $x
 		i32.const 920 local.get $x call $to_host f32.const 82 f32.const 4 f32.const 0
-		i32.const 0xffcf5cff i32.const 1 call $circle drop
+		i32.const 0xffcf5cff call $circle_filled drop
 		i32.const 921 local.get $x i64.const 14000000 i64.sub call $to_host f32.const 82 local.get $x i64.const 7000000 i64.sub call $to_host f32.const 82 f32.const 2 i32.const 0xffcf5cff call $line drop
 		i32.const 922 local.get $x i64.const 7000000 i64.add call $to_host f32.const 82 local.get $x i64.const 14000000 i64.add call $to_host f32.const 82 f32.const 2 i32.const 0xffcf5cff call $line drop
 		i32.const 923 local.get $x call $to_host f32.const 68 local.get $x call $to_host f32.const 75 f32.const 2 i32.const 0xffcf5cff call $line drop
@@ -3307,7 +3321,7 @@
 		(if
 			(then
 				i32.const 2024 f32.const 44 f32.const 95 f32.const 72 f32.const 95 f32.const 3 local.get $color call $line drop
-				i32.const 2025 f32.const 44 f32.const 95 f32.const 4 f32.const 0 i32.const 0xffffffff i32.const 1 call $circle drop)
+				i32.const 2025 f32.const 44 f32.const 95 f32.const 4 f32.const 0 i32.const 0xffffffff call $circle_filled drop)
 			(else
 				i32.const 2024 f32.const 42 f32.const 84 f32.const 54 f32.const 95 f32.const 3 local.get $color call $line drop
 				i32.const 2025 f32.const 54 f32.const 95 f32.const 42 f32.const 106 f32.const 3 local.get $color call $line drop
@@ -3469,7 +3483,7 @@
 				i32.const 73 i32.const 629 i32.const 6 local.get $pointer_action call $to_host i64.const 2 call $help_second_row_y local.get $row_size i32.const 0x9bb8d1ff i32.const 0 call $text drop
 				i32.const 59 i32.const 640 i32.const 6 local.get $pointer_input call $to_host i64.const 3 call $help_second_row_y local.get $row_size i32.const 0xffffffff i32.const 0 call $text drop
 				i32.const 74 i32.const 653 i32.const 7 local.get $pointer_action call $to_host i64.const 3 call $help_second_row_y local.get $row_size i32.const 0x9bb8d1ff i32.const 0 call $text drop))
-		i32.const 2030 local.get $center call $to_host i64.const 585 call $help_feature_y f32.const 6 f32.const 0 i32.const 0xff5cf4ff i32.const 1 call $circle drop
+		i32.const 2030 local.get $center call $to_host i64.const 585 call $help_feature_y f32.const 6 f32.const 0 i32.const 0xff5cf4ff call $circle_filled drop
 		i32.const 2031 local.get $center i64.const 18000000 i64.sub call $to_host i64.const 585 call $help_feature_y local.get $center i64.const 7000000 i64.sub call $to_host i64.const 585 call $help_feature_y f32.const 2 i32.const 0xff5cf4ff call $line drop
 		i32.const 2032 local.get $center i64.const 7000000 i64.add call $to_host i64.const 585 call $help_feature_y local.get $center i64.const 18000000 i64.add call $to_host i64.const 585 call $help_feature_y f32.const 2 i32.const 0xff5cf4ff call $line drop
 		i32.const 2033 local.get $center call $to_host i64.const 567 call $help_feature_y local.get $center call $to_host i64.const 578 call $help_feature_y f32.const 2 i32.const 0xff5cf4ff call $line drop
@@ -3551,9 +3565,9 @@
 		(if (result i32) (then i32.const 0xffcf5cff) (else i32.const 0xff8a2bff))
 		local.set $color
 		i32.const 930 i32.const 26632 i64.load call $to_host i32.const 26640 i64.load call $to_host
-		local.get $radius call $to_host f32.const 0 local.get $color i32.const 1 call $circle drop
+		local.get $radius call $to_host f32.const 0 local.get $color call $circle_filled drop
 		i32.const 931 i32.const 26632 i64.load call $to_host i32.const 26640 i64.load call $to_host
-		local.get $radius i64.const 8000000 i64.add call $to_host f32.const 4 i32.const 0xff9b2f99 i32.const 0 call $circle drop)
+		local.get $radius i64.const 8000000 i64.add call $to_host f32.const 4 i32.const 0xff9b2f99 call $circle_outlined drop)
 
 	(func (export "AE_render") (result i32)
 		(local $index i32) (local $address i32) (local $reserve_count i32)
@@ -3630,7 +3644,7 @@
 			local.get $index call $bullet_address local.set $address
 			local.get $address i32.load (if (then
 				local.get $index call $bullet_draw_key local.get $address i32.const 8 i32.add i64.load call $to_host local.get $address i32.const 16 i32.add i64.load call $to_host
-				f32.const 2 f32.const 0 i32.const 0x58ff72ff i32.const 1 call $circle drop))
+				f32.const 2 f32.const 0 i32.const 0x58ff72ff call $circle_filled drop))
 			local.get $index i32.const 1 i32.add local.set $index br $bullets))
 		i32.const 0 local.set $index
 		(block $enemy_bullets_done (loop $enemy_bullets
@@ -3640,7 +3654,7 @@
 				i32.const 960 local.get $index i32.add
 				local.get $address i32.const 8 i32.add i64.load call $to_host
 				local.get $address i32.const 16 i32.add i64.load call $to_host
-				f32.const 3 f32.const 0 i32.const 0xff5c73ff i32.const 1 call $circle drop))
+				f32.const 3 f32.const 0 i32.const 0xff5c73ff call $circle_filled drop))
 			local.get $index i32.const 1 i32.add local.set $index br $enemy_bullets))
 		i32.const 0 local.set $index
 		(block $asteroids_done (loop $asteroids
@@ -3653,7 +3667,7 @@
 			local.get $index call $particle_address local.set $address
 			local.get $address i32.load (if (then
 				i32.const 500 local.get $index i32.add local.get $address i32.const 8 i32.add i64.load call $to_host local.get $address i32.const 16 i32.add i64.load call $to_host
-				f32.const 2 f32.const 0 i32.const 0xff9b2fff i32.const 1 call $circle drop))
+				f32.const 2 f32.const 0 i32.const 0xff9b2fff call $circle_filled drop))
 			local.get $index i32.const 1 i32.add local.set $index br $particles))
 		i32.const 0 local.set $index
 		(block $debris_done (loop $debris

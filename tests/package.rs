@@ -133,9 +133,16 @@ fn archive_requires_epub_style_aedicule_mimetype_sentinel() {
 
 #[test]
 fn bundled_vibesteroids_package_is_a_runnable_audio_application() {
-    let package = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("demos/vibesteroids.aed");
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let package = root.join("demos/vibesteroids.aed");
     let source = PluginSource::Archive(package);
-    let wat = String::from_utf8(read_application_file(&source, "code.wat").unwrap()).unwrap();
+    let packaged_wat = read_application_file(&source, "code.wat").unwrap();
+    assert_eq!(
+        packaged_wat,
+        fs::read(root.join("demos/vibesteroids.wat")).unwrap(),
+        "bundled package contains a stale code.wat snapshot",
+    );
+    let wat = String::from_utf8(packaged_wat).unwrap();
     assert!(wat.contains("AE_sample_asset"));
     assert!(wat.contains("AE_sample_play"));
     assert!(wat.contains("(func (export \"AE_state_schema\") (result i32) i32.const 11)"));
