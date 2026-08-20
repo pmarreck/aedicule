@@ -134,6 +134,25 @@
 								+ ` cap-fail ${touch?.captureFailures ?? -1}`
 								+ ` last ${touch?.lastPhase ?? "-"}`;
 						})(),
+						(() => {
+							const motion = globalThis.__AEDICULE_MOTION_DIAGNOSTIC;
+							const error = motion?.errorName ? ` err ${motion.errorName}` : "";
+							const magnitude = Number.isFinite(motion?.lastMagnitude)
+								? motion.lastMagnitude.toFixed(1) : "-";
+							return `motion ${motion?.permission ?? "absent"}`
+								+ ` try ${motion?.permissionAttempts ?? 0}`
+								+ ` no-int ${motion?.skippedNoInterest ?? 0}`
+								+ ` no-act ${motion?.skippedNoActivation ?? 0}${error}\n`
+								+ `motion cap ${motion?.samplesCaptured ?? 0}`
+								+ ` q ${motion?.samplesQueued ?? 0}`
+								+ ` src ${motion?.accelerationSource ?? "none"}`
+								+ ` drain ${motion?.samplesDrained ?? 0}\n`
+								+ `motion low ${motion?.belowThreshold ?? 0}`
+								+ ` high ${motion?.aboveThreshold ?? 0}`
+								+ ` emit ${motion?.gesturesEmitted ?? 0}`
+								+ ` guest ${delivered?.motionGestures ?? 0}`
+								+ ` mag ${magnitude}`;
+						})(),
 						`pd ${taps.pd} pu ${taps.pu} ts ${taps.ts} te ${taps.te} `
 							+ `md ${taps.md} mu ${taps.mu} ck ${taps.ck}`,
 						`down ${pressed.id}  up ${released}  drift ${drift}px`,

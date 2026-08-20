@@ -149,6 +149,14 @@ fn native_cli_serves_an_aed_through_the_bundled_web_runtime() {
         ),
         ("bootstrap.js", b"console.info('bootstrap')".as_slice()),
         ("audio.mjs", b"export const audio = {}".as_slice()),
+		(
+			"motion-input.mjs",
+			b"export const motionInput = {}".as_slice(),
+		),
+		(
+			"touch-input.mjs",
+			b"export const touchInput = {}".as_slice(),
+		),
         (
             "local-application.mjs",
             b"export const localApplication = {}".as_slice(),

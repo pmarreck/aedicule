@@ -705,6 +705,7 @@
 							node ./tests/integration/web_audio_adapter.mjs
 							node ./tests/integration/web_browser_startup_unit.mjs
 							node ./tests/integration/web_local_application.mjs
+							node ./tests/integration/web_motion_bridge.mjs
 							node ./tests/integration/web_startup_lock.mjs "$PWD"
 							node ./tests/integration/web_service_worker_retirement.mjs "$PWD"
 							runHook postCheck
@@ -744,6 +745,7 @@
 							install -Dm644 ${./web/index.html} $out/index.html
 							install -Dm644 ${./web/bootstrap.js} $out/bootstrap.js
 							install -Dm644 ${./web/audio.mjs} $out/audio.mjs
+							install -Dm644 ${./web/motion-input.mjs} $out/motion-input.mjs
 							install -Dm644 ${./web/touch-input.mjs} $out/touch-input.mjs
 							install -Dm644 ${./web/startup-lock.mjs} $out/startup-lock.mjs
 							install -Dm644 ${./packaging/web/service-worker-retirement.mjs} $out/service-worker-retirement.mjs

@@ -6,12 +6,60 @@ import {
 	browserProcessEnvironment,
 	chooseCanvasInputPoint,
 	inputObserverSource,
+	motionGestureFailures,
+	motionPermissionObserverSource,
+	parseArguments,
 	requestBrowserClose,
 	removeBrowserProfile,
 	waitForFile,
 	waitForDebuggablePage,
 	waitForSemanticInputQuiescence,
 } from "./web_browser_startup";
+
+assert.equal(
+	parseArguments([
+		"--require-post-action-touch", "8",
+		"--require-motion-gesture",
+		"https://example.com/",
+	])
+		.requireMotionGesture,
+	true,
+);
+
+const motionBrowser = {
+	Event,
+	navigator: { userActivation: { isActive: true } },
+	performance: { now: () => 123.4 },
+};
+vm.runInNewContext(motionPermissionObserverSource(), motionBrowser);
+assert.equal(await motionBrowser.DeviceMotionEvent.requestPermission(), "granted");
+assert.deepEqual(
+	JSON.parse(JSON.stringify(motionBrowser.__AEDICULE_MOTION_PERMISSION_CALLS)),
+	[{ elapsedMs: 123, userActivationActive: true }],
+);
+
+const completeMotionSummary = {
+	permissionCalls: 1,
+	permissionActivated: true,
+	permission: "granted",
+	sampleCaptureDelta: 1,
+	sampleDrainDelta: 1,
+	motionGestureDelta: 1,
+	audioRequestDelta: 3,
+};
+assert.deepEqual(motionGestureFailures(completeMotionSummary), []);
+for (const [field, value, expected] of [
+	["permissionCalls", 0, "permission callback"],
+	["permissionActivated", false, "transient activation"],
+	["permission", "failed", "permission was not granted"],
+	["sampleCaptureDelta", 0, "motion sample"],
+	["sampleDrainDelta", 2, "motion drain"],
+	["motionGestureDelta", 0, "shake gesture"],
+	["audioRequestDelta", 0, "guest response"],
+]) {
+	const summary = { ...completeMotionSummary, [field]: value };
+	assert.deepEqual(motionGestureFailures(summary), [expected]);
+}
 
 assert.deepEqual(
 	chooseCanvasInputPoint(

@@ -28,8 +28,8 @@ const EXPECTED_STAGES = [
 	"settled",
 ];
 
-const HELP = `usage: web_browser_startup [--chrome PATH] [--timeout-ms N] [--require-audio-playback] [--require-key-delivery] [--require-controls] [--require-action ID] [--require-external-link] [--require-text-entry] [--require-touch-activation] [--require-touch-contacts] [--require-post-action-touch ID] URL
-       web_browser_startup [--chrome PATH] [--timeout-ms N] [--require-audio-playback] [--require-key-delivery] [--require-controls] [--require-action ID] [--require-external-link] [--require-text-entry] [--require-touch-activation] [--require-touch-contacts] [--require-post-action-touch ID] [--local-application PATH] --static-root PATH
+const HELP = `usage: web_browser_startup [--chrome PATH] [--timeout-ms N] [--require-audio-playback] [--require-key-delivery] [--require-controls] [--require-action ID] [--require-external-link] [--require-text-entry] [--require-touch-activation] [--require-touch-contacts] [--require-post-action-touch ID] [--require-motion-gesture] URL
+       web_browser_startup [--chrome PATH] [--timeout-ms N] [--require-audio-playback] [--require-key-delivery] [--require-controls] [--require-action ID] [--require-external-link] [--require-text-entry] [--require-touch-activation] [--require-touch-contacts] [--require-post-action-touch ID] [--require-motion-gesture] [--local-application PATH] --static-root PATH
 
 Launch a headless Chromium browser, stream Aedicule's structured startup
 timeline, and reject browser exceptions or a missing/1x1 GPUI canvas.
@@ -55,6 +55,8 @@ phase, guest-visible delivery, and no compatibility-pointer leakage.
 --require-post-action-touch ID activates the named AVP action with a touch,
 waits for its control to disappear, then requires active-game edge contacts to
 reach the guest without pointer leakage and produce an audio request.
+--require-motion-gesture mocks the privileged browser permission callback,
+injects a bounded acceleration spike, and requires one guest shake response.
 --local-application selects a .wat or .aed through the gallery and requires the
 generic origin-local runner to reach the same settled application state.
 
@@ -63,7 +65,7 @@ Environment:
   AEDICULE_BROWSER_TRACE_EVENTS Set to 1 for each injected/observed input event
 `;
 
-function parseArguments(arguments_) {
+export function parseArguments(arguments_) {
 	let chrome;
 	let timeoutMs = 15_000;
 	let requireAudioPlayback = false;
@@ -75,6 +77,7 @@ function parseArguments(arguments_) {
 	let requireTouchActivation = false;
 	let requireTouchContacts = false;
 	let requiredPostActionTouchId;
+	let requireMotionGesture = false;
 	let localApplication;
 	let staticRoot;
 	let url;
@@ -140,6 +143,10 @@ function parseArguments(arguments_) {
 			requiredPostActionTouchId = Number(arguments_[index += 1]);
 			continue;
 		}
+		if (argument === "--require-motion-gesture") {
+			requireMotionGesture = true;
+			continue;
+		}
 		if (argument.startsWith("-")) {
 			throw new Error(`unknown option: ${argument}`);
 		}
@@ -165,6 +172,9 @@ function parseArguments(arguments_) {
 	)) {
 		throw new Error("--require-post-action-touch must be an unsigned 32-bit integer");
 	}
+	if (requireMotionGesture && requiredPostActionTouchId === undefined) {
+		throw new Error("--require-motion-gesture requires --require-post-action-touch ID");
+	}
 	if ((url === undefined) === (staticRoot === undefined)) {
 		throw new Error("exactly one URL or --static-root PATH is required");
 	}
@@ -187,6 +197,7 @@ function parseArguments(arguments_) {
 		requiredActionId,
 		requireExternalLink,
 		requireKeyDelivery,
+		requireMotionGesture,
 		requireTextEntry,
 		requireTouchActivation,
 		requireTouchContacts,
@@ -580,6 +591,42 @@ export function inputObserverSource(verboseEvents, interceptExternalLinks = fals
 	})()`;
 }
 
+/** Installs a permission oracle before bootstrap so the real click path can
+ * prove it requested motion access while transient activation was present. */
+export function motionPermissionObserverSource() {
+	return `(() => {
+		globalThis.__AEDICULE_MOTION_PERMISSION_CALLS = [];
+		class SyntheticDeviceMotionEvent extends Event {}
+		SyntheticDeviceMotionEvent.requestPermission = () => {
+			globalThis.__AEDICULE_MOTION_PERMISSION_CALLS.push({
+				elapsedMs: Math.round(performance.now()),
+				userActivationActive: navigator.userActivation?.isActive ?? null,
+			});
+			return Promise.resolve("granted");
+		};
+		Object.defineProperty(globalThis, "DeviceMotionEvent", {
+			configurable: true,
+			value: SyntheticDeviceMotionEvent,
+		});
+	})()`;
+}
+
+/** Classifies every independent boundary of a synthetic browser shake so one
+ * later success cannot conceal a skipped permission, capture, or guest edge. */
+export function motionGestureFailures(summary) {
+	const failures = [];
+	if (summary.permissionCalls < 1) failures.push("permission callback");
+	if (summary.permissionActivated !== true) failures.push("transient activation");
+	if (summary.permission !== "granted") failures.push("permission was not granted");
+	if (summary.sampleCaptureDelta < 1) failures.push("motion sample");
+	if (summary.sampleCaptureDelta >= 1 && summary.sampleDrainDelta !== summary.sampleCaptureDelta) {
+		failures.push("motion drain");
+	}
+	if (summary.motionGestureDelta !== 1) failures.push("shake gesture");
+	if (summary.audioRequestDelta < 1) failures.push("guest response");
+	return failures;
+}
+
 async function pageSnapshot(protocol) {
 	const evaluation = await protocol.send("Runtime.evaluate", {
 		expression: `(() => ({
@@ -591,7 +638,10 @@ async function pageSnapshot(protocol) {
 			audioDiagnostic: globalThis.__AEDICULE_AUDIO_DIAGNOSTIC ?? null,
 			deliveredEventCount: globalThis.__AEDICULE_DELIVERED_EVENT_COUNT ?? 0,
 			deliveredEventCounts: globalThis.__AEDICULE_DELIVERED_EVENT_COUNTS
-				?? { total: 0, controls: 0, menuActions: 0, pointer: 0, touch: 0 },
+				?? { total: 0, controls: 0, menuActions: 0, pointer: 0, touch: 0,
+					motionGestures: 0 },
+			motionDiagnostic: globalThis.__AEDICULE_MOTION_DIAGNOSTIC ?? null,
+			motionPermissionCalls: globalThis.__AEDICULE_MOTION_PERMISSION_CALLS ?? [],
 			frameBackground: globalThis.__AEDICULE_FRAME_BACKGROUND ?? null,
 			runtime: globalThis.__AEDICULE_RUNTIME_DIAGNOSTIC ?? null,
 			ui: globalThis.__AEDICULE_UI_SNAPSHOT ?? null,
@@ -1048,6 +1098,61 @@ async function exercisePostActionTouch(protocol, snapshot, actionId) {
 	};
 }
 
+/** Injects browser-shaped DeviceMotionEvents after the trusted Start tap. One
+ * handling-noise sample must stay silent; two same-shake spikes must collapse
+ * to one guest event and one application response. */
+async function exerciseMotionGesture(protocol, snapshot) {
+	const before = snapshot;
+	const dispatchMotion = async acceleration => {
+		await protocol.send("Runtime.evaluate", {
+			expression: `(() => {
+				const event = new Event("devicemotion");
+				Object.defineProperties(event, {
+					acceleration: { value: ${JSON.stringify(acceleration)} },
+					accelerationIncludingGravity: {
+						value: { x: ${acceleration.x}, y: ${acceleration.y}, z: ${acceleration.z + 9.8} },
+					},
+					rotationRate: { value: { alpha: 0, beta: 0, gamma: 0 } },
+				});
+				dispatchEvent(event);
+			})()`,
+		});
+	};
+
+	await dispatchMotion({ x: 3, y: 0, z: 0 });
+	await protocol.send("Runtime.evaluate", {
+		expression: "new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+		awaitPromise: true,
+	});
+	const afterNoise = await pageSnapshot(protocol);
+	await dispatchMotion({ x: 18, y: 0, z: 0 });
+	await dispatchMotion({ x: 21, y: 0, z: 0 });
+	const gestureDelivered = await waitForSemanticCount(
+		protocol,
+		"motionGestures",
+		(before.deliveredEventCounts.motionGestures ?? 0) + 1,
+	);
+	const audioResponded = await waitForAudioRequestAfter(protocol, before.audioRequestCount);
+	const after = await pageSnapshot(protocol);
+	const permissionCalls = after.motionPermissionCalls ?? [];
+	return {
+		permissionCalls: permissionCalls.length,
+		permissionActivated: permissionCalls.some(call => call.userActivationActive === true),
+		permission: after.motionDiagnostic?.permission ?? "absent",
+		sampleCaptureDelta: (after.motionDiagnostic?.samplesCaptured ?? 0)
+			- (before.motionDiagnostic?.samplesCaptured ?? 0),
+		sampleDrainDelta: (after.motionDiagnostic?.samplesDrained ?? 0)
+			- (before.motionDiagnostic?.samplesDrained ?? 0),
+		motionGestureDelta: (after.deliveredEventCounts.motionGestures ?? 0)
+			- (before.deliveredEventCounts.motionGestures ?? 0),
+		noiseGestureDelta: (afterNoise.deliveredEventCounts.motionGestures ?? 0)
+			- (before.deliveredEventCounts.motionGestures ?? 0),
+		audioRequestDelta: after.audioRequestCount - before.audioRequestCount,
+		gestureDelivered,
+		audioResponded,
+	};
+}
+
 /**
  * Classifies control activation against release drift on a coarse pointer. A
  * release just past the declared edge must still activate, because a fingertip
@@ -1492,7 +1597,13 @@ async function inspect(options) {
 		await protocol.send("Page.addScriptToEvaluateOnNewDocument", {
 			source: inputObserverSource(verboseEvents, options.requireExternalLink),
 		});
-		if (options.requireTouchActivation || options.requiredPostActionTouchId !== undefined) {
+		if (options.requireMotionGesture) {
+			await protocol.send("Page.addScriptToEvaluateOnNewDocument", {
+				source: motionPermissionObserverSource(),
+			});
+		}
+		if (options.requireTouchActivation || options.requiredPostActionTouchId !== undefined
+			|| options.requireMotionGesture) {
 			// Peter's device geometry, so the button under test is the same
 			// 70x36 rectangle the hardware lays out rather than a desktop one.
 			await protocol.send("Emulation.setDeviceMetricsOverride",
@@ -1518,6 +1629,16 @@ async function inspect(options) {
 			process.stdout.write(`${JSON.stringify({
 				type: "post-action-touch-summary",
 				...postActionTouchSummary,
+			})}\n`);
+			snapshot = await pageSnapshot(protocol);
+		}
+		const motionGestureSummary = options.requireMotionGesture
+			? await exerciseMotionGesture(protocol, snapshot)
+			: undefined;
+		if (motionGestureSummary !== undefined) {
+			process.stdout.write(`${JSON.stringify({
+				type: "motion-gesture-summary",
+				...motionGestureSummary,
 			})}\n`);
 			snapshot = await pageSnapshot(protocol);
 		}
@@ -1637,6 +1758,24 @@ async function inspect(options) {
 			failures.push(
 				`post-action touch did not activate action ${options.requiredPostActionTouchId}, retire its UI, or drive isolated guest gameplay: ${JSON.stringify(postActionTouchSummary)}`,
 			);
+		}
+		if (motionGestureSummary !== undefined) {
+			const motionFailures = motionGestureFailures(motionGestureSummary);
+			if (motionGestureSummary.noiseGestureDelta !== 0) {
+				motionFailures.push("handling noise produced a shake gesture");
+			}
+			if (!motionGestureSummary.gestureDelivered) {
+				motionFailures.push("gesture delivery did not quiesce");
+			}
+			if (!motionGestureSummary.audioResponded) {
+				motionFailures.push("guest audio response did not arrive");
+			}
+			if (motionFailures.length > 0) {
+				failures.push(
+					`motion gesture failed (${motionFailures.join(", ")}): `
+						+ JSON.stringify(motionGestureSummary),
+				);
+			}
 		}
 		// Every gate here loads without `?diag`, so the debugging overlay must be
 		// absent. Nothing else would notice it: it inherits the page's selection

@@ -40,6 +40,7 @@ pub struct BrowserDeliveredEventCounts {
 	pub last_menu_action_id: Option<u32>,
 	pub pointer: u64,
 	pub touch: u64,
+	pub motion_gestures: u64,
 }
 
 /// Reports whether one browser edge entered the fixed-step queue, was consumed,
@@ -241,6 +242,10 @@ impl BrowserRuntime {
 			| Event::TouchEnd { .. }
 			| Event::TouchCancel { .. } => {
 				self.delivered_events.touch = self.delivered_events.touch.saturating_add(1);
+			}
+			Event::MotionGesture { .. } => {
+				self.delivered_events.motion_gestures =
+					self.delivered_events.motion_gestures.saturating_add(1);
 			}
             _ => {}
         }
@@ -465,6 +470,30 @@ mod tests {
 			(func (export "AE_state_schema") (result i32) i32.const 1))
 	"#;
 
+	const MOTION_WAT: &str = r#"
+		(module
+			(import "aedicule.v0" "AE_motion_interest"
+				(func $motion_interest (param i32 i32 i32) (result i32)))
+			(import "aedicule.v0" "AE_frame_begin_rgba"
+				(func $frame_begin (param i32) (result i32)))
+			(import "aedicule.v0" "AE_frame_end" (func $frame_end (result i32)))
+			(memory (export "memory") 1)
+			(func (export "AE_abi_major") (result i32) i32.const 0)
+			(func (export "AE_abi_minor") (result i32) i32.const 7)
+			(func (export "AE_configure") (result i32)
+				i32.const 1 i32.const 0 i32.const 0 call $motion_interest)
+			(func (export "AE_init") (param i32 i32 f32 f32) (result i32) i32.const 0)
+			(func (export "AE_event") (param i32 i32 f32 f32) (result i32) i32.const 0)
+			(func (export "AE_tick") (param i32) (result i32) i32.const 0)
+			(func (export "AE_tick_rate") (param i32 i32) (result i32 i32)
+				i32.const 60 i32.const 1)
+			(func (export "AE_render") (result i32)
+				i32.const 255 call $frame_begin drop call $frame_end drop i32.const 0)
+			(func (export "AE_state_ptr") (result i32) i32.const 0)
+			(func (export "AE_state_len") (result i32) i32.const 0)
+			(func (export "AE_state_schema") (result i32) i32.const 1))
+	"#;
+
     const PAUSE_WAT: &str = r#"
 		(module
 			(import "aedicule.v0" "AE_pause_trigger"
@@ -666,6 +695,25 @@ mod tests {
 		assert!(runtime.advance_to(Duration::from_millis(17)).unwrap());
 		assert_eq!(runtime.delivered_event_counts().touch, 1);
 		assert_eq!(runtime.delivered_event_counts().pointer, 0);
+	}
+
+	#[test]
+	fn counts_a_host_derived_shake_only_after_guest_delivery() {
+		let mut runtime = BrowserRuntime::new(
+			MOTION_WAT,
+			PluginInit::new(7, 1024.0, 768.0),
+			Duration::ZERO,
+		)
+		.unwrap();
+		runtime
+			.handle_input(
+				Duration::from_millis(5),
+				Event::MotionGesture { magnitude: 18.0 },
+			)
+			.unwrap();
+
+		assert!(runtime.advance_to(Duration::from_millis(17)).unwrap());
+		assert_eq!(runtime.delivered_event_counts().motion_gestures, 1);
 	}
 
     #[test]

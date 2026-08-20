@@ -120,6 +120,16 @@ expect_text "$root/web/index.html" '__AEDICULE_TOUCH_EVENTS?.length' \
 	'phone diagnostic overlay snapshots queue depth instead of reading the live Rust-drained queue'
 expect_text "$root/web/index.html" 'captureFailures' \
 	'phone diagnostic overlay cannot distinguish pointer-capture failure from absent touch input'
+expect_text "$root/web/index.html" '__AEDICULE_MOTION_DIAGNOSTIC' \
+	'phone diagnostic overlay omits sensor permission and sample-capture state'
+expect_text "$root/web/index.html" 'motionGestures' \
+	'phone diagnostic overlay omits guest-delivered shake gestures'
+for motion_field in permission permissionAttempts skippedNoInterest \
+	skippedNoActivation samplesCaptured samplesQueued samplesDrained belowThreshold \
+	aboveThreshold gesturesEmitted lastMagnitude accelerationSource errorName; do
+	expect_text "$root/web/index.html" "$motion_field" \
+		"phone diagnostic overlay omits motion field $motion_field"
+done
 expect_text "$root/tests/integration/web_browser_startup" '--require-post-action-touch' \
 	'browser gate cannot compose touch Start with active-game raw contacts'
 expect_text "$root/src/bin/aedicule-web.rs" 'report_browser_frame_started' \
@@ -329,17 +339,25 @@ reject_text "$root/src/bin/aedicule-web.rs" 'viewport_bits' \
 # Motion capability: bootstrap captures devicemotion into a bounded ring and
 # requests the iOS permission on a user gesture; the adapter drains the ring
 # and runs the unit-tested rate limit and shake detection in Rust.
-expect_text "$root/web/bootstrap.js" '__AEDICULE_MOTION_SAMPLES' \
-	'browser bootstrap never captures devicemotion samples for the adapter'
-expect_text "$root/web/bootstrap.js" 'DeviceMotionEvent.requestPermission' \
-	'browser bootstrap never requests the iOS motion permission on a gesture'
-expect_text "$root/web/bootstrap.js" '__AEDICULE_MOTION_INTEREST' \
-	'browser bootstrap requests motion permission without a guest interest'
+expect_text "$root/web/bootstrap.js" 'createMotionBridge();' \
+	'browser bootstrap never installs the motion-input bridge'
+expect_text "$root/web/motion-input.mjs" '__AEDICULE_MOTION_SAMPLES' \
+	'browser motion bridge never captures devicemotion samples for the adapter'
+expect_text "$root/web/motion-input.mjs" 'requestPermission()' \
+	'browser motion bridge never requests iOS motion permission on an activation'
+expect_text "$root/web/motion-input.mjs" '__AEDICULE_MOTION_INTEREST' \
+	'browser motion bridge requests motion permission without a guest interest'
+expect_text "$root/flake.nix" 'install -Dm644 ${./web/motion-input.mjs} $out/motion-input.mjs' \
+	'Web runtime does not deliver the motion-input bridge module'
 expect_text "$root/src/bin/aedicule-web.rs" '__AEDICULE_MOTION_SAMPLES' \
 	'browser adapter never drains captured devicemotion samples'
 expect_text "$root/src/bin/aedicule-web.rs" 'ShakeDetector' \
 	'browser adapter does not run the unit-tested shake detector'
 expect_text "$root/src/bin/aedicule-web.rs" '__AEDICULE_MOTION_INTEREST' \
 	'browser adapter never signals guest motion interest to the page'
+expect_text "$root/src/bin/aedicule-web.rs" 'report_browser_motion_drain' \
+	'browser adapter leaves phone motion diagnostics stale after draining samples'
+expect_text "$root/src/bin/aedicule-web.rs" 'take_browser_motion_samples' \
+	'browser adapter drains motion with an Array.splice overload that can reinsert a pseudo-sample'
 
 exit "$failures"

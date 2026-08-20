@@ -151,6 +151,7 @@ annotate=[
 	tests/integration/web_browser_startup_unit.mjs = Deterministic Node tests for browser acceptance helpers and lifecycle diagnostics
 	tests/integration/web_external_link = Serves the integer link fixture directly and requires trusted noopener browser activation.
 	tests/integration/web_local_application.mjs = Deterministic real-package tests for browser .aed parsing, bare WAT admission, and gallery preview direction
+	tests/integration/web_motion_bridge.mjs = Deterministic motion-permission retry and bounded sample-capture regression test.
 	tests/integration/web_packaged_audio = End-to-end Chrome gate for .aed asset transport, FLAC decode, and Web Audio handoff.
 	tests/integration/web_service_worker_retirement.mjs = Deterministic set-classifier and unregister isolation tests for legacy browser workers.
 	tests/integration/web_standalone_action = Optional Chromium gate for exact standalone-action delivery through a real GPUI-component button.
@@ -185,6 +186,7 @@ annotate=[
 	web/bootstrap.js = Localized browser startup, diagnostics, audio, static/local application admission, and WebAssembly initialization
 	web/cargo-config.toml = Single-threaded WebAssembly target flags; browser runtime owns ordinary linear memory.
 	web/index.html = Minimal full-canvas HTML shell for a generic Aedicule web bundle
+	web/motion-input.mjs = Browser motion permission, bounded DeviceMotion capture, and phone diagnostics bridge.
 	web/startup-lock.mjs = Origin-scoped Web Locks critical section serializing WebGPU/Wasm startup through the first completed browser frame.
 	web/touch-input.mjs = Browser raw-contact capture that preserves AVP-owned touch lifetimes for GPUI
 ]

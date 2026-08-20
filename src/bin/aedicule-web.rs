@@ -6,9 +6,9 @@ use std::{borrow::Cow, cell::OnceCell};
 #[cfg_attr(not(target_family = "wasm"), allow(unused_imports))]
 use aedicule::{
     ApplicationAssets, ControlLabelPlacement, ControlPhase, DEVICE_FLAG_COARSE_POINTER,
-    DeviceChangeTracker, Event, ExternalLinkRequest, MotionInterestKind, ShakeDetector,
-    GEIST_MONO_REGULAR, Key, PluginInit, PointerButton, PointerScrollUnit, Rect, SliderControl,
-    TextField, TextPhase, TouchContactPhase, TouchContactTracker, UiSnapshot,
+    DeviceChangeTracker, Event, ExternalLinkRequest, MotionInterestKind, SHAKE_THRESHOLD_MPS2,
+    ShakeDetector, GEIST_MONO_REGULAR, Key, PluginInit, PointerButton, PointerScrollUnit, Rect,
+    SliderControl, TextField, TextPhase, TouchContactPhase, TouchContactTracker, UiSnapshot,
     gpui_canvas::paint_frame,
     text_value_events,
     web::{
@@ -55,6 +55,12 @@ extern "C" {
 
     #[wasm_bindgen::prelude::wasm_bindgen(js_namespace = globalThis, js_name = __AEDICULE_REPORT_FRAME_COMPLETED)]
     fn report_browser_frame_completed(guest_elapsed_ms: f64, background: u32);
+
+	#[wasm_bindgen::prelude::wasm_bindgen(js_namespace = globalThis, js_name = __AEDICULE_REPORT_MOTION_DRAIN)]
+	fn report_browser_motion_drain(detail: &JsValue);
+
+	#[wasm_bindgen::prelude::wasm_bindgen(js_namespace = globalThis, js_name = __AEDICULE_TAKE_MOTION_SAMPLES)]
+	fn take_browser_motion_samples() -> js_sys::Array;
 
     #[wasm_bindgen::prelude::wasm_bindgen(js_namespace = console, js_name = info)]
     fn browser_console_info(prefix: &str, phase: &str, detail: &str);
@@ -157,6 +163,7 @@ fn publish_browser_delivered_events(counts: BrowserDeliveredEventCounts) {
 		("menuActions", counts.menu_actions),
 		("pointer", counts.pointer),
 		("touch", counts.touch),
+		("motionGestures", counts.motion_gestures),
 	] {
         set_js_property(&diagnostic, name, &JsValue::from_f64(value as f64));
     }
@@ -330,6 +337,11 @@ struct WebFrontplane {
     motion_sample_interval_ms: Option<f64>,
     shake_detector: ShakeDetector,
     last_motion_sample_ms: f64,
+	motion_samples_drained: u64,
+	motion_below_threshold: u64,
+	motion_above_threshold: u64,
+	motion_gestures_emitted: u64,
+	last_motion_magnitude: Option<f32>,
     armed_control: Option<ArmedControl>,
     touch_contacts: Option<TouchContactTracker>,
     sliders: Vec<WebSlider>,
@@ -556,6 +568,11 @@ impl WebFrontplane {
             motion_sample_interval_ms,
             shake_detector: ShakeDetector::default(),
             last_motion_sample_ms: -f64::INFINITY,
+			motion_samples_drained: 0,
+			motion_below_threshold: 0,
+			motion_above_threshold: 0,
+			motion_gestures_emitted: 0,
+			last_motion_magnitude: None,
             armed_control: None,
             touch_contacts,
             sliders,
@@ -675,7 +692,7 @@ impl WebFrontplane {
     fn drain_touch_contacts(&mut self) {}
 
     /// Drains the page-captured devicemotion ring (`__AEDICULE_MOTION_SAMPLES`)
-    /// and applies the guest.s registered pacing: the unit-tested ShakeDetector
+    /// and applies the guest's registered pacing: the unit-tested ShakeDetector
     /// collapses one physical shake into one gesture, and six-axis samples are
     /// throttled to the registered rate before crossing the guest boundary.
     #[cfg(target_family = "wasm")]
@@ -683,16 +700,8 @@ impl WebFrontplane {
         if !self.shake_interest && self.motion_sample_interval_ms.is_none() {
             return;
         }
-        let global = js_sys::global();
-        let Ok(ring) =
-            js_sys::Reflect::get(&global, &JsValue::from_str("__AEDICULE_MOTION_SAMPLES"))
-        else {
-            return;
-        };
-        let Ok(ring) = ring.dyn_into::<js_sys::Array>() else {
-            return;
-        };
-        if ring.length() == 0 {
+		let samples = take_browser_motion_samples();
+		if samples.length() == 0 {
             return;
         }
         let field = |sample: &JsValue, name: &str| -> f64 {
@@ -701,7 +710,8 @@ impl WebFrontplane {
                 .and_then(|value| value.as_f64())
                 .unwrap_or(0.0)
         };
-        for sample in ring.splice(0, ring.length(), &JsValue::UNDEFINED).iter() {
+        for sample in samples.iter() {
+            self.motion_samples_drained = self.motion_samples_drained.saturating_add(1);
             let elapsed_ms = field(&sample, "elapsedMs");
             let acceleration = [
                 field(&sample, "ax") as f32,
@@ -718,8 +728,14 @@ impl WebFrontplane {
                     + acceleration[1] * acceleration[1]
                     + acceleration[2] * acceleration[2])
                     .sqrt();
-                if let Some(magnitude) = self.shake_detector.observe(elapsed_ms as u64, magnitude)
-                {
+                self.last_motion_magnitude = Some(magnitude);
+                if magnitude >= SHAKE_THRESHOLD_MPS2 {
+                    self.motion_above_threshold = self.motion_above_threshold.saturating_add(1);
+                } else {
+                    self.motion_below_threshold = self.motion_below_threshold.saturating_add(1);
+                }
+                if let Some(magnitude) = self.shake_detector.observe(elapsed_ms as u64, magnitude) {
+                    self.motion_gestures_emitted = self.motion_gestures_emitted.saturating_add(1);
                     self.queue_event(Event::MotionGesture { magnitude });
                 }
             }
@@ -733,6 +749,24 @@ impl WebFrontplane {
                 }
             }
         }
+        let diagnostic = js_sys::Object::new();
+        for (name, value) in [
+			("samplesQueued", 0.0),
+            ("samplesDrained", self.motion_samples_drained as f64),
+            ("belowThreshold", self.motion_below_threshold as f64),
+            ("aboveThreshold", self.motion_above_threshold as f64),
+            ("gesturesEmitted", self.motion_gestures_emitted as f64),
+        ] {
+            set_js_property(&diagnostic, name, &JsValue::from_f64(value));
+        }
+        set_js_property(
+            &diagnostic,
+            "lastMagnitude",
+            &self
+                .last_motion_magnitude
+                .map_or(JsValue::NULL, |value| JsValue::from_f64(f64::from(value))),
+        );
+        report_browser_motion_drain(&diagnostic);
     }
 
     #[cfg(not(target_family = "wasm"))]

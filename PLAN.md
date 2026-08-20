@@ -58,6 +58,47 @@
   drift, and guest pause state.
   (Reported 2026-08-14 16:33 EDT; cache ruled out 16:38 EDT; physical iPhone
   acceptance completed 2026-08-15 14:56 EDT.)
+- [ ] ACTIVE: restore physical iPhone shake-to-Death-Blossom parity. TDD the
+  path from the trusted Start gesture through
+  `DeviceMotionEvent.requestPermission`, bounded sample capture,
+  `ShakeDetector`, and guest kind-16/code-1 delivery. Add phone-visible
+  diagnostics that distinguish absent/late interest, unavailable or insecure
+  API, permission granted/denied/exception, zero samples, below-threshold
+  samples, and emitted gestures; add a browser integration test covering the
+  permission callback and synthetic motion sequence. Guest action eligibility
+  remains Vibesteroids-owned. Curiosity poke: iOS may require permission from
+  the completed Start tap rather than its initial pointer edge, and gravity
+  inclusion changes the meaningful threshold. (Queued from Vibesteroids
+  2026-08-14 16:10 EDT; Peter physically reconfirmed the failure 2026-08-20
+  13:50 EDT.) A rejected early permission attempt is now retryable from the
+  completed activation edge, capture is bounded to 32 samples, and the Rust
+  adapter drains through a no-argument JavaScript function so it cannot
+  reinsert an `undefined` pseudo-sample each frame. The phone overlay reports
+  permission, capture, threshold, emission, and guest-delivery boundaries.
+  Deterministic bridge/unit tests, the Wasm adapter tests, full `./test`,
+  optimized `./build`, and the composed real-Chromium Vibesteroids gate pass;
+  the latter proves 3 captured = 3 drained samples, 0 low-noise gestures,
+  exactly 1 delivered shake, and a guest audio response. Physical iPhone
+  acceptance remains before completion. (Automated acceptance completed
+  2026-08-20 14:27 EDT.)
+- [ ] Remove the public-Pages stale-module confounder by content-addressing or
+  release-versioning every mutable browser module URL, with a failing cache
+  simulation proving a new release cannot run old touch/motion bridge code.
+  Pages currently caches stable module URLs for 600 seconds while staging 8911
+  sends `no-store`; fresh origin bytes matched on 2026-08-19, and Peter's later
+  physical retest recovered ordinary touch. Preserve that distinction from
+  the still-broken shake path. Curiosity poke: a versioned entry document is
+  insufficient when its import graph still names stable child modules.
+- [ ] Coordinate the downstream `ulam-flower-wat` runner change that executes
+  its five independent deterministic render-oracle cases concurrently, with
+  per-worker output paths, ordered failure replay, and a multi-failure
+  accumulation regression. Independent RAM-backed measurement was 39.998 s
+  sequential versus 9.044 s parallel (4.42x); repeat that comparison in the
+  real checkout before acceptance. Keep cross-case comparisons serial.
+  Curiosity poke: concurrent workers must not share `capture` globals or SVG
+  paths, and deterministic presentation must survive simultaneous failures.
+  (Queued from Code@thelio-nixos, 2026-08-19 19:00 EDT; follows shake and
+  public browser delivery correctness.)
 - [ ] Narrow the Nix source closures for `webRuntime` and `delivery-web` so a
   browser-test-only or HTML-only edit does not rebuild unrelated Rust/Wasm and
   native frontplane artifacts. Preserve reproducibility by classifying the
@@ -89,17 +130,6 @@
   further makes raw flag calls unreachable behind semantic fill/outline
   wrappers; adding host imports is deferred unless another guest reproduces
   the WAT arity hazard. (Completed 2026-08-14 16:46 EDT.)
-- [ ] TDD the physical iPhone shake path from browser user activation through
-  `DeviceMotionEvent.requestPermission`, bounded sample capture,
-  `ShakeDetector`, and guest kind-16/code-1 delivery. Add phone-visible
-  diagnostics that distinguish absent/late interest, unavailable or insecure
-  API, permission granted/denied/exception, zero samples, below-threshold
-  samples, and emitted gestures; add a browser integration test covering the
-  permission callback and synthetic motion sequence. Guest action eligibility
-  remains Vibesteroids-owned. Curiosity poke: iOS may require permission from
-  the completed Start tap rather than its initial pointer edge, and gravity
-  inclusion changes the meaningful threshold. (Queued from Vibesteroids
-  2026-08-14 16:10 EDT; follows the active gift-bow crash promotion.)
 - [x] Reproduce and repair the delayed iPhone Vibesteroids freeze. Peter's
   repeatable-spawn timing and bow suspicion redirected diagnosis from touch
   handling to the gift render. Gift circle ID 915 passed packed cyan color

@@ -76,6 +76,7 @@ run_remaining_checks() {
 	run_check node ./tests/integration/web_audio_adapter.mjs
 	run_check node ./tests/integration/web_browser_startup_unit.mjs
 	run_check node ./tests/integration/web_local_application.mjs
+	run_check node ./tests/integration/web_motion_bridge.mjs
 	run_check node ./tests/integration/web_startup_lock.mjs "$PWD"
 	run_check node ./tests/integration/web_service_worker_retirement.mjs "$PWD"
 	run_check node ./tests/integration/web_touch_bridge.mjs
