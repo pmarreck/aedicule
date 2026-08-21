@@ -80,8 +80,14 @@
   for an addressed bootstrap, then passed after admitting only known module
   roles with lowercase 64-hex addresses. Full `./test`, optimized `./build`,
   exact delivery build, and composed Chromium Start/touch/shake acceptance are
-  green. Commit, public deployment proof, and physical iPhone acceptance
-  remain. (Automated acceptance completed 2026-08-21 16:49 EDT.)
+  green. Host savepoint `2ecb4b6` reached `origin/yolo`; its first exact
+  Mechatron run then exposed the Nix sandbox invoking the new Bash regression
+  test through an unavailable `/usr/bin/env`. A persistent test first failed
+  on that boundary, the derivation now invokes the test through its supplied
+  Bash, and the canonical full suite plus optimized build pass again. The
+  corrective savepoint, public deployment proof, and physical iPhone
+  acceptance remain. (Automated acceptance completed 2026-08-21 16:49 EDT;
+  Nix invocation correction accepted 17:08 EDT.)
 - [ ] Resume physical iPhone shake-to-Death-Blossom parity after public touch
   works. TDD the
   path from the trusted Start gesture through

@@ -702,7 +702,7 @@
 							./tests/cli/browser_test_partition
 							./tests/cli/browser_test_reminder
 							./tests/cli/parallel_test_runner
-							./tests/cli/web_module_cache
+							bash ./tests/cli/web_module_cache
 							node ./tests/integration/web_audio_adapter.mjs
 							node ./tests/integration/web_browser_startup_unit.mjs
 							node ./tests/integration/web_local_application.mjs

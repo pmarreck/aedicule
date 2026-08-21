@@ -7,6 +7,11 @@ work=$(mktemp -d "$TMPDIR/aedicule-web-module-cache.XXXXXXXX")
 trap 'rm -rf "$work"' EXIT
 failures=0
 
+if ! rg -F 'bash ./tests/cli/web_module_cache' "$root/flake.nix" >/dev/null; then
+	printf 'Nix must invoke the portable Bash test through its sandbox interpreter\n' >&2
+	failures=$((failures + 1))
+fi
+
 make_fixture() {
 	local destination=$1
 	local touch_body=$2
