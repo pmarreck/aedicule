@@ -46,6 +46,16 @@
 	<body>
 		<main id="aedicule-startup-status" role="status" aria-live="polite">Loading Aedicule…</main>
 		<script>
+			globalThis.__AEDICULE_WEB_BUILD_ID = "__AEDICULE_WEB_BUILD_ID__";
+			(() => {
+				const controller = navigator.serviceWorker?.controller;
+				globalThis.__AEDICULE_SERVICE_WORKER_AT_LOAD = {
+					controlled: controller !== null && controller !== undefined,
+					scriptURL: controller?.scriptURL ?? null,
+				};
+			})();
+		</script>
+		<script>
 			/* Opt-in on-screen diagnostic for platforms with no reachable
 			   developer console. A touch device cannot be inspected without a
 			   tethered desktop, so the frame counter and the most recent
@@ -118,6 +128,8 @@
 					}
 					const delivered = globalThis.__AEDICULE_DELIVERED_EVENT_COUNTS;
 					panel.textContent = [
+						`build ${String(globalThis.__AEDICULE_WEB_BUILD_ID).slice(0, 12)}`
+							+ `  sw ${globalThis.__AEDICULE_SERVICE_WORKER_AT_LOAD?.controlled ? "yes" : "no"}`,
 						`frames ${frames}  stalled ${stalledPolls}`,
 						`guest ${Math.round(runtime?.lastGuestElapsedMs ?? -1)}ms`,
 						`ctl ${delivered?.controls ?? -1}  ptr ${delivered?.pointer ?? -1}`
@@ -194,6 +206,6 @@
 				addEventListener("DOMContentLoaded", () => document.body.append(panel));
 			})();
 		</script>
-		<script type="module" src="./bootstrap.js?v=startup-diagnostics-2"></script>
+		<script type="module" src="./bootstrap.js"></script>
 	</body>
 </html>

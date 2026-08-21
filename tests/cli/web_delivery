@@ -54,6 +54,57 @@ else
 		printf 'web fallback delivery bootstrap does not load external code.wat\n' >&2
 		failures=$((failures + 1))
 	fi
+	mapfile -t bootstrap_entries < <(
+		rg -o 'bootstrap\.[0-9a-f]{64}\.js' "$out_link/index.html" | sort -u
+	)
+	if (( ${#bootstrap_entries[@]} != 1 )); then
+		printf 'web entry document references %d content-addressed bootstraps; expected 1\n' \
+			"${#bootstrap_entries[@]}" >&2
+		failures=$((failures + 1))
+	else
+		bootstrap_entry=${bootstrap_entries[0]}
+		if [[ ! -s $out_link/$bootstrap_entry ]]; then
+			printf 'web entry document references missing %s\n' "$bootstrap_entry" >&2
+			failures=$((failures + 1))
+		else
+			bootstrap_hash=${bootstrap_entry#bootstrap.}
+			bootstrap_hash=${bootstrap_hash%.js}
+			actual_hash=$(sha256sum "$out_link/$bootstrap_entry")
+			if [[ ${actual_hash%% *} != "$bootstrap_hash" ]]; then
+				printf 'bootstrap filename does not identify its content\n' >&2
+				failures=$((failures + 1))
+			fi
+			if ! rg -F "__AEDICULE_WEB_BUILD_ID = \"$bootstrap_hash\"" \
+				"$out_link/index.html" >/dev/null; then
+				printf 'entry diagnostics do not identify the loaded module graph\n' >&2
+				failures=$((failures + 1))
+			fi
+			mapfile -t imported_modules < <(
+				rg -o '\./[A-Za-z0-9_-]+\.[0-9a-f]{64}\.(js|mjs)' \
+					"$out_link/$bootstrap_entry" | sed 's|^\./||' | sort -u
+			)
+			if (( ${#imported_modules[@]} < 8 )); then
+				printf 'content-addressed bootstrap has only %d versioned imports; expected at least 8\n' \
+					"${#imported_modules[@]}" >&2
+				failures=$((failures + 1))
+			fi
+			for imported in "${imported_modules[@]}"; do
+				if [[ ! -s $out_link/$imported ]]; then
+					printf 'bootstrap references missing content-addressed module: %s\n' \
+						"$imported" >&2
+					failures=$((failures + 1))
+					continue
+				fi
+				module_hash=${imported%.*}
+				module_hash=${module_hash##*.}
+				actual_hash=$(sha256sum "$out_link/$imported")
+				if [[ ${actual_hash%% *} != "$module_hash" ]]; then
+					printf 'module filename does not identify its content: %s\n' "$imported" >&2
+					failures=$((failures + 1))
+				fi
+			done
+		fi
+	fi
 	if (( ${#runtime_wasm[@]} == 1 )); then
 		wasm_bytes=$(stat -c '%s' "$out_link/${runtime_wasm[0]}")
 		max_wasm_bytes=$((18 * 1024 * 1024))

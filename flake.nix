@@ -702,6 +702,7 @@
 							./tests/cli/browser_test_partition
 							./tests/cli/browser_test_reminder
 							./tests/cli/parallel_test_runner
+							./tests/cli/web_module_cache
 							node ./tests/integration/web_audio_adapter.mjs
 							node ./tests/integration/web_browser_startup_unit.mjs
 							node ./tests/integration/web_local_application.mjs
@@ -757,6 +758,15 @@
 								$out/ThirdPartyLicenses/GeistMono-OFL.txt
 							cp bindgen/aedicule_web.js $out/
 							install -Dm644 "bindgen/$wasm_name" "$out/$wasm_name"
+							bootstrap_entry=$(bash ${./packaging/web/content-address-modules} "$out" \
+								bootstrap.js aedicule_web.js launcher-i18n.mjs audio.mjs \
+								local-application.mjs motion-input.mjs \
+								service-worker-retirement.mjs startup-lock.mjs touch-input.mjs)
+							bootstrap_hash=''${bootstrap_entry#bootstrap.}
+							bootstrap_hash=''${bootstrap_hash%.js}
+							substituteInPlace $out/index.html \
+								--replace-fail './bootstrap.js' "./$bootstrap_entry" \
+								--replace-fail '__AEDICULE_WEB_BUILD_ID__' "$bootstrap_hash"
 						'';
 					} // wasmCEnvironment pkgs);
 					webFallback = self.lib.${system}.webBundle {
@@ -813,6 +823,13 @@
 							cp ${./packaging/web/service-worker-retirement.mjs} $out/service-worker-retirement.mjs
 							cp ${./packaging/web/manifest.webmanifest} $out/manifest.webmanifest
 							cp ${./assets/icons/aedicule-app.png} $out/icon.png
+							launcher_entry=$(bash ${./packaging/web/content-address-modules} "$out" \
+								launcher.mjs launcher-i18n.mjs local-application.mjs \
+								service-worker-retirement.mjs)
+							for page in index.html about.html abi.html; do
+								substituteInPlace "$out/$page" \
+									--replace-fail './launcher.mjs' "./$launcher_entry"
+							done
 							cp -R ${ulam}/. $out/ulam-flower/
 							cp -R ${vibesteroids}/. $out/vibesteroids/
 							cp -R ${spring}/. $out/spring-sim/

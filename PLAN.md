@@ -58,7 +58,32 @@
   drift, and guest pause state.
   (Reported 2026-08-14 16:33 EDT; cache ruled out 16:38 EDT; physical iPhone
   acceptance completed 2026-08-15 14:56 EDT.)
-- [ ] ACTIVE: restore physical iPhone shake-to-Death-Blossom parity. TDD the
+- [ ] ACTIVE: restore physical iPhone touch on the public GitHub Pages origin
+  before resuming shake acceptance. Start RED with a cache simulation proving
+  a new release cannot run old touch/motion bridge modules, then
+  content-address or release-version every mutable browser-module URL. Return
+  a tested host pin, public deployment proof, phone-readable diagnostics, and
+  Peter controlling the current public game on his iPhone. Do not modify the
+  Vibesteroids tree. Pages cached stable module URLs for 600 seconds while
+  working staging 8911 used `no-store`; byte comparisons alone cannot exclude
+  retained WebKit origin state. Curiosity poke: a versioned entry document is
+  insufficient when its import graph still names stable child modules, while
+  a service worker or retained page can outlive fresh origin bytes. (Urgent
+  physical regression reconfirmed 2026-08-21 16:02 EDT; supersedes the
+  temporary August 20 recovery report.) The cache simulation first failed on
+  the absent packager, then proved a touch-only mutation changes both the touch
+  URL and its bootstrap URL while an unchanged motion URL stays stable. The
+  delivery now publishes SHA-256-addressed launcher, bootstrap, and imported
+  module graphs; all 40 addressed files in the complete delivery independently
+  match their names. Phone diagnostics report build `5ed712a5a2a6` plus
+  service-worker control at load. Native `aedicule --web` first returned 404
+  for an addressed bootstrap, then passed after admitting only known module
+  roles with lowercase 64-hex addresses. Full `./test`, optimized `./build`,
+  exact delivery build, and composed Chromium Start/touch/shake acceptance are
+  green. Commit, public deployment proof, and physical iPhone acceptance
+  remain. (Automated acceptance completed 2026-08-21 16:49 EDT.)
+- [ ] Resume physical iPhone shake-to-Death-Blossom parity after public touch
+  works. TDD the
   path from the trusted Start gesture through
   `DeviceMotionEvent.requestPermission`, bounded sample capture,
   `ShakeDetector`, and guest kind-16/code-1 delivery. Add phone-visible
@@ -81,14 +106,6 @@
   exactly 1 delivered shake, and a guest audio response. Physical iPhone
   acceptance remains before completion. (Automated acceptance completed
   2026-08-20 14:27 EDT.)
-- [ ] Remove the public-Pages stale-module confounder by content-addressing or
-  release-versioning every mutable browser module URL, with a failing cache
-  simulation proving a new release cannot run old touch/motion bridge code.
-  Pages currently caches stable module URLs for 600 seconds while staging 8911
-  sends `no-store`; fresh origin bytes matched on 2026-08-19, and Peter's later
-  physical retest recovered ordinary touch. Preserve that distinction from
-  the still-broken shake path. Curiosity poke: a versioned entry document is
-  insufficient when its import graph still names stable child modules.
 - [ ] Coordinate the downstream `ulam-flower-wat` runner change that executes
   its five independent deterministic render-oracle cases concurrently, with
   per-worker output paths, ordered failure replay, and a multi-failure

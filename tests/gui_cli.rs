@@ -173,6 +173,14 @@ fn native_cli_serves_an_aed_through_the_bundled_web_runtime() {
             "aedicule_web.js",
             b"export default function() {}".as_slice(),
         ),
+		(
+			"bootstrap.0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef.js",
+			b"import './touch-input.0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef.mjs'".as_slice(),
+		),
+		(
+			"touch-input.0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef.mjs",
+			b"export const touchInput = 'addressed'".as_slice(),
+		),
         (
             "aedicule_web_bg.0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef.wasm",
             b"\0asm".as_slice(),
@@ -222,6 +230,21 @@ fn native_cli_serves_an_aed_through_the_bundled_web_runtime() {
         "{response}"
     );
     assert!(response.ends_with("export const audio = {}"), "{response}");
+
+	let mut connection = TcpStream::connect(address).unwrap();
+	connection
+		.write_all(
+			b"GET /bootstrap.0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef.js HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+		)
+		.unwrap();
+	let mut response = String::new();
+	connection.read_to_string(&mut response).unwrap();
+	assert!(response.starts_with("HTTP/1.1 200 OK\r\n"), "{response}");
+	assert!(
+		response.contains("Cache-Control: no-store\r\n"),
+		"{response}"
+	);
+	assert!(response.ends_with(".mjs'"), "{response}");
 
     let mut connection = TcpStream::connect(address).unwrap();
     connection

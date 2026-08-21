@@ -122,6 +122,10 @@ expect_text "$root/web/index.html" 'captureFailures' \
 	'phone diagnostic overlay cannot distinguish pointer-capture failure from absent touch input'
 expect_text "$root/web/index.html" '__AEDICULE_MOTION_DIAGNOSTIC' \
 	'phone diagnostic overlay omits sensor permission and sample-capture state'
+expect_text "$root/web/index.html" '__AEDICULE_WEB_BUILD_ID' \
+	'phone diagnostic overlay cannot identify the loaded module graph'
+expect_text "$root/web/index.html" 'navigator.serviceWorker?.controller' \
+	'phone diagnostic overlay cannot identify retained service-worker control'
 expect_text "$root/web/index.html" 'motionGestures' \
 	'phone diagnostic overlay omits guest-delivered shake gestures'
 for motion_field in permission permissionAttempts skippedNoInterest \

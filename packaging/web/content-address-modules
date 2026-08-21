@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+set -u
+
+if (( $# < 3 )); then
+	printf 'usage: content-address-modules ROOT ENTRY MODULE...\n' >&2
+	exit 2
+fi
+
+root=$1
+entry=$2
+shift 2
+
+valid_basename() {
+	[[ $1 =~ ^[A-Za-z0-9][A-Za-z0-9._-]*\.(js|mjs)$ ]]
+}
+
+if [[ ! -d $root ]] || ! valid_basename "$entry" || [[ ! -f $root/$entry ]]; then
+	printf 'invalid module root or entry: %s/%s\n' "$root" "$entry" >&2
+	exit 2
+fi
+
+entry_content=$(<"$root/$entry")
+for module in "$@"; do
+	if ! valid_basename "$module" || [[ ! -f $root/$module ]]; then
+		printf 'invalid imported module: %s/%s\n' "$root" "$module" >&2
+		exit 2
+	fi
+	hash_and_name=$(sha256sum "$root/$module")
+	hash=${hash_and_name%% *}
+	stem=${module%.*}
+	extension=${module##*.}
+	addressed="$stem.$hash.$extension"
+	cp "$root/$module" "$root/$addressed"
+
+	double_quoted="\"./$module\""
+	single_quoted="'./$module'"
+	if [[ $entry_content != *"$double_quoted"* && $entry_content != *"$single_quoted"* ]]; then
+		printf '%s does not import ./%s\n' "$entry" "$module" >&2
+		exit 2
+	fi
+	entry_content=${entry_content//"$double_quoted"/"\"./$addressed\""}
+	entry_content=${entry_content//"$single_quoted"/"'./$addressed'"}
+done
+
+temporary=$(mktemp "$root/.content-addressed-entry.XXXXXXXX")
+printf '%s\n' "$entry_content" > "$temporary"
+mv "$temporary" "$root/$entry"
+entry_hash_and_name=$(sha256sum "$root/$entry")
+entry_hash=${entry_hash_and_name%% *}
+entry_stem=${entry%.*}
+entry_extension=${entry##*.}
+addressed_entry="$entry_stem.$entry_hash.$entry_extension"
+cp "$root/$entry" "$root/$addressed_entry"
+printf '%s\n' "$addressed_entry"

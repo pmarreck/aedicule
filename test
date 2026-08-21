@@ -129,6 +129,7 @@ run_parallel_checks \
 	./tests/cli/browser_test_reminder \
 	./tests/cli/parallel_test_runner \
 	./tests/cli/frontplane_tools \
+	./tests/cli/web_module_cache \
 	./tests/cli/web_delivery \
 	./tests/cli/build_partition
 parallel_failures=$?

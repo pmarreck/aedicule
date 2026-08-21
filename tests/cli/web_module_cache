@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+set -u
+
+root=$(cd "$(dirname "$0")/../.." && pwd -P)
+tool="$root/packaging/web/content-address-modules"
+work=$(mktemp -d "$TMPDIR/aedicule-web-module-cache.XXXXXXXX")
+trap 'rm -rf "$work"' EXIT
+failures=0
+
+make_fixture() {
+	local destination=$1
+	local touch_body=$2
+	mkdir -p "$destination"
+	printf '%s\n' \
+		'import { touch } from "./touch-input.mjs";' \
+		'import { motion } from "./motion-input.mjs";' \
+		'console.info(touch, motion);' > "$destination/bootstrap.js"
+	printf '%s\n' "$touch_body" > "$destination/touch-input.mjs"
+	printf '%s\n' 'export const motion = "motion-v1";' > "$destination/motion-input.mjs"
+}
+
+fingerprint_fixture() {
+	local fixture=$1
+	local output
+	if ! output=$("$tool" "$fixture" bootstrap.js touch-input.mjs motion-input.mjs \
+		2>"$fixture/error"); then
+		printf 'module fingerprinting failed:\n' >&2
+		cat "$fixture/error" >&2
+		failures=$((failures + 1))
+		printf 'failed'
+		return
+	fi
+	printf '%s' "$output"
+}
+
+first="$work/first"
+second="$work/second"
+make_fixture "$first" 'export const touch = "touch-v1";'
+make_fixture "$second" 'export const touch = "touch-v2";'
+first_entry=$(fingerprint_fixture "$first")
+second_entry=$(fingerprint_fixture "$second")
+
+if [[ ! $first_entry =~ ^bootstrap\.[0-9a-f]{64}\.js$ ]]; then
+	printf 'fingerprinted entry has an invalid name: %s\n' "$first_entry" >&2
+	failures=$((failures + 1))
+fi
+if [[ $first_entry == "$second_entry" ]]; then
+	printf 'touch-bridge mutation retained the old bootstrap URL\n' >&2
+	failures=$((failures + 1))
+fi
+
+first_touch_hash=$(sha256sum "$first/touch-input.mjs")
+first_touch="touch-input.${first_touch_hash%% *}.mjs"
+second_touch_hash=$(sha256sum "$second/touch-input.mjs")
+second_touch="touch-input.${second_touch_hash%% *}.mjs"
+first_motion_hash=$(sha256sum "$first/motion-input.mjs")
+first_motion="motion-input.${first_motion_hash%% *}.mjs"
+second_motion_hash=$(sha256sum "$second/motion-input.mjs")
+second_motion="motion-input.${second_motion_hash%% *}.mjs"
+
+for required in \
+	"$first/$first_entry" "$first/$first_touch" "$first/$first_motion" \
+	"$second/$second_entry" "$second/$second_touch" "$second/$second_motion"; do
+	if [[ ! -s $required ]]; then
+		printf 'missing content-addressed module: %s\n' "$required" >&2
+		failures=$((failures + 1))
+	fi
+done
+if ! rg -F '"./'"$first_touch"'"' "$first/$first_entry" >/dev/null; then
+	printf 'first bootstrap does not import its content-addressed touch bridge\n' >&2
+	failures=$((failures + 1))
+fi
+if ! rg -F '"./'"$second_touch"'"' "$second/$second_entry" >/dev/null; then
+	printf 'second bootstrap does not import its content-addressed touch bridge\n' >&2
+	failures=$((failures + 1))
+fi
+if rg -F "$first_touch" "$second/$second_entry" >/dev/null; then
+	printf 'new bootstrap still references the stale cached touch URL\n' >&2
+	failures=$((failures + 1))
+fi
+if [[ $first_motion != "$second_motion" ]]; then
+	printf 'unchanged motion module received a different content address\n' >&2
+	failures=$((failures + 1))
+fi
+
+exit "$failures"

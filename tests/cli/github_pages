@@ -79,6 +79,10 @@ require_text "$root/flake.nix" 'cp ${./packaging/web/local-application.mjs} $out
 	'local application loader delivery'
 require_text "$root/flake.nix" 'cp -R ${self.packages.${system}.webRuntime}/. $out/run/' \
 	'generic local application runner'
+require_text "$root/flake.nix" 'content-address-modules} "$out"' \
+	'content-addressed browser module graph'
+require_text "$root/flake.nix" 'launcher.mjs launcher-i18n.mjs local-application.mjs' \
+	'content-addressed gallery launcher graph'
 require_text "$root/flake.nix" 'cp ${./packaging/web/about.html} $out/about.html' \
 	'About Aedicule page delivery'
 require_text "$root/flake.nix" 'cp ${./packaging/web/abi.html} $out/abi.html' \

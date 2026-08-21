@@ -36,6 +36,17 @@ const RUNTIME_FILES: &[&str] = &[
     "icon.png",
     "aedicule_web.js",
 ];
+const CONTENT_ADDRESSED_MODULE_SHAPES: &[(&str, &str)] = &[
+	("aedicule_web.", ".js"),
+	("audio.", ".mjs"),
+	("bootstrap.", ".js"),
+	("launcher-i18n.", ".mjs"),
+	("local-application.", ".mjs"),
+	("motion-input.", ".mjs"),
+	("service-worker-retirement.", ".mjs"),
+	("startup-lock.", ".mjs"),
+	("touch-input.", ".mjs"),
+];
 const IMMUTABLE_CACHE_CONTROL: &str = "public, max-age=31536000, immutable";
 const MUTABLE_CACHE_CONTROL: &str = "no-store";
 
@@ -66,6 +77,19 @@ impl WebServer {
             }
             files.insert(name.to_owned(), bytes);
         }
+		for path in find_content_addressed_runtime_modules(runtime)? {
+			let name = path
+				.file_name()
+				.and_then(|name| name.to_str())
+				.expect("validated runtime module filename is UTF-8")
+				.to_owned();
+			let bytes = fs::read(&path)
+				.map_err(|error| format!("read web runtime {}: {error}", path.display()))?;
+			if bytes.is_empty() {
+				return Err(format!("web runtime asset is empty: {}", path.display()));
+			}
+			files.insert(name, bytes);
+		}
         let runtime_wasm = find_immutable_runtime_wasm(runtime)?;
         let runtime_wasm_name = runtime_wasm
             .file_name()
@@ -230,6 +254,40 @@ fn find_immutable_runtime_wasm(runtime: &Path) -> Result<PathBuf, String> {
     }
 }
 
+/// Finds only build-produced, hash-named modules with known runtime roles, so
+/// `--web` can serve a versioned import graph without exposing other files.
+fn find_content_addressed_runtime_modules(runtime: &Path) -> Result<Vec<PathBuf>, String> {
+	let mut modules = fs::read_dir(runtime)
+		.map_err(|error| format!("read web runtime {}: {error}", runtime.display()))?
+		.filter_map(|entry| entry.ok())
+		.map(|entry| entry.path())
+		.filter(|path| {
+			path.is_file()
+				&& path
+					.file_name()
+					.and_then(|name| name.to_str())
+					.is_some_and(is_content_addressed_runtime_module)
+		})
+		.collect::<Vec<_>>();
+	modules.sort();
+	Ok(modules)
+}
+
+fn is_lowercase_sha256(value: &str) -> bool {
+	value.len() == 64
+		&& value
+			.bytes()
+			.all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+fn is_content_addressed_runtime_module(name: &str) -> bool {
+	CONTENT_ADDRESSED_MODULE_SHAPES.iter().any(|(prefix, suffix)| {
+		name.strip_prefix(prefix)
+			.and_then(|rest| rest.strip_suffix(suffix))
+			.is_some_and(is_lowercase_sha256)
+	})
+}
+
 /// Recognizes only the lowercase SHA-256 URL form produced by the Nix build,
 /// making a one-year immutable cache lifetime safe by construction.
 fn is_immutable_runtime_asset(name: &str) -> bool {
@@ -241,10 +299,7 @@ fn is_immutable_runtime_asset(name: &str) -> bool {
     else {
         return false;
     };
-    hash.len() == 64
-        && hash
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+	is_lowercase_sha256(hash)
 }
 
 fn cache_control(name: &str) -> &'static str {
@@ -415,9 +470,30 @@ mod tests {
     use std::io::ErrorKind;
 
     use super::{
-        cache_control, is_immutable_runtime_asset, is_recoverable_connection_error,
-        json_asset_catalog, mime_type, percent_decode_path,
+		cache_control, is_content_addressed_runtime_module, is_immutable_runtime_asset,
+		is_recoverable_connection_error, json_asset_catalog, mime_type, percent_decode_path,
     };
+
+	#[test]
+	fn content_addressed_runtime_module_names_are_classified_over_a_set() {
+		let hash = "0123456789abcdef".repeat(4);
+		let cases = [
+			(format!("bootstrap.{hash}.js"), true),
+			(format!("touch-input.{hash}.mjs"), true),
+			(format!("motion-input.{hash}.mjs"), true),
+			(format!("unknown.{hash}.mjs"), false),
+			(format!("bootstrap.{}.js", hash.to_uppercase()), false),
+			(format!("bootstrap.{hash}0.js"), false),
+			("bootstrap.js".to_owned(), false),
+		];
+		assert_eq!(
+			cases
+				.iter()
+				.map(|(name, _)| is_content_addressed_runtime_module(name))
+				.collect::<Vec<_>>(),
+			cases.iter().map(|(_, expected)| *expected).collect::<Vec<_>>()
+		);
+	}
 
     #[test]
     fn asset_catalog_escapes_all_json_sensitive_path_characters() {
@@ -510,6 +586,11 @@ mod tests {
                 true,
                 "public, max-age=31536000, immutable",
             ),
+			(
+				format!("bootstrap.{hash}.js"),
+				false,
+				"no-store",
+			),
             (
                 format!("aedicule_web_bg.{}.wasm", hash.to_uppercase()),
                 false,
