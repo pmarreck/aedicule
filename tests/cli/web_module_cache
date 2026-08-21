@@ -11,6 +11,10 @@ if ! rg -F 'bash ./tests/cli/web_module_cache' "$root/flake.nix" >/dev/null; the
 	printf 'Nix must invoke the portable Bash test through its sandbox interpreter\n' >&2
 	failures=$((failures + 1))
 fi
+if ! rg -F 'output=$(bash "$tool"' "$root/tests/cli/web_module_cache" >/dev/null; then
+	printf 'the cache test must invoke its portable helper through Bash\n' >&2
+	failures=$((failures + 1))
+fi
 
 make_fixture() {
 	local destination=$1
@@ -27,7 +31,7 @@ make_fixture() {
 fingerprint_fixture() {
 	local fixture=$1
 	local output
-	if ! output=$("$tool" "$fixture" bootstrap.js touch-input.mjs motion-input.mjs \
+	if ! output=$(bash "$tool" "$fixture" bootstrap.js touch-input.mjs motion-input.mjs \
 		2>"$fixture/error"); then
 		printf 'module fingerprinting failed:\n' >&2
 		cat "$fixture/error" >&2

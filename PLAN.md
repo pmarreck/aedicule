@@ -85,9 +85,13 @@
   test through an unavailable `/usr/bin/env`. A persistent test first failed
   on that boundary, the derivation now invokes the test through its supplied
   Bash, and the canonical full suite plus optimized build pass again. The
-  corrective savepoint, public deployment proof, and physical iPhone
-  acceptance remain. (Automated acceptance completed 2026-08-21 16:49 EDT;
-  Nix invocation correction accepted 17:08 EDT.)
+  resulting `7e993ce` run reached the test but exposed the same unavailable
+  shebang on its nested content-addressing helper. That call now also goes
+  through Bash, with a structural regression assertion covering both sandbox
+  boundaries. The exact Nix check, canonical full suite, and optimized build
+  pass locally. The second corrective savepoint, public deployment proof, and
+  physical iPhone acceptance remain. (Automated acceptance completed
+  2026-08-21 16:49 EDT; both Nix invocation corrections accepted 17:22 EDT.)
 - [ ] Resume physical iPhone shake-to-Death-Blossom parity after public touch
   works. TDD the
   path from the trusted Start gesture through
