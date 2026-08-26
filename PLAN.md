@@ -1,5 +1,7 @@
 # Plan
 
+BDFN means Benevolent Dictator For Now; private operational references are generalized.
+
 - [x] Promote the exact public Vibesteroids release
   `d810415e800eb8ae8c077d3e4b18f7ce7af7a506` on host `b56abf6` or a tested
   descendant. Start RED by advancing the provenance oracle to WAT SHA-256
@@ -19,7 +21,7 @@
   stale-WAT mutation before passing on exact `d810415`. Packaged WAST, full
   `./test`, optimized `./build`, immutable delivery, and live-8911 composed
   browser gates pass. Port 8911 now serves the exact hashes above; port 8910's
-  tmux session, orphaned Caddy process, and Tailscale proxy are retired, with
+  tmux session, orphaned Caddy process, and private staging proxy are retired, with
   socket and HTTPS probes proving only 8911 remains. Host commit `a20a448`
   matches `origin/yolo`; exact Mechatron Prime and GitHub CI pass, including
   the complete suite, all six delivery targets, web startup proof, and Pages
@@ -32,8 +34,8 @@
   response, so add an oracle over the guest's reaction to left/right stroke,
   center thrust, and simultaneous fire before changing implementation. Compare
   the previously accepted and current guest pins to assign ownership, then
-  atomically restage and obtain Peter's iPhone acceptance before public Pages
-  promotion. Peter reproduced in a different browser, ruling out stale cache;
+  atomically restage and obtain BDFN's iPhone acceptance before public Pages
+  promotion. BDFN reproduced in a different browser, ruling out stale cache;
   the guest diff changes only gift rendering and Help layout, so compare the
   last iPhone-accepted host runtime against the current bridge first. A new
   combined real-Chromium gate now touch-activates Start action 8, proves that
@@ -48,7 +50,7 @@
   pointer capture is now fail-soft because window capture listeners retain
   delivery. Full tests, optimized build, immutable delivery, and the composed
   live-staging browser gate are green. Port 8911 serves this exact build and
-  Peter confirmed on a physical iPhone that inputs work again. Because the
+  BDFN confirmed on a physical iPhone that inputs work again. Because the
   only staged runtime change was making advisory WebKit pointer capture
   fail-soft, a thrown `setPointerCapture` is the strongest causal explanation;
   the exception counter was not observed, so retain that distinction between
@@ -58,12 +60,12 @@
   drift, and guest pause state.
   (Reported 2026-08-14 16:33 EDT; cache ruled out 16:38 EDT; physical iPhone
   acceptance completed 2026-08-15 14:56 EDT.)
-- [ ] ACTIVE: restore physical iPhone touch on the public GitHub Pages origin
+- [x] Restore physical iPhone touch on the public GitHub Pages origin
   before resuming shake acceptance. Start RED with a cache simulation proving
   a new release cannot run old touch/motion bridge modules, then
   content-address or release-version every mutable browser-module URL. Return
   a tested host pin, public deployment proof, phone-readable diagnostics, and
-  Peter controlling the current public game on his iPhone. Do not modify the
+  BDFN controlling the current public game on his iPhone. Do not modify the
   Vibesteroids tree. Pages cached stable module URLs for 600 seconds while
   working staging 8911 used `no-store`; byte comparisons alone cannot exclude
   retained WebKit origin state. Curiosity poke: a versioned entry document is
@@ -88,11 +90,17 @@
   resulting `7e993ce` run reached the test but exposed the same unavailable
   shebang on its nested content-addressing helper. That call now also goes
   through Bash, with a structural regression assertion covering both sandbox
-  boundaries. The exact Nix check, canonical full suite, and optimized build
-  pass locally. The second corrective savepoint, public deployment proof, and
-  physical iPhone acceptance remain. (Automated acceptance completed
-  2026-08-21 16:49 EDT; both Nix invocation corrections accepted 17:22 EDT.)
-- [ ] Resume physical iPhone shake-to-Death-Blossom parity after public touch
+  boundaries. Final host `e17562c` passed the exact Nix check, canonical full
+  suite, optimized build, Mechatron Prime, all six GitHub delivery targets,
+  and Pages deployment. Public WAT, package, addressed bootstrap, and touch
+  bridge bytes match the immutable Nix delivery; the clean public-origin
+  Start/touch/shake gate passes. BDFN physically confirmed public iPhone
+  touch works and successfully demonstrated the game to friends. Retained
+  mutable module state is the strongest causal explanation, though no failing-
+  phone telemetry directly captured stale bytes. (Automated acceptance
+  completed 2026-08-21 17:49 EDT; physical acceptance completed 2026-08-26
+  10:12 EDT.)
+- [x] Restore physical iPhone shake-to-Death-Blossom parity after public touch
   works. TDD the
   path from the trusted Start gesture through
   `DeviceMotionEvent.requestPermission`, bounded sample capture,
@@ -104,7 +112,7 @@
   remains Vibesteroids-owned. Curiosity poke: iOS may require permission from
   the completed Start tap rather than its initial pointer edge, and gravity
   inclusion changes the meaningful threshold. (Queued from Vibesteroids
-  2026-08-14 16:10 EDT; Peter physically reconfirmed the failure 2026-08-20
+  2026-08-14 16:10 EDT; BDFN physically reconfirmed the failure 2026-08-20
   13:50 EDT.) A rejected early permission attempt is now retryable from the
   completed activation edge, capture is bounded to 32 samples, and the Rust
   adapter drains through a no-argument JavaScript function so it cannot
@@ -113,18 +121,20 @@
   Deterministic bridge/unit tests, the Wasm adapter tests, full `./test`,
   optimized `./build`, and the composed real-Chromium Vibesteroids gate pass;
   the latter proves 3 captured = 3 drained samples, 0 low-noise gestures,
-  exactly 1 delivered shake, and a guest audio response. Physical iPhone
-  acceptance remains before completion. (Automated acceptance completed
-  2026-08-20 14:27 EDT.)
-- [ ] Coordinate the downstream `ulam-flower-wat` runner change that executes
-  its five independent deterministic render-oracle cases concurrently, with
-  per-worker output paths, ordered failure replay, and a multi-failure
-  accumulation regression. Independent RAM-backed measurement was 39.998 s
-  sequential versus 9.044 s parallel (4.42x); repeat that comparison in the
-  real checkout before acceptance. Keep cross-case comparisons serial.
+  exactly 1 delivered shake, and a guest audio response. BDFN physically
+  confirmed shake-to-Death-Blossom works on the public iPhone delivery.
+  (Automated acceptance completed 2026-08-20 14:27 EDT; physical acceptance
+  completed 2026-08-26 10:12 EDT.)
+- [ ] ACTIVE: Coordinate the downstream `ulam-flower-wat` runner change that
+  executes its five independent deterministic render-oracle cases
+  concurrently, with per-worker output paths, ordered failure replay, and a
+  multi-failure accumulation regression. Independent RAM-backed measurement
+  was 39.998 s sequential versus 9.044 s parallel (4.42x); repeat that
+  comparison in the real checkout before acceptance. Keep cross-case
+  comparisons serial.
   Curiosity poke: concurrent workers must not share `capture` globals or SVG
   paths, and deterministic presentation must survive simultaneous failures.
-  (Queued from Code@thelio-nixos, 2026-08-19 19:00 EDT; follows shake and
+  (Queued from the coordination inbox, 2026-08-19 19:00 EDT; follows shake and
   public browser delivery correctness.)
 - [ ] Narrow the Nix source closures for `webRuntime` and `delivery-web` so a
   browser-test-only or HTML-only edit does not rebuild unrelated Rust/Wasm and
@@ -135,11 +145,11 @@
   still embeds packages produced by the native CLI, so separate the package
   writer dependency from the browser runtime before claiming full decoupling.
   (Observed during touch-diagnostic rebuild, 2026-08-14 16:55 EDT.)
-- [x] Eliminate ambiguous Tailscale playtest endpoints. Port 8910 was a stale
+- [x] Eliminate ambiguous private staging playtest endpoints. Port 8910 was a stale
   long-lived `aedicule-serve` process with guest `126c173`, while port 8911 is
-  current staging. Peter approved retirement. After exact `d810415` passed the
+  current staging. BDFN approved retirement. After exact `d810415` passed the
   immutable and live-8911 composed gates, the stale tmux session was retired;
-  its Caddy child required an explicit graceful SIGTERM, and the 8910 Tailscale
+  its Caddy child required an explicit graceful SIGTERM, and the 8910 private staging
   Serve handler was removed. Socket status and a failed HTTPS connection prove
   8910 is absent; 8911 routes and exact hashes remain healthy. Curiosity poke:
   a URL must expose both host and guest revisions because either half can
@@ -157,7 +167,7 @@
   further makes raw flag calls unreachable behind semantic fill/outline
   wrappers; adding host imports is deferred unless another guest reproduces
   the WAT arity hazard. (Completed 2026-08-14 16:46 EDT.)
-- [x] Reproduce and repair the delayed iPhone Vibesteroids freeze. Peter's
+- [x] Reproduce and repair the delayed iPhone Vibesteroids freeze. BDFN's
   repeatable-spawn timing and bow suspicion redirected diagnosis from touch
   handling to the gift render. Gift circle ID 915 passed packed cyan color
   `0x5ee7ffff` as `AE_circle` flags; the real ABI accepts only outline `0` or
@@ -170,10 +180,10 @@
   and AED SHA-256
   `37b14181f2731f8728c862c719ebc152044c2c44001d705f1b675b7d39b9e77b`.
   Its package WAST and real Chromium/WebGPU startup/input gate pass. The exact
-  artifacts are live through Tailscale staging. Host commit `a9da8e0` also
+  artifacts are live through private staging. Host commit `a9da8e0` also
   distinguishes unsupported circle flags from non-finite geometry so a future
   violation names the contract it broke. Touch was incidental; the existing
-  interrupted/multi-contact controls remain green. Peter's live gift replay
+  interrupted/multi-contact controls remain green. BDFN's live gift replay
   and public Pages promotion remain release acceptance, not bug ownership.
   (Completed 2026-08-14 16:28 EDT.)
 - [x] Repair the fresh-runner Cargo vendor fixed-output hash exposed by GitHub
@@ -184,12 +194,12 @@
   and `./build`; its focused commit triggers fresh GitHub and Mechatron Prime
   verification. (Completed 2026-08-14 14:50 EDT.)
 - [ ] Remove the browser runtime's unnecessary shared-Wasm-memory requirement
-  and obtain iPhone acceptance on the Tailscale staging delivery.
+  and obtain iPhone acceptance on the private staging delivery.
   - [x] Bound the imported shared memory from 1 GiB to 256 MiB and prove the
     exact generated maximum with the delivery gate. Native/full tests and the
     real Chromium/WebGPU gates passed; committed as `59e807c`.
     (2026-08-05 19:10 EDT)
-  - [x] Peter tested that exact staging build on iOS Safari. The first load
+  - [x] BDFN tested that exact staging build on iOS Safari. The first load
     paused at `isolation-ready` after 290 ms; a reload reached
     `wasm-initializing` after 798 ms and eventually loaded. This refutes a
     permanent deadlock but still leaves an unacceptable apparent hang.
@@ -215,13 +225,13 @@
     serve the non-blocking retirement module. The HTTP integration test and a
     real Chromium/WebGPU launch both reproduce the old failure and pass the
     corrected path. (2026-08-05 20:28 EDT)
-  - [x] Deploy the non-shared exact delivery to Tailscale staging. All three
+  - [x] Deploy the non-shared exact delivery to private staging. All three
     direct demos reached `settled` through fresh Chromium/WebGPU profiles in
-    1.85–1.95 seconds. Peter's first iPhone attempt still showed the retired
+    1.85–1.95 seconds. BDFN's first iPhone attempt still showed the retired
     `isolation-ready` stage, proving Safari retained the old launcher; the next
     load reached the current `wasm-initializing` stage and eventually ran.
     (2026-08-05 20:40 EDT)
-  - [x] Fix the Tailscale server's nested runtime delivery before asking for a
+  - [x] Fix the private staging server's nested runtime delivery before asking for a
     second iPhone acceptance pass. Root cause found: the immutable matcher
     recognized only a site-root runtime, so every demo served its 15.98 MiB
     content-addressed Wasm uncompressed with `Cache-Control: no-store` on every
@@ -230,21 +240,21 @@
     proved a 6.22 MiB gzip transfer, immutable headers, and continued no-store
     treatment for `bootstrap.js`; the complete `./test` suite passed.
     (2026-08-05 21:09 EDT)
-  - [x] Rebuild and restart exact Tailscale staging. The nested runtime now
-    serves compressed/immutable over Tailscale; a fresh real Chromium/WebGPU
+  - [x] Rebuild and restart exact private staging. The nested runtime now
+    serves compressed/immutable over private staging; a fresh real Chromium/WebGPU
     run reached `wasm-initialized` at 1.02 seconds and `settled` at 2.19 seconds
     with no controlling service worker. (2026-08-05 21:12 EDT)
   - [x] Replace the session-owned staging process with the transient user
     service `aedicule-staging.service`, configured to restart Caddy after
     failure. Verified active continuously since 2026-08-07 16:54 EDT and the
-    Tailscale HTTPS endpoint returned 200 on 2026-08-10 16:39 EDT.
-  - [ ] Obtain Peter's second iPhone acceptance pass on the cached/compressed
+    private staging HTTPS endpoint returned 200 on 2026-08-10 16:39 EDT.
+  - [ ] Obtain BDFN's second iPhone acceptance pass on the cached/compressed
     delivery, recording the last visible stage and elapsed time if it pauses.
   - Curiosity poke: preserve secure-context and WebGPU checks, multi-tab
     startup serialization, diagnostics, and content-addressed runtime caching
     without retaining any accidental dependency on cross-origin isolation.
 - [x] Refresh the staged and shipped Vibesteroids demo from its newest
-  immutable sibling release pin. Peter reports the currently pinned package is
+  immutable sibling release pin. BDFN reports the currently pinned package is
   visibly old. Verify the sibling commit/package hash and its WAST acceptance,
   then replace every gallery, delivery, manifest, and release-bundle copy.
   Clean sibling commit `f15a5fe` (three tranches beyond the old `df61ffe` pin)
@@ -261,21 +271,21 @@
     raw multi-touch, phone-aware help, shake-triggered Death Blossom, shorter
     gift intervals, parcel bow, and predictive UFO/Voyager spawn safety. The
     guest's complete suite, optimized package, actual Aedicule touch timeline,
-    and exact-commit Mechatron Prime CI are green. Peter's visual acceptance of
+    and exact-commit Mechatron Prime CI are green. BDFN's visual acceptance of
     the bow and Start/Resume buttons remains open. (Completed 2026-08-14 14:32
     EDT.)
     - [x] Promote Vibesteroids' newest immutable source/package pair through
-      Aedicule's gallery and Tailscale staging page, verify the packaged tests
-      and browser startup first, then send Peter the exact iPhone test URL.
+      Aedicule's gallery and private staging page, verify the packaged tests
+      and browser startup first, then send BDFN the exact iPhone test URL.
       Pinned the 214,133-byte WAT at SHA-256 `9af66843...ac4` and the
       139,054-byte `.aed` at SHA-256 `c7faceb9...bf23`; the provenance test was
       observed red against the former pair, then green. The package's
       `tests/main.wast` passed through current Aedicule. Fresh Chromium/WebGPU
       reached every startup stage through `settled` in 2.84 seconds and
       observed all eight synthetic raw-touch deliveries with no pointer leak.
-      The Tailscale staging root was replaced atomically with rollback retained;
+      The private staging root was replaced atomically with rollback retained;
       both served hashes match and
-      `https://thelio-nixos.tail66c90.ts.net:8911/vibesteroids/` returns 200.
+      `https://staging.example.invalid/vibesteroids/` returns 200.
       (Completed 2026-08-14 14:32 EDT.)
       - [x] Provisional phone acceptance is live from the sibling's current
         dirty candidate while its immutable pin is pending. Packaged WAST is
@@ -283,9 +293,9 @@
         `233fb1ebb537585fd1161a47c1faa23cd851d6cea05e53cfb92bc81666a353ae`;
         nested WAT SHA-256 is
         `33c305a80a84cf961cf4268c5640a870e15dbdadba46ffbb9d0162b6e3b31af9`;
-        the ABI-v0.9 browser runtime reaches `settled`; and live Tailscale GETs
+        the ABI-v0.9 browser runtime reaches `settled`; and live private staging GETs
         return 200 at
-        `https://thelio-nixos.tail66c90.ts.net:8911/vibesteroids/`.
+        `https://staging.example.invalid/vibesteroids/`.
         (2026-08-13 17:47 EDT.)
 - [x] Fix the Aedicule-owned source-checkout launcher regression: `./run --web`
   currently builds successfully and then exits because it cannot find a Web
@@ -311,7 +321,7 @@
   headless renders were clean; and real Chromium/WebGPU at 780x437 settled in
   2.386 seconds with all 7 sliders and 5 buttons visible, delivering semantic
   events without pointer leakage. The manifest and package snapshot now drive
-  every generated delivery/release copy. Tailscale staging serves the exact
+  every generated delivery/release copy. private staging serves the exact
   package and nested WAT hashes. (Queued 2026-08-10 16:40 EDT; completed
   2026-08-13 17:47 EDT.)
 - [x] Add RandomZ-compatible deterministic randomization to the WAT/AED ABI
@@ -364,7 +374,7 @@
     the wasm boundary as raw bytes (`__AEDICULE_AED`); JavaScript checks only
     the size bound and the 4-byte zip signature. Legacy stored records with
     `{wat, assets}` still load. (2026-08-02 11:35 EDT)
-  - [x] `demos/vibesteroids.aed` regenerated compressed per Peter's explicit
+  - [x] `demos/vibesteroids.aed` regenerated compressed per BDFN's explicit
     "Break the SHA" decision: 1,347,921 -> 117,755 bytes (11.4x), content
     proved byte-identical through depackage/repackage/depackage `diff -r`, and
     repacking twice is byte-identical. New sha256 `b5e3b290...` pinned in
@@ -388,12 +398,12 @@
   refuses to inject until it sees it; `web_startup_surface` pins both sides.
   0 failures in 12 consecutive runs after the fix. The wasm-bundle-size
   hypothesis is REFUTED. (2026-08-02 11:55 EDT)
-- [ ] Fix the two iOS Safari defects Peter reported 2026-07-28 16:38 EDT on the
+- [ ] Fix the two iOS Safari defects BDFN reported 2026-07-28 16:38 EDT on the
   deployed `73891e6` Ulam page. The keyboard defect is CONFIRMED FIXED on
   hardware; these two are what became reachable once it was.
   - [ ] Defect 1 ROOT CAUSE FOUND 2026-07-31: AVP controls have zero touch
     slop. A press that releases even one pixel outside the declared rectangle is
-    discarded silently. Measured against Peter's exact device geometry
+    discarded silently. Measured against BDFN's exact device geometry
     (430x775 viewport, button 10 at 70x36 at 24,559, reproduced bit-for-bit
     headlessly): touch drift 0-17px delivers the action, >=18px delivers
     nothing, and 577+18 is exactly the button's bottom edge. A 36 CSS px tall
@@ -402,7 +412,7 @@
     ~30% shortfall in Safari's own `click`, which cancels under the same
     condition. The guest's own comment says "the guest owns this layout and the
     host owns safe activation", so slop belongs in the host.
-    - [x] Slop policy decided by Peter: Option A, a fixed 16px release margin,
+    - [x] Slop policy decided by BDFN: Option A, a fixed 16px release margin,
       not 44x44 hit rects. Shipped in 75697fe: `ArmedControl` with half-open
       `rescues()` in the browser adapter, armed only when
       `(pointer: coarse)` matches, so mouse drag-off-to-cancel is untouched.
@@ -449,7 +459,7 @@
     and synthesizes a compatibility mousedown/mouseup pair at the touch point
     after touchend; `gpui_web` listens on both paths, so every tap dispatched
     twice. Sliders survived because setting a position twice is idempotent;
-    Peter's `ck` counter incrementing on hardware was the tell. Red test
+    BDFN's `ck` counter incrementing on hardware was the tell. Red test
     first: `dispatchGhostMousePair` in `web_browser_startup` replays Safari's
     exact stream (ghostActivated=true observed pre-fix). Fix in the fork, rev
     4afe33f254c0 on `aedicule-gpui-web-input-fixes`: touchstart/touchend
@@ -466,10 +476,10 @@
     Diag overlay now counts md/mu beside pd/pu/ts/te/ck so ghost pairs are
     visible on hardware. Pin bumped in Cargo.toml/Cargo.lock.
     (2026-08-03 16:45 EDT)
-  - [x] Peter retested Play/Pause on iPhone with the ghost fix deployed: "it
+  - [x] BDFN retested Play/Pause on iPhone with the ghost fix deployed: "it
     now works." Defect 1 is CLOSED on hardware. (2026-08-03 16:40 EDT)
   - [ ] Classify both as regression vs. newly-reachable pre-existing behavior
-    before attributing either to the focus fix. Peter could not get past the
+    before attributing either to the focus fix. BDFN could not get past the
     keyboard on any prior iOS session, so "new" is not established.
   - [ ] Predicted third defect, from the same prior art: iOS raises the software
     keyboard only when `focus()` runs synchronously inside a user-gesture
@@ -493,7 +503,7 @@
     weakens the earlier timeout interpretation because WebDriver itself had
     awaited `requestAnimationFrame` in a throttled tab. Canvas appearance is
     still insufficient acceptance, and neither isolated result reproduces or
-    disproves Peter's hardware/profile browser-process wedge. Do not claim a
+    disproves BDFN's hardware/profile browser-process wedge. Do not claim a
     permanent one-WebGPU-tab limit, adapter-allocation failure, or Wasm
     watchdog without a hardware trace.
   - [x] Extend diagnostics earlier than the current module bootstrap:
@@ -512,9 +522,9 @@
     - The locked two-tab Firefox Beta replay initialized and advanced both
       guests, then still crashed the headless SWGL process and lost the
       WebDriver session. The lock mitigates overlapping adapter/Wasm startup
-      but is not evidence that Peter's hardware/profile wedge is fixed.
+      but is not evidence that BDFN's hardware/profile wedge is fixed.
   - [ ] Diagnose Firefox Web Audio separately: Vibesteroids keyboard delivery
-    works, but Peter heard no sample audio. Trace user activation, autoplay
+    works, but BDFN heard no sample audio. Trace user activation, autoplay
     policy, AudioContext creation/state/resume, PCM receipt, source start, and
     rejection without conflating silence with the startup race.
     - [x] Publish bounded Web Audio lifecycle diagnostics for each of those
@@ -547,7 +557,7 @@
       Pointer cancellation now also releases the corresponding GPUI button
       state so a cancelled touch cannot contaminate the next control gesture.
       (2026-07-24 16:50 EDT; GPUI fork pin `cbea9c7f`.)
-    - [x] ROOT CAUSE FOUND (2026-07-25 17:35 EDT). Peter's physical iOS Safari
+    - [x] ROOT CAUSE FOUND (2026-07-25 17:35 EDT). BDFN's physical iOS Safari
       acceptance FAILED at ~17:19 EDT: tapping anything on the deployed
       <https://pmarreck.github.io/aedicule/ulam-flower/> still summoned the
       software keyboard, and it persisted through a force reload. Excluded by
@@ -574,7 +584,7 @@
     - [ ] Fix the focus ownership, as a classifier over sets rather than a
       predicate: (a) a touch/pointer on non-text content must leave NO editable
       element focused; (b) an active text-entry control MUST focus the editable
-      input so the keyboard still appears (Peter, 2026-07-25). Hardware key
+      input so the keyboard still appears (BDFN, 2026-07-25). Hardware key
       delivery must survive (a) — the earlier "never refocus" attempt broke
       W/A/D and synthesized audio — so keys likely need a non-editable focus
       host such as the canvas with `tabindex="-1"`, reserving the hidden input
@@ -610,7 +620,7 @@
         The same oracle run against the live pre-fix page
         <https://pmarreck.github.io/aedicule/ulam-flower/> fails, so the red and
         green are on the same harness and differ only by the fix.
-        (2026-07-25 18:55 EDT) Peter's physical iPhone re-test is still required:
+        (2026-07-25 18:55 EDT) BDFN's physical iPhone re-test is still required:
         the oracle proves "no editable element holds focus", not "no keyboard
         appeared".
       - [ ] SEPARATE PRE-EXISTING DEFECT, do not attribute to the focus fix:
@@ -629,14 +639,14 @@
         regression; the assertion is designed for the `web_packaged_audio`
         path that drives `demos/vibesteroids.aed` through the native binary.
         Do not "fix" key delivery on the strength of an ad-hoc invocation.
-    - [x] Add the AVP text-entry control (Peter authorized the full slice,
+    - [x] Add the AVP text-entry control (BDFN authorized the full slice,
       2026-07-25), built on `gpui-component`'s text input rather than a bespoke
       widget. This is what proves half (b) of the classifier above against a
       real widget instead of an assertion. Follows the `AE_external_link`
       pattern: a configure-time declaration with budget, duplicate-id, and
       validation rejection, plus a `TextFieldPlacement { id, panel_id, bounds }`
       in the retained Q16.16 document. (2026-07-27 08:31 EDT)
-      - [x] ABI DESIGN RESOLVED — no strings cross the boundary at all. Peter's
+      - [x] ABI DESIGN RESOLVED — no strings cross the boundary at all. BDFN's
         own proposal: keys stay keys, and text arrives as integers. One complete
         value expands into an ordered run of `AE_text_event(id, index, scalar,
         phase)` calls, one per Unicode scalar, terminated by `index = -1`
@@ -706,21 +716,21 @@
         alongside a test that forces the handler-absent window.
         (2026-07-27 09:41 EDT)
     - [ ] Add an automated real-WebCore browser lane so this class of defect
-      cannot reach Peter's phone again. Nix `playwright-driver.browsers`
+      cannot reach BDFN's phone again. Nix `playwright-driver.browsers`
       1.61.1 provides `webkit-2311` (and `firefox-1532`) on Linux x86_64.
       Assert on mechanical signals only — hidden-input `focus()` call counts
       and the exact event sequence — never on "a keyboard appeared", which
       does not exist on the WPE/GTK port. Simulated touch, pointer, and move
       dispatch is the point of the lane.
     - [ ] Serve the HTML entry document uncached, caching only the underlying
-      content-hashed assets (Peter, 2026-07-25). GitHub Pages returns
+      content-hashed assets (BDFN, 2026-07-25). GitHub Pages returns
       `cache-control: max-age=600` for every path, so the service worker must
       revalidate navigation/document requests and rewrite their
       `Cache-Control`, while `aedicule_web_bg.<64-hex>.wasm` keeps its
       cache-first immutable path. This also permanently removes the
       stale-HTML-to-stale-wasm confounder from the iOS diagnosis.
   - [x] Preserve independent browser mouse-button release edges under chords.
-    Peter reproduced secondary-down (thrust), primary-down (fire), then
+    BDFN reproduced secondary-down (thrust), primary-down (fire), then
     secondary-up while primary remains held leaving thrust latched. Start with
     a failing adapter regression for the exact button-mask transition; classify
     the native desktop adapter separately rather than assuming parity.
@@ -734,7 +744,7 @@
     slider occlusion. Native crate tests, wasm compilation, the exact Pages
     Ulam gate, `./test_browser`, `./test`, and `./build` passed.
     (2026-07-24 16:50 EDT; upstream branch `77ea846c`, immutable Aedicule
-    backport `cbea9c7f`; upstream PR text remains intentionally Peter-owned
+    backport `cbea9c7f`; upstream PR text remains intentionally BDFN-owned
     under Zed's contribution policy.)
   - [ ] Add real acceptance lanes for Firefox, Chromium, macOS Safari, and iOS
     Safari where automation permits; do not use Chromium success as evidence
@@ -754,7 +764,7 @@
     “unique” claim; be loud about the exact combination we can prove rather
     than making an unresearched exclusivity claim. (Completed 2026-07-24 09:12
     EDT.)
-    - [ ] Receive Peter's visual approval of the desktop/mobile rendering.
+    - [ ] Receive BDFN's visual approval of the desktop/mobile rendering.
   - [x] Publish one build-generated Current + Proposed ABI reference page.
     Generate the current callable surface from the same typed Rust capability
     registry as `WAT_ABI.md`, and generate future cards only from an explicit
@@ -786,7 +796,7 @@
     active. Do not simulate asteroid impacts. Direction selection is
     deterministic under injected randomness and reduced-motion remains
     authoritative. (2026-07-24 17:25 EDT)
-  - [ ] Receive Peter's visual and interaction acceptance for the gallery
+  - [ ] Receive BDFN's visual and interaction acceptance for the gallery
     dropzone and hover/focus preview animations.
   - Curiosity poke: touch devices have no persistent hover, so provide a clear
     finite touch/focus behavior without leaving animation permanently running.
@@ -866,22 +876,22 @@
     `./test_browser`; record success atomically and remind interactive
     developers only after 48 hours plus a newer commit. Normal CI retains one
     live Pages browser gate rather than duplicating it in the test job.
-    (2026-07-24 12:19 EDT; Peter identified the excessive integration boundary;
+    (2026-07-24 12:19 EDT; BDFN identified the excessive integration boundary;
     partition/reminder classifiers failed first, Chromium moved into a
     dedicated `devShell.browser`, the final fast suite passes in 13.7s, and the
     optional live browser suite passes in 11.3s.)
   - [x] Add `./serve_web` to build and serve the exact static Pages delivery
     locally on loopback by default, with an explicit `--listen` override for
-    LAN/tailnet testing. (2026-07-24 12:22 EDT; clean help/error and structural
+    LAN/private network testing. (2026-07-24 12:22 EDT; clean help/error and structural
     delivery tests pass; the gallery and both demos returned HTTP 200 with
     COOP/COEP through the live local server, which then shut down cleanly.
     Default moved from commonly occupied port 8080 to 8910 at 2026-07-24 14:32
-    EDT. At 2026-07-24 14:57 EDT, tailnet testing caught Caddy binding every
+    EDT. At 2026-07-24 14:57 EDT, private network testing caught Caddy binding every
     interface and matching only the loopback Host: the HTTPS proxy returned an
     empty 200 page. Caddy now binds loopback explicitly while accepting proxy
     Host headers; focused tests, the 12.9-second full suite, optimized build,
-    exact tailnet HTTPS assets, and isolated Chromium gallery rendering pass.)
-  - [ ] Move the clean-room matrix to a persistent Thelio/self-hosted Nix
+    exact private network HTTPS assets, and isolated Chromium gallery rendering pass.)
+  - [ ] Move the clean-room matrix to a persistent development host/self-hosted Nix
     execution path, or cache exact tested Nix derivations: GitHub dependency
     restoration cut the suite step by 2.1×, but transfer/relinking still makes
     hosted CI minutes-scale while unchanged local `./test` is 10–11 seconds.
@@ -1014,7 +1024,7 @@
     report measured zero/nonzero insets rather than baking the desktop footer
     height into guest layout policy.
   - Curiosity poke: non-loopback browsers require a secure context as well as
-    COOP/COEP, so remote/tailnet serving needs an explicit TLS/reverse-proxy
+    COOP/COEP, so remote/private network serving needs an explicit TLS/reverse-proxy
     contract rather than silently printing an unusable HTTP URL.
   - Curiosity poke: platform signing/notarization mutates or wraps appified
     artifacts, so specify the unsigned deterministic core before promising a
@@ -1110,13 +1120,13 @@
     `.wat`, `.aed`, or an application directory; and render an actionable
     empty state instead of silently launching the black conformance guest.
     (2026-07-23 13:25 EDT; focused tests, the full suite, the macOS release
-    build, and Peter's live Mac visual acceptance passed.)
+    build, and BDFN's live Mac visual acceptance passed.)
     Curiosity poke: preserve guest-authored application commands in a separate
     menu so a guest cannot rename, shadow, or remove the host escape hatches.
   - [x] Install the two bundled demo applications beside the private Mac test
     install in a stable, visible user directory, and print their exact paths.
     (2026-07-23 13:25 EDT; publisher contract and full suite passed;
-    `~/Documents/AediculeDemos/` is populated on Peter's Mac.)
+    `~/Documents/AediculeDemos/` is populated on BDFN's Mac.)
     Curiosity poke: update publisher-owned demo copies transactionally without
     overwriting a user's mutable project directory.
   - [x] Make `./build` produce the optimized current-platform application and
@@ -1158,8 +1168,8 @@
     - [x] Add a resumable `./publish` adapter that binds a tracked-clean pushed
       revision to its source version/tag, runs local gates, watches the
       independently reproduced GitHub Release, verifies its macOS checksum,
-      and optionally installs an ad-hoc-signed private test copy on Peter's
-      SSH-reachable tailnet Mac while preserving the previous app in Trash.
+      and optionally installs an ad-hoc-signed private test copy on BDFN's
+      SSH-reachable private network Mac while preserving the previous app in Trash.
       Focused red/green behavior, `./test`, the isolated Nix test derivation,
       `./build`, `./build_all`, ShellCheck/actionlint, and all six artifact
       checksums passed. (2026-07-23 01:26 EDT.)
@@ -1189,7 +1199,7 @@
           signing. (2026-07-23 05:18 EDT.)
         - [x] Pass `-dead_strip_dylibs` through the cross link, prove the real
           Nix artifact has a unique dylib set, copy that exact signed binary to
-          Peter's M4 Mac, and run `--about` successfully there. Also require
+          BDFN's M4 Mac, and run `--about` successfully there. Also require
           the publisher's staged binary to pass the same startup probe before
           touching `~/Applications`. (2026-07-23 05:30 EDT.)
         - [x] Run the complete `./test`, isolated Nix test, `./build`,
@@ -1198,7 +1208,7 @@
           (2026-07-23 06:37 EDT.)
         - [x] Commit and push the corrective source as `8d053096`, publish all
           six independently rebuilt/checksum-bound v0.1.4 archives, and verify
-          the public Mac binary and private installed app on Peter's M4. The
+          the public Mac binary and private installed app on BDFN's M4. The
           untouched public binary starts and has one `libobjc`; the publisher's
           repaired private bundle has a valid ad-hoc signature and starts from
           `~/Applications`. (2026-07-23 08:17 EDT.)
@@ -1260,7 +1270,7 @@
       Nix check still took about 9.5 minutes on 2026-07-24.
       Curiosity poke: keep each derived gate exact-commit-bound so finer cache
       reuse cannot accidentally validate source from a different revision.
-  - [ ] Re-run the browser startup probe and obtain Peter's iPhone visual
+  - [ ] Re-run the browser startup probe and obtain BDFN's iPhone visual
     acceptance before describing the web demos as playable.
     (Headless Ulam Flower and Vibesteroids startup/input probes passed
     2026-07-22 03:00 EDT; iPhone visual acceptance remains.)
@@ -1347,7 +1357,7 @@
     always-present application-menu item. Share collision checking with menu
     actions, preserve legacy menu-backed buttons, and prove exact activation
     identity plus absence from native/browser menus in native, browser, and
-    headless adapters. Peter explicitly authorized the real GPUI Component
+    headless adapters. BDFN explicitly authorized the real GPUI Component
     button surface on every adapter; no canvas or ad hoc substitute. Requested
     by vibesteroids_wat on 2026-08-05. Native, headless, and real
     Chromium/WebGPU tests pass; ABI docs are generated as v0.8 and the full
@@ -1359,7 +1369,7 @@
   - [x] Paint asset-independent high-contrast title-bar glyphs over GPUI
     Component's still-functional native control hit regions, preserving host
     pointer occlusion. (2026-07-21 22:31 EDT)
-  - [x] Receive Peter's visual acceptance for sliders, playback buttons, and
+  - [x] Receive BDFN's visual acceptance for sliders, playback buttons, and
     the title-bar glyph fallback in the final keyed-snapshot ABI.
     (2026-07-21 22:47 EDT)
   - Curiosity poke: can future integer composition imports share one declarative
@@ -1402,7 +1412,7 @@
   - [x] Refresh the Nix Cargo vendor hash after the browser clock dependency,
     then build, bind, optimize, and header-probe a 10,096,747-byte local Wasm
     bundle containing Vibesteroids as external WAT. (2026-07-20 14:27 EDT)
-  - [ ] Receive Peter's visual browser playtest result for that bundle.
+  - [ ] Receive BDFN's visual browser playtest result for that bundle.
   - [x] Replace blank browser startup failures with an accessible loading/error
     surface and capability diagnostics. (2026-07-20 19:32 EDT)
     - Curiosity poke: WebGPU exposure alone does not prove that the browser can
@@ -1457,7 +1467,7 @@
       WAT tests and the rebuilt browser runtime.
       (2026-08-13 18:41 EDT: real Chromium delivered 3 starts, 2 moves, 2
       ends, and 1 cancel across three opaque IDs.)
-    - [ ] Reproduce Peter's 2026-08-14 iPhone result where no Vibesteroids touch
+    - [ ] Reproduce BDFN's 2026-08-14 iPhone result where no Vibesteroids touch
       control responds, using the exact staged guest and mobile viewport. Add a
       behavioral browser oracle that proves edge stroke rotation, edge-held
       fire, center-held thrust, independent simultaneous contacts, terminal
@@ -1468,9 +1478,9 @@
       `preventDefault()` on AVP-owned contacts after Vibesteroids opted into raw
       touch. The bridge now leaves the complete occluded contact lifetime to
       GPUI. A combined 430x775 Chromium gate and deterministic actual-guest SVG
-      comparison are green. Peter confirmed working multitouch on iPhone Safari
+      comparison are green. BDFN confirmed working multitouch on iPhone Safari
       at 13:12 EDT. (Completed 2026-08-14 13:12 EDT.)
-    - [x] Triage and hand off Peter's post-acceptance Vibesteroids refinements,
+    - [x] Triage and hand off BDFN's post-acceptance Vibesteroids refinements,
       implementing any blocking host capability before guest work proceeds:
       show help while paused on multitouch devices; describe touch controls in
       that conditional help; provide a mobile Death Blossom trigger (shake or
@@ -1554,7 +1564,7 @@
   - [x] Occlude the guest hitbox behind the host title-bar layer without
     replacing `TitleBar`'s existing platform drag/control behavior.
   - [x] Run the focused regression, full suite, and optimized desktop build
-    after Peter resumes builds following the Nix-store migration.
+    after BDFN resumes builds following the Nix-store migration.
     (2026-07-21 21:16 EDT; native mouse savepoint `a10241d`)
   - Curiosity poke: should the noninteractive bottom status strip intentionally
     pass pointer input through to the guest, or claim its own native hitbox?
@@ -1648,12 +1658,12 @@
     clean rebuild or session recreation after a directory rename?
 - [x] Configure Mechatron Prime's exact-SHA Nix build/test targets and dynamic
   README badge. (2026-07-17 18:40 EDT: local Nix package and pure test targets
-  passed; its first webhook delivery needs the privileged Thelio provisioner.)
+  passed; its first webhook delivery needs the privileged development host provisioner.)
   - Curiosity poke: can a later Cargo dependency-artifact layer keep the
     isolated test derivation from recompiling GPUI and Wasmtime unnecessarily?
-- [x] Provision the Thelio-signed GitHub webhook for `pmarreck/aedicule`.
+- [x] Provision the development host-signed GitHub webhook for `pmarreck/aedicule`.
   (2026-07-18 14:37 EDT: GitHub hook `654189443` is active, accepts `push`,
-  and returned `200` from Thelio.)
+  and returned `200` from development host.)
 - [x] Push the first post-provisioning `yolo` commit and confirm its Mechatron
   build reaches `PASSING` and creates the dynamic badge JSON.
   (2026-07-18 14:39 EDT: signed push `7152ff8` was accepted; the public badge
@@ -1667,13 +1677,13 @@
 - [x] Complete the host half of the 120 Hz migration by wiring the exact
   rational accumulator into the live GPUI loop with bounded catch-up. Do not
   call the end-to-end migration complete until `vibesteroids_wat` proves equal
-  elapsed-time behavior at 60 and 120 Hz in WAST and Peter playtests it.
+  elapsed-time behavior at 60 and 120 Hz in WAST and BDFN playtests it.
   (Host half completed 2026-07-17 10:53 EDT; downstream proof and playtest
   remain open.)
   - Curiosity poke: how should the loop expose dropped catch-up ticks so a
     temporarily overloaded machine cannot hide simulation slowdown?
   - [ ] Confirm equal elapsed-time behavior at 60 and 120 Hz in downstream WAST,
-    then complete Peter's live playtest.
+    then complete BDFN's live playtest.
 - [x] Hard-cut over the WAT boundary to `aedicule.v0` / `AE_*`, negotiate
   rational guest simulation rates after explicit display-refresh events, and
   generate one build-checked WAT ABI reference.
@@ -1692,7 +1702,7 @@
     platform-adapter trait, or both, without making display mode ambient guest
     authority?
 - [ ] Revisit the deferred GPUI display-refresh and presentation-policy
-  proposal with Peter before any upstream discussion or implementation.
+  proposal with BDFN before any upstream discussion or implementation.
   See `GPUI_REFRESH_API_PROPOSAL.md`; Zed requires a human-owned contribution.
 - [ ] Define a bounded application-asset package and Rust reader, reconciling
   the `blar`/`mini_blar` wire-format versions before choosing a canonical
@@ -1722,7 +1732,7 @@
   test of the generic ABI: [`ulam-flower-wat`](../ulam-flower-wat/) drives
   exact ticks plus pointer/viewport events through only `AE_*` imports.
   Its headless integration test passed. (2026-07-19 18:29 EDT)
-- [ ] Build a guest-owned magenta/green anaglyph vector demo for Peter's
+- [ ] Build a guest-owned magenta/green anaglyph vector demo for BDFN's
   TriOviz glasses, initially as a fullscreen 3D viewer and potentially as a
   Tempest/Vectrex-inspired tube shooter. Keep stereo projection, eye
   separation, palette calibration, and game semantics in WAT; Aedicule should
@@ -1737,7 +1747,7 @@
   or aliases from returning. (2026-07-22 18:24 EDT: full test suite, optimized
   native build, and all six checksummed delivery archives passed.)
 
-- STANDING POLICY (Peter via vibesteroids_wat's 2026-08-05 note, quoting him:
+- STANDING POLICY (BDFN via vibesteroids_wat's 2026-08-05 note, quoting him:
   "aedicule's manifest should always be updated to the latest ulam-flower,
   vibesteroids, and other demos"): demo freshness is continuous, not
   per-request. Advance `demos/manifest.tsv` + `tests/cli/demo_snapshots`
@@ -1746,20 +1756,20 @@
   "no .aed regeneration without explicit say-so" instruction. The b3e1949
   advance to df61ffe already conforms; their note's pin pair independently
   matched ours. They will adopt 2ca03e5 + declare AE_abi_minor 6 with their
-  touch tranche, after Peter's current 61f287f playtest.
-  - [x] Refresh the Tailscale phone staging demo from Vibesteroids' current
+  touch tranche, after BDFN's current 61f287f playtest.
+  - [x] Refresh the private staging phone staging demo from Vibesteroids' current
     implementation, validate the packaged guest, and report the exact served
     source/package hashes. The guest's green multi-contact implementation did
     not yet declare the final host opt-in, so the staging candidate adds only
     `AE_touch_interest(8, 0)` and ABI minor 10 while the guest agent lands those
     lines at source. Real Chromium observed all eight ordered touch transitions
-    with zero compatibility-pointer duplicates. The Tailscale gallery now
+    with zero compatibility-pointer duplicates. The private staging gallery now
     serves WAT SHA-256 `5ddee65c...b059` and AED SHA-256
     `8bca22da...000b`. (Done 2026-08-13 19:06 EDT.)
-- [ ] Vibesteroids on iPhone (Peter, 2026-08-03 hardware pass): three gaps, split
+- [ ] Vibesteroids on iPhone (BDFN, 2026-08-03 hardware pass): three gaps, split
   by responsibility. This is exactly what the demo apps exist to tease out —
   "aedicule apps may need to be client-aware."
-  - [ ] Protocol gap, host-side — DESIGN CHOSEN (Peter, 2026-08-04 ~3:41 PM
+  - [ ] Protocol gap, host-side — DESIGN CHOSEN (BDFN, 2026-08-04 ~3:41 PM
     EDT): extend the existing viewport event (WAT ABI kind 6) into the
     "device-change event". Its `code` slot is a hardcoded 0 in both ABIs
     (`src/lib.rs` legacy_event_parameters / integer_event_parameters), so it
@@ -1803,7 +1813,7 @@
     - [x] VIEW_PROTOCOL.md prose renamed: the layout section now says a
       device change (viewport dimensions or device-class flags, kind 6)
       produces the ordered event. (2026-08-04 ~10:05 PM EDT)
-  - [x] Six-axis motion capability IMPLEMENTED at ABI v0.7 (Peter authorized
+  - [x] Six-axis motion capability IMPLEMENTED at ABI v0.7 (BDFN authorized
     2026-08-05 ~1 PM EDT "proceed w/any building"; built via strict TDD):
     - Registration: `AE_motion_interest(kind, rate_hz, flags)` host import,
       configure-only, following the AE_pause_trigger precedent. Kind 1 =
@@ -1829,7 +1839,7 @@
       guarantees); surface tripwires guard the browser wiring; native
       adapter stays sensor-silent by design.
     - [x] Shipped as 1b4cde7, CI green across all six jobs (2026-08-05
-      ~2 PM EDT); deployed to the Tailscale endpoint; ship notice with the
+      ~2 PM EDT); deployed to the private staging endpoint; ship notice with the
       full contract, the minor-7-only-if-required rule, and the lifted
       playtest hold sent to vibesteroids_wat.
       (inbox/2026-08-05-from-aedicule-motion-capability-shipped-and-playtest-hold-lifted.md)
@@ -1837,15 +1847,15 @@
       compass — same registration gate when a demo needs them. Springs demo
       (two springs + weight, shake the phone) remains the six-axis exercise
       app idea, now unblocked.
-  - [x] Audio silent on iPhone — root cause found on hardware (Peter,
+  - [x] Audio silent on iPhone — root cause found on hardware (BDFN,
     2026-08-04 ~1:49 PM EDT): Web Audio unlocks ONLY on a completed tap. Sound
-    started the moment Peter tapped (not dragged) and stayed up from then on.
+    started the moment BDFN tapped (not dragged) and stayed up from then on.
     Mechanism: iOS grants transient user activation for tap-like gestures, not
     pans, and the `bootstrap.js` unlock listeners
     (pointerdown/keydown/touchstart) all fire at gesture START, before WebKit
     grants activation. Earlier "no sound" reports are consistent with
     drag-only interaction plus the then-muted ringer switch. Follow-ups below.
-  - [x] Hardware confirmation of the healthy pipeline (Peter, 2026-08-04
+  - [x] Hardware confirmation of the healthy pipeline (BDFN, 2026-08-04
     ~2:03 PM EDT): `au running req 87 act false / au-last source-ended` — the
     guest made 87 playback requests, the context is running, and the last
     event is a source finishing. `act false` is normal expiry of transient
@@ -1854,7 +1864,7 @@
     listener set so the resume attempt lands inside the freshest activation
     window. TDD: surface tripwire on the full listener array went red, then
     green. (2026-08-04 ~2:15 PM EDT)
-  - [x] Tap-for-sound cue DECIDED (Peter, 2026-08-04 ~4:09 PM EDT): no host
+  - [x] Tap-for-sound cue DECIDED (BDFN, 2026-08-04 ~4:09 PM EDT): no host
     mechanism. The guest presents a "Start Game" button, which guarantees the
     first interaction is a tap (not a drag) — and the host's window-capture
     unlock listeners make any tap unlock audio, so the pattern needs zero new
@@ -1866,7 +1876,7 @@
     thrust and Death Blossom have no touch affordance, rotation has no
     side-stroking control. Send an LLMsend note when the host side is designed.
 
-- [ ] `?diag=1` startup failure on iPhone (Peter, 2026-08-04): "RangeError:
+- [ ] `?diag=1` startup failure on iPhone (BDFN, 2026-08-04): "RangeError:
   Out of memory", reported stage `startup-lock-released`, 306 ms elapsed, all
   capability checks green. Code inspection findings (no fix applied yet):
   - [x] Instrument bug FIXED (2026-08-04 ~2:15 PM EDT): `failedStartupStage`
@@ -1882,7 +1892,7 @@
     `?diag=1` to a tab that was just running the game forces a same-tab
     reload that races the old instance's teardown (its own 1 GiB reservation
     plus WebGPU buffers still resident), so the new reservation fails.
-  - [x] Experiment (a) (Peter, 2026-08-04 ~2:03 PM EDT): the `?diag=1` URL
+  - [x] Experiment (a) (BDFN, 2026-08-04 ~2:03 PM EDT): the `?diag=1` URL
     boots fine in a FRESH tab — the diag overlay is exonerated as a cause.
   - [ ] Experiment (b), optional: reload the PLAIN URL in a tab that was just
     playing — hypothesis says it sometimes OOMs with no diag anywhere, which
@@ -1891,23 +1901,23 @@
   - [ ] Candidate mitigations once (b) or a truthful failure screen confirms
     (do not build yet): retry `init()` after a short backoff on RangeError;
     and/or lower `--max-memory` below 1 GiB if Aedicule's real ceiling allows
-    (capacity decision for Peter).
+    (capacity decision for BDFN).
 
-- [ ] Remove Peter from the regression-verification loop (his question,
-  2026-08-03 evening; answered in chat only until now). Peter stays acceptance
+- [ ] Remove BDFN from the regression-verification loop (his question,
+  2026-08-03 evening; answered in chat only until now). BDFN stays acceptance
   authority at bless time — speaker sound, haptics, feel — but regression
   re-verification can be mechanized in three stages:
   - [ ] Standing policy (already practiced): every hardware finding gets
     encoded as a replayed event stream in the Chromium gate (as the ghost-tap
     fix was). Catches regressions of KNOWN failures only.
-  - DISFAVORED (Peter, 2026-08-05 ~12 PM EDT: "i hate using headless browser
+  - DISFAVORED (BDFN, 2026-08-05 ~12 PM EDT: "i hate using headless browser
     drivers if at all possible to avoid"): the Playwright-WebKit second-engine
     spike and the iOS-Simulator-CI-via-safaridriver roadmap are both headless
     driver machinery — keep them as last resorts only, not planned work. The
     existing Chromium CDP gate stays (established, load-bearing, and the
     replayed-stream policy above depends on it); the aversion applies to
     ADDING driver surfaces. Preferred direction instead: hardware-first bless
-    with Peter plus replayed-stream regression, and where WebKit-specific
+    with BDFN plus replayed-stream regression, and where WebKit-specific
     behavior must be mechanized, prefer in-page harnesses served to a real
     browser over driver-controlled ones.
 - [x] Updated pin recommendation sent to vibesteroids_wat: 61f287f (CI green),
@@ -1917,7 +1927,7 @@
   2026-08-03 17:41 EDT)
 
 - [x] Deleted the superseded `native-titlebar-routing` branch (local +
-  origin) with Peter's approval after a content-level audit: its occlusion
+  origin) with BDFN's approval after a content-level audit: its occlusion
   fix (`host_title_bar_layer`), its headless proof test
   (`host_title_bar_occludes_guest_pointer_edges`), and its gpui
   test-support idea all live on yolo since `1de9822`, which extended the
@@ -1958,23 +1968,23 @@
   - [x] Animate the gallery's spring mass horizontally only while its card is
     hovered or keyboard-focused, matching the other two interactive previews
     and respecting `prefers-reduced-motion`. Start with a failing gallery
-    classifier and show Peter the actual rebuilt page before committing.
+    classifier and show BDFN the actual rebuilt page before committing.
     Curiosity poke: keep the travel short enough that the fixed spring artwork
     still appears connected to the mass throughout the cycle.
     Focused red/green classifiers and complete `./test` suite passed; rebuilt
-    Tailscale staging endpoint serves the new animation and replacement package.
+    private staging endpoint serves the new animation and replacement package.
     (2026-08-05 18:36 EDT)
-  - [x] Keep the staged gallery available for Peter's iPhone visual acceptance
-    over the Thelio's Tailscale HTTPS name on port 8911 while the corrected
+  - [x] Keep the staged gallery available for BDFN's iPhone visual acceptance
+    over the development host's private staging HTTPS name on port 8911 while the corrected
     spring pin is under acceptance; verify HTTPS reachability before handing off the URL.
-    Tailscale Serve now terminates HTTPS at port 8911 and proxies to the
+    private staging Serve now terminates HTTPS at port 8911 and proxies to the
     loopback-only staged Caddy server; verified gallery and spring route return
     200 and the downloaded package retains its pinned SHA-256.
     (2026-08-05 17:57 EDT)
 
 - [ ] Diagnose and fix the intermittent browser startup stall at
-  `wasm-initializing` across demos (Peter, 2026-08-05 18:58 EDT); compare public
-  Pages and Tailscale staging and preserve the existing multi-tab admission
+  `wasm-initializing` across demos (BDFN, 2026-08-05 18:58 EDT); compare public
+  Pages and private staging and preserve the existing multi-tab admission
   guarantee.
   Curiosity poke: a lock holder that never reaches `wasm-initialized` can make
   later tabs look stuck at `startup-lock-waiting`, while memory pressure or a
@@ -1984,7 +1994,7 @@
     256 MiB (4,096 pages), then prove the generated glue carries that ceiling.
     Complete `./test` and real Chromium/WebGPU startups for Vibesteroids, Ulam
     Flower, and Spring Simulator passed. (2026-08-05 19:10 EDT)
-  - [ ] Obtain Peter's iPhone/WebKit acceptance from the rebuilt Tailscale
+  - [ ] Obtain BDFN's iPhone/WebKit acceptance from the rebuilt private staging
     delivery after closing old tabs that retain the 1 GiB runtime. If it still
     stalls, capture whether the last stage is `wasm-initializing` or
     `startup-lock-waiting` before choosing a second mitigation.
