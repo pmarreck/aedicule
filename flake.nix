@@ -19,8 +19,8 @@
 				inherit system;
 				config.allowUnsupportedSystem = true;
 			};
-			rustChannel = "1.97.0";
-			rustManifestHash = "sha256-OATSZm98Es5kIFuqaba+UvkQtFsVgJEBMmS+t6od5/U=";
+			rustChannel = "1.97.1";
+			rustManifestHash = "sha256-A1abGIbOtcBSdrUMhDGrER3pRM1hQP4fp9gh3Y4PKc8=";
 			rustManifestFor = system:
 				fenix.packages.${system}.toolchainOf {
 					channel = rustChannel;

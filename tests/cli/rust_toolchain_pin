@@ -15,9 +15,9 @@ if [ "$rc" -ne 0 ]; then
 fi
 
 case "$out" in
-	'rustc 1.97.0 '*) ;;
+	'rustc 1.97.1 '*) ;;
 	*)
-		printf 'rust toolchain pin FAILED: expected Rust 1.97.0, got %s\n' \
+		printf 'rust toolchain pin FAILED: expected Rust 1.97.1, got %s\n' \
 			"$out" >&2
 		exit 1
 		;;

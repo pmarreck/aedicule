@@ -136,7 +136,7 @@ BDFN means Benevolent Dictator For Now; private operational references are gener
   paths, and deterministic presentation must survive simultaneous failures.
   (Queued from the coordination inbox, 2026-08-19 19:00 EDT; follows shake and
   public browser delivery correctness.)
-- [ ] Align Aedicule with the fleet's exact Rust 1.97.1 toolchain. Start RED by
+- [x] Align Aedicule with the fleet's exact Rust 1.97.1 toolchain. Start RED by
   advancing the exact toolchain-pin regression from 1.97.0 to 1.97.1, then
   update the existing Fenix provider and dirtree description without raising
   Cargo's Rust 1.97 MSRV. Fenix remains acceptable because it exposes official
@@ -146,6 +146,10 @@ BDFN means Benevolent Dictator For Now; private operational references are gener
   Curiosity poke: prove Fenix supplies Rust 1.97.1 with every cross-target
   standard library Aedicule combines. (Queued 2026-08-27 16:35 EDT; provider
   decision recorded 16:44 EDT; official 1.97.1 fixes an LLVM miscompilation.)
+  Completed 2026-08-27 16:46 EDT: the exact gate first failed against 1.97.0,
+  then the focused gate and canonical full suite passed against Fenix 1.97.1.
+  Cargo's 1.97 MSRV and the intentionally nightly browser toolchain remain
+  unchanged.
 - [ ] Narrow the Nix source closures for `webRuntime` and `delivery-web` so a
   browser-test-only or HTML-only edit does not rebuild unrelated Rust/Wasm and
   native frontplane artifacts. Preserve reproducibility by classifying the
