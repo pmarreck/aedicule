@@ -136,6 +136,16 @@ BDFN means Benevolent Dictator For Now; private operational references are gener
   paths, and deterministic presentation must survive simultaneous failures.
   (Queued from the coordination inbox, 2026-08-19 19:00 EDT; follows shake and
   public browser delivery correctness.)
+- [ ] Align Aedicule with the fleet's exact Rust 1.97.1 toolchain. Start RED by
+  advancing the exact toolchain-pin regression from 1.97.0 to 1.97.1, then
+  update the existing Fenix provider and dirtree description without raising
+  Cargo's Rust 1.97 MSRV. Fenix remains acceptable because it exposes official
+  Rust components as immutable Nix derivations, follows Aedicule's pinned
+  nixpkgs, and requires no rustup or mutable toolchain state. Run the focused
+  pin test, canonical `./test`, and optimized `./build` before committing.
+  Curiosity poke: prove Fenix supplies Rust 1.97.1 with every cross-target
+  standard library Aedicule combines. (Queued 2026-08-27 16:35 EDT; provider
+  decision recorded 16:44 EDT; official 1.97.1 fixes an LLVM miscompilation.)
 - [ ] Narrow the Nix source closures for `webRuntime` and `delivery-web` so a
   browser-test-only or HTML-only edit does not rebuild unrelated Rust/Wasm and
   native frontplane artifacts. Preserve reproducibility by classifying the
@@ -1014,8 +1024,26 @@ BDFN means Benevolent Dictator For Now; private operational references are gener
     public Pages and dynamic `--web` fetch the exact schema-11 WAT and FLAC,
     and the full test/build/six-target/reproducibility gates pass.
     (2026-07-23 08:44 EDT.)
-  - [ ] Expose packaged image assets by virtual name without granting arbitrary
-    virtual-filesystem reads, then add browser image-adapter parity.
+  - [ ] Add bounded PNG image assets as guest-renderable resources without
+    granting arbitrary virtual-filesystem reads; defer other raster and vector
+    formats until the first slice is accepted.
+    - [ ] Resolve `assets/` virtual names through the existing content-hashed
+      image-resource cache, with identical directory, `.aed`, reload, native,
+      browser, and headless admission.
+    - [ ] Specify the smallest integer/fixed-point draw ABI for destination
+      placement, source rectangles, pivot, rotation, scaling, flipping,
+      opacity, and nearest/linear sampling. Decide whether a bounded affine
+      transform is simpler than separate transform arguments before coding.
+    - [ ] Keep animation and sprite semantics guest-owned: the guest selects
+      the PNG, source rectangle, transform, and frame on each accepted update;
+      Aedicule validates, caches, composites, and draws without owning an
+      animation clock or gameplay state.
+    - [ ] Prove native/browser visual parity and deterministic headless command
+      capture with alpha, clipping, transform extremes, and sprite-sheet frame
+      selection.
+    Curiosity poke: which compressed-byte, decoded-pixel, dimension, frame,
+    and per-update draw limits prevent a tiny PNG or abusive guest from causing
+    an allocation or command-volume bomb?
   - [ ] Add an event-driven safe-area inset contract for full-bleed hosts:
     logical-unit left/top/right/bottom insets emitted initially and only when
     native chrome or platform cutouts change, independently of drawable
@@ -1724,10 +1752,6 @@ BDFN means Benevolent Dictator For Now; private operational references are gener
     device timing guest-observable. (2026-07-22 22:43 EDT)
   - Curiosity poke: can long tracks stream under a bounded decode-memory budget
     without making audio-device timing observable by the deterministic guest?
-- [ ] Load bounded texture assets from the same package into the existing
-  content-hashed image-resource cache.
-  - Curiosity poke: which decoded-pixel, dimension, and archive-entry limits
-    prevent a small compressed asset from becoming an allocation bomb?
 - [x] Add a second, unrelated WAT application as the strongest falsification
   test of the generic ABI: [`ulam-flower-wat`](../ulam-flower-wat/) drives
   exact ticks plus pointer/viewport events through only `AE_*` imports.
