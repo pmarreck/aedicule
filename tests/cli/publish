@@ -202,6 +202,7 @@ run_publish() {
 	(
 		cd "$fixture" || exit 1
 		env PATH="$fake_bin:$PATH" \
+			AEDICULE_MAC_HOST=mac.example.invalid AEDICULE_MAC_USER=builder \
 			AEDICULE_PUBLISH_TEST_LOG="$log" \
 			AEDICULE_TEST_RELEASE_SOURCE="$release_source" \
 			AEDICULE_PUBLISH_TEST_VIEW_SENTINEL="$work/release-view-seen" \
@@ -218,6 +219,25 @@ if (( status != 0 )) || ! rg -F 'GitHub Release' "$stdout" >/dev/null \
 		|| ! rg -F -- '--skip-mac' "$stdout" >/dev/null; then
 	fail '--help does not describe publication and optional Mac application/demo installation'
 fi
+
+run_publish AEDICULE_TEST_TAG_EXISTS=1 AEDICULE_TEST_MAC_REACHABLE=1 \
+	AEDICULE_MAC_HOST= AEDICULE_MAC_USER=
+status=$?
+if (( status != 0 )); then
+	fail 'publication without a configured Mac should succeed'
+fi
+reject_log "$log" $'ssh\t' 'an unconfigured Mac was probed'
+reject_log "$log" $'scp\t' 'an unconfigured Mac received artifacts'
+require_log "$stderr" 'no Mac host configured' 'missing Mac configuration was not explained'
+
+run_publish AEDICULE_TEST_TAG_EXISTS=1 AEDICULE_TEST_MAC_REACHABLE=1 \
+	AEDICULE_MAC_USER=
+status=$?
+if (( status != 0 )); then
+	fail 'configured Mac host should permit the SSH-configured user'
+fi
+require_log "$log" $'\tmac.example.invalid\ttrue' 'host-only configuration did not defer the user to SSH'
+reject_log "$log" '@mac.example.invalid' 'host-only configuration invented an SSH user'
 
 run_publish AEDICULE_TEST_TAG_EXISTS=0 AEDICULE_TEST_MAC_REACHABLE=0
 status=$?

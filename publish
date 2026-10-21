@@ -11,15 +11,15 @@ Usage: ./publish [OPTIONS]
 
 Build, test, and publish the current Aedicule version as a GitHub Release.
 The command is resumable: an existing exact tag/release skips completed work.
-When Peter's Mac is SSH-reachable through the tailnet, the verified public
+When an explicitly configured Mac is SSH-reachable, the verified public
 macOS archive is also installed as ~/Applications/Aedicule.app for testing,
 with its bundled demos copied to ~/Documents/AediculeDemos/.
 
 Options:
   --version VERSION  Require this source version (for example, 0.1.2 or v0.1.2)
   --skip-mac         Do not probe or install on the Mac
-  --mac-host HOST    Override the Mac tailnet host
-  --mac-user USER    Override the Mac SSH user
+  --mac-host HOST    Set the optional Mac installation host
+  --mac-user USER    Override the SSH-configured user
   --lang LOCALE      Select message locale (English prepare-phase fallback)
   -h, --help         Show this help
 
@@ -30,8 +30,8 @@ EOF
 
 requested_version=
 skip_mac=0
-mac_host=${AEDICULE_MAC_HOST:-peters-macbook-pro-m4-max.tail66c90.ts.net}
-mac_user=${AEDICULE_MAC_USER:-pmarreck}
+mac_host=${AEDICULE_MAC_HOST:-}
+mac_user=${AEDICULE_MAC_USER:-}
 language=${AEDICULE_PUBLISH_LANG:-${AEDICULE_LANG:-${LC_ALL:-${LC_MESSAGES:-${LANG:-en}}}}}
 
 while (( $# != 0 )); do
@@ -113,7 +113,8 @@ if [[ ! $version =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]; then
 	printf 'publish: source version is not a safe semantic version: %s\n' "$version" >&2
 	exit 1
 fi
-if [[ ! $mac_host =~ ^[0-9A-Za-z._-]+$ || ! $mac_user =~ ^[0-9A-Za-z._-]+$ ]]; then
+if [[ ( -n $mac_host && ! $mac_host =~ ^[0-9A-Za-z._-]+$ ) \
+		|| ( -n $mac_user && ! $mac_user =~ ^[0-9A-Za-z._-]+$ ) ]]; then
 	printf 'publish: Mac host/user contain unsupported characters\n' >&2
 	exit 1
 fi
@@ -213,13 +214,17 @@ if (( skip_mac != 0 )); then
 	printf 'Mac installation skipped (--skip-mac).\n' >&2
 	exit 0
 fi
+if [[ -z $mac_host ]]; then
+	printf 'Mac installation skipped: no Mac host configured (--mac-host or AEDICULE_MAC_HOST).\n' >&2
+	exit 0
+fi
 if ! command -v ssh >/dev/null 2>&1 || ! command -v scp >/dev/null 2>&1; then
 	printf 'Mac installation skipped: ssh/scp are unavailable.\n' >&2
 	exit 0
 fi
 
 ssh_options=(-o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new)
-mac_target="$mac_user@$mac_host"
+mac_target="${mac_user:+$mac_user@}$mac_host"
 if ! ssh "${ssh_options[@]}" "$mac_target" true >/dev/null 2>&1; then
 	printf 'Mac installation skipped: %s is not SSH-reachable.\n' "$mac_target" >&2
 	exit 0
