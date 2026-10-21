@@ -192,17 +192,14 @@ After player-attributed destruction of Voyager, the guest wants to trigger one
 immutable sample exactly one simulated second after the reactor explosion
 begins. Voyager/asteroid collisions must never schedule it; the guest owns that
 attribution and fixed-tick timing. The host owns only declaration, decoding,
-and playback. The source is Peter's local authoring file:
-
-```text
-~/Downloads/‘How Dare You’ Greta.mp3
-```
+and playback. The source is a local authoring MP3; its private path is not part
+of the package contract.
 
 The untouched source is a 13,172-byte, 48 kHz stereo variable-bitrate MP3 with
 duration 1.381604 seconds and SHA-256
 `084b45085a03def28987c6d3cf80907c88630b4573e65fa73d0b4cf6a4e5be53`.
-Peter authorizes deterministic conversion with Nix-provided FFmpeg when the
-`blar` preparation pipeline accepts MP3 input. The source filename is authoring
+The project owner authorized deterministic conversion with Nix-provided FFmpeg
+when the `blar` preparation pipeline accepts MP3 input. The source filename is authoring
 input, never a runtime path or archive name.
 The proposed package contains a normalized logical entry such as
 `assets/audio/satellite-destroyed.flac`; `AE_sample_asset` binds that name to a

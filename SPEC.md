@@ -333,8 +333,8 @@ files executed by stock Wasmtime, with an instrumented `aedicule.v0` module when
 output assertions are required.
 
 Visual adapters are pure functions wherever practical. Deterministic SVG gives
-agents and CI an inspectable artifact; Peter verifies uncertain native visual
-appearance before it becomes a frozen expectation.
+agents and CI an inspectable artifact; the project owner verifies uncertain native
+visual appearance before it becomes a frozen expectation.
 
 The canonical commands are:
 

@@ -99,5 +99,5 @@ macOS can derive nominal/predicted timing from its existing display link.
    explicit developer/test fallback until native GPUI delivery is available.
 
 This document is intentionally a future discussion brief, not upstream prose.
-Peter must decide whether to open the discussion and must author the public
-conversation in his own voice.
+The project owner must decide whether to open the discussion and must author
+the public conversation personally.

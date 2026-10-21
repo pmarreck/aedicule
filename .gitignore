@@ -7,3 +7,8 @@
 
 # session handoff docs (skill: handoff)
 HANDOFF*
+
+# Local agent correspondence may contain private operational details.
+/inbox/
+# This checkout's briefing points outside the repository.
+/CLAUDE.md

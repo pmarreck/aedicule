@@ -88,6 +88,7 @@ GUI message remains visible; the terminal line is for launchers, CI, and logs.
 See the self-contained [Guide for LLMs](GUIDE_FOR_LLMS.md) for current guest
 writing, testing, packaging, and failure-avoidance guidance; [WAT_ABI.md](WAT_ABI.md)
 is its generated exact ABI appendix, and [SPEC.md](SPEC.md) defines the threat model.
+Project scope and remaining work are in [INTENT.md](INTENT.md) and [PLAN.md](PLAN.md).
 
 ABI v0.2 adds a portable text-face selector. Existing `AE_text` calls retain
 the platform UI face; `AE_text_font` and its zero-float Q16.16 counterpart can
@@ -152,8 +153,8 @@ association helper.
 
 The current public macOS archive is unsigned. Use **Open** from Finder's
 context menu on first launch if Gatekeeper asks you to confirm the application.
-`./publish` can additionally install that exact verified archive on Peter's
-tailnet Mac with a local ad-hoc signature; this private test signature is not
+`./publish` can additionally install that exact verified archive on an explicitly
+configured Mac with a local ad-hoc signature; this private test signature is not
 represented as Apple notarization.
 
 The web ZIP is ready for any static HTTPS host. Its top-level launcher offers
@@ -198,11 +199,13 @@ revision and matching Cargo/Nix versions. It runs the complete local gates,
 creates and pushes an annotated version tag, watches GitHub independently
 rebuild all six archives, and prints the durable GitHub Release URL. The
 operation is resumable: rerunning it for an exact existing tag verifies the
-release and retries only unfinished work. If Peter's Mac is SSH-reachable at
-its configurable tailnet address, the command verifies the released macOS ZIP
+release and retries only unfinished work. With `--mac-host HOST` or
+`AEDICULE_MAC_HOST` set to an SSH-reachable Mac, it verifies the released macOS ZIP
 against `SHA256SUMS`, preserves any previous app in `~/.Trash`, signs locally
 when needed, and installs it into `~/Applications/Aedicule.app`. Use
-`./publish --skip-mac` when only public artifact publication is desired.
+`--mac-user USER` or `AEDICULE_MAC_USER` to override the SSH-configured user.
+Without a host, Mac installation is skipped; `./publish --skip-mac` also disables
+it when a host is configured. Keep host and user settings outside the repository.
 
 The package contains:
 
